@@ -252,6 +252,113 @@ If multiple same-owner Sanctuaries overlap, the current Sanctuary should be reso
 
 Closest anchor is the preferred initial rule unless implementation testing shows a better choice.
 
+## Sanctuary Entry Alerts
+
+Sanctuary should support an upgradeable owner-awareness system that notifies the owner when another player enters their Sanctuary.
+
+This is a progression feature and is not automatically available at the lowest Sanctuary level.
+
+### Notification Surface
+
+Owner entry alerts should use a small, non-intrusive UI surface.
+
+Preferred default:
+
+```text
+Action bar
+```
+
+Example:
+
+```text
+Aaron entered Mountain Keep
+```
+
+The notification must not use a full-screen title.
+
+The full-screen title is reserved for the player who is entering the Sanctuary.
+
+A private chat message may be considered as an alternative or supplemental presentation later, but the initial implementation should prefer the action bar.
+
+### Transition-Based Alerts
+
+Notifications should be based on territory transitions.
+
+```text
+outside → inside
+    notify
+
+inside → inside
+    do nothing
+```
+
+Exit notifications may be unlocked or enabled separately.
+
+Rapid repeated boundary crossing must not spam the owner.
+
+Sanctuary should maintain a short per-player, per-Sanctuary notification cooldown or equivalent anti-spam mechanism.
+
+### Upgrade Progression
+
+The exact number of alert tiers is not finalized.
+
+A possible progression is:
+
+```text
+Perimeter Awareness I
+Notify owner when an untrusted player enters.
+
+Perimeter Awareness II
+Optionally notify when any non-owner enters.
+
+Perimeter Awareness III
+Include additional entry context if useful.
+
+Perimeter Awareness IV
+Allow exit notifications.
+
+Higher tiers
+May add additional awareness features.
+```
+
+The exact progression should be balanced later.
+
+### Trusted Player Notifications
+
+Trusted-player alerts should be configurable once the appropriate feature level is unlocked.
+
+Possible settings:
+
+```text
+notify_untrusted_entries
+notify_trusted_entries
+notify_exits
+```
+
+The plugin should avoid excessive notification complexity in the first implementation.
+
+### Offline Owners
+
+Ordinary live entry alerts should not be queued for offline owners.
+
+An owner should not log in and receive a burst of stale action-bar or chat alerts.
+
+A future higher-tier feature may add a persistent recent-activity history.
+
+### Future Activity Log
+
+A later Sanctuary upgrade may provide a recent-activity view in the Sanctuary UI.
+
+Possible entries:
+
+```text
+Aaron entered 2m ago
+Steve left 14m ago
+UnknownPlayer entered 1h ago
+```
+
+This activity log is not required for the first implementation.
+
 ## Territory Model
 
 Sanctuary progression should be based on protected area rather than direct radius progression.
@@ -295,6 +402,139 @@ This allows:
 - Multi-level structures
 
 without requiring separate vertical claim configuration.
+
+## Boundary Visualization
+
+Sanctuary boundaries should be visible as part of normal gameplay.
+
+Passive boundary warnings are a safety feature and are always enabled. They are not cosmetic and cannot be disabled by the player.
+
+### Passive Boundary Warning
+
+When a player approaches a Sanctuary boundary, Sanctuary should render a nearby arc of the boundary using player-specific particles.
+
+Only the portion of the boundary near the player should be rendered during passive visualization. The entire circle should not be continuously rendered.
+
+Conceptually:
+
+```text
+Player approaches boundary
+        ↓
+Sanctuary calculates nearest boundary arc
+        ↓
+Resolve viewer access state
+        ↓
+Render nearby particle arc to that player only
+```
+
+The passive visualization should begin within a configurable distance of the territory boundary.
+
+Possible configuration:
+
+```text
+boundary_visibility_distance
+```
+
+The exact default distance should be finalized during gameplay testing.
+
+### Beacon Boundary Colors
+
+Beacon Sanctuaries should use the following semantic colors:
+
+```text
+Blue
+Viewer owns the Sanctuary
+
+Green
+Viewer is trusted or otherwise has ENTER permission
+
+Gray
+Sanctuary does not currently restrict entry for this viewer
+
+Red
+Entry is restricted and the viewer lacks permission
+```
+
+The color should reflect the viewer's effective access state rather than only their stored trust role.
+
+For example, an unknown player may see a gray boundary if entry is unrestricted.
+
+### Conduit Boundary Colors
+
+Conduit Sanctuaries should use a distinct visual palette so players can immediately distinguish underwater Sanctuary territory from Beacon territory.
+
+Initial semantic palette:
+
+```text
+Cyan
+Viewer owns the Sanctuary
+
+Aqua / Teal
+Viewer is trusted or otherwise has ENTER permission
+
+Pale Blue / Light Gray
+Entry is neutral or unrestricted
+
+Magenta / Purple-Red
+Entry is restricted and the viewer lacks permission
+```
+
+The exact particle colors may be tuned during implementation, but Beacon and Conduit palettes should remain visually distinct.
+
+Conduit boundaries may also use subtle aquatic secondary particles when appropriate.
+
+### Boundary Density
+
+Particle density may increase as the player gets closer to the boundary.
+
+Conceptually:
+
+```text
+Far from boundary:
+·       ·       ·
+
+Close to boundary:
+· · · · · · · · ·
+```
+
+The boundary may use multiple vertical particle points to communicate that the territory is a three-dimensional protected region rather than a painted line on the ground.
+
+Rendering should remain lightweight and player-specific.
+
+### Crossing Feedback
+
+When a player crosses into a Sanctuary, Sanctuary may emit a short local particle ripple at the crossing point.
+
+This may accompany the Sanctuary entry title.
+
+The normal full-screen entry title remains separate from owner alert notifications.
+
+### Manual Boundary Visualization
+
+Sanctuary should also provide explicit full-boundary visualization commands:
+
+```text
+/sanctuary show
+/sanctuary hide
+```
+
+These commands control only the manual full-boundary preview. They do not control passive boundary warnings.
+
+Conceptually:
+
+```text
+Passive Boundary Warning
+- Always enabled
+- Shows nearby arc
+- Cannot be hidden
+
+Manual Boundary Preview
+- Shows full territory boundary
+- Controlled by /sanctuary show
+- Disabled by /sanctuary hide
+```
+
+This distinction must remain explicit.
 
 ## Inter-Owner Spacing
 
@@ -1358,6 +1598,12 @@ Guard limits
 Guard stats
 Guard detection range
 Particle settings
+Passive boundary visibility distance
+Beacon boundary colors
+Conduit boundary colors
+Manual boundary visualization settings
+Entry alert anti-spam cooldown
+Entry alert settings
 Title display settings
 Name limits
 ```
@@ -1404,6 +1650,27 @@ Important test areas include:
 - Area-to-radius conversion is correct.
 - Entry detection only fires on transitions.
 - Closest-anchor overlap handling is deterministic.
+
+### Boundary Visualization
+
+- Passive boundary visualization activates near the boundary.
+- Passive boundary visualization cannot be disabled.
+- `/sanctuary hide` does not suppress passive warnings.
+- `/sanctuary show` renders the manual full-boundary preview.
+- Beacon colors resolve correctly for owner, permitted, neutral, and restricted viewers.
+- Conduit colors resolve correctly and remain distinct from Beacon colors.
+- Boundary particles are sent only to the intended viewer.
+- Passive rendering uses a local arc rather than continuously rendering the full perimeter.
+
+### Entry Alerts
+
+- Entry alerts fire only on outside-to-inside transitions.
+- Remaining inside does not repeat the alert.
+- Anti-spam behavior prevents rapid boundary-crossing spam.
+- Trusted-player notifications follow the configured setting.
+- Exit notifications fire only when enabled.
+- Offline owners do not receive queued live alerts.
+- Owner alerts use a non-intrusive notification surface.
 
 ### Protections
 
@@ -1514,7 +1781,23 @@ Implement:
 - Entry title display
 - Maximum-radius spacing rules
 
-### Phase 8: ExtendedUI Main Menu
+### Phase 8: Boundary Visualization and Entry Alerts
+
+Implement:
+
+- Always-on passive boundary warnings
+- Player-specific nearby boundary arcs
+- Beacon access-state colors
+- Distinct Conduit access-state colors
+- Manual `/sanctuary show` and `/sanctuary hide`
+- Entry transition detection
+- Owner action-bar alerts
+- Alert anti-spam behavior
+- Configurable trusted-entry and exit notifications
+
+Passive warnings must remain active regardless of manual preview state.
+
+### Phase 10: ExtendedUI Main Menu
 
 Implement:
 
@@ -1530,7 +1813,7 @@ Settings
 
 Add Sanctuary rename through ExtendedUI text input.
 
-### Phase 9: Trust and Capabilities
+### Phase 10: Trust and Capabilities
 
 Implement:
 
@@ -1540,7 +1823,7 @@ Implement:
 - Permission checks
 - UI management
 
-### Phase 10: First Protections
+### Phase 11: First Protections
 
 Implement the simplest protection categories first.
 
@@ -1560,13 +1843,13 @@ HOSTILE_MOBS
 INTRUSION
 ```
 
-### Phase 11: Advancements
+### Phase 12: Advancements
 
 Implement Sanctuary's advancement tree using actual completed feature milestones.
 
 Do not create advancement requirements for systems that are not yet implemented.
 
-### Phase 12: Sentry Framework
+### Phase 13: Sentry Framework
 
 Implement:
 
@@ -1589,7 +1872,7 @@ Iron Golem
 
 or another low-complexity mob.
 
-### Phase 13: Additional Sentry Types
+### Phase 14: Additional Sentry Types
 
 Add:
 
@@ -1603,13 +1886,13 @@ Add:
 
 Add advanced mobs only after the framework is stable.
 
-### Phase 14: Companion Guards
+### Phase 15: Companion Guards
 
 Implement the companion mode using the shared guard framework.
 
 Companions should remain weaker and permanently die.
 
-### Phase 15: Advanced Guards
+### Phase 16: Advanced Guards
 
 Prototype:
 
@@ -1620,7 +1903,7 @@ Prototype:
 
 These should not block the initial Sanctuary release.
 
-### Phase 16: Conduit Sanctuaries
+### Phase 17: Conduit Sanctuaries
 
 Reuse the mature Beacon Sanctuary foundation for:
 
@@ -1700,6 +1983,12 @@ These should be decided during implementation and gameplay testing without chang
 18. Companion guards are weaker than sentry equivalents and permanently die.
 19. Conduits reuse the same core Sanctuary model as Beacons.
 20. Exact balance values should remain configurable and should not dictate architecture.
+21. Passive Sanctuary boundary warnings are always active near territory edges and cannot be disabled.
+22. Manual `/sanctuary show` and `/sanctuary hide` affect only explicit full-boundary visualization.
+23. Boundary colors are resolved per viewer based on effective access state.
+24. Beacon and Conduit Sanctuaries use distinct boundary palettes.
+25. Owner entry notifications are progression-controlled and use a non-intrusive notification surface.
+26. Entry alerts are transition-based and must include anti-spam behavior.
 
 ## Long-Term Direction
 

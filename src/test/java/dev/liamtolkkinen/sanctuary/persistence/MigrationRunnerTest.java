@@ -22,7 +22,6 @@ class MigrationRunnerTest {
         runner.migrate();
 
         assertTrue(Files.exists(databasePath));
-
         try (
             var connection = databaseManager.openConnection();
             var statement = connection.createStatement();

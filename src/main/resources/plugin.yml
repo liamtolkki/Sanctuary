@@ -7,7 +7,7 @@ author: Liam Tolkkinen
 commands:
   sanctuary:
     description: Sanctuary commands.
-    usage: /sanctuary [status|admin reload]
+    usage: /sanctuary [status|admin reload|admin givebeacon <player>]
     permission: sanctuary.use
 permissions:
   sanctuary.use:

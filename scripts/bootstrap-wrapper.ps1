@@ -14,7 +14,6 @@ if (Test-Path $extendedUiWrapper) {
     finally {
         Pop-Location
     }
-
     Write-Host "Generated the Sanctuary Gradle wrapper using the sibling ExtendedUI wrapper."
     exit 0
 }

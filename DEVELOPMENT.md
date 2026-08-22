@@ -2,30 +2,38 @@
 
 ## Repository layout
 
-During shared-library development, keep the repositories as siblings:
+During current shared-library development, keep ExtendedUI beside Sanctuary:
 
 ```text
 C:\MinecraftDev\
-├── ExtendedItems\
 ├── ExtendedUI\
 ├── Sanctuary\
 └── server\
     └── plugins\
 ```
 
-`settings.gradle.kts` automatically includes the sibling ExtendedUI and ExtendedItems builds when they are present. This is a development convenience only. The final Sanctuary plugin JAR shades and relocates those libraries so they are not installed separately on Paper.
+`settings.gradle.kts` includes the sibling ExtendedUI build when present.
+
+ExtendedItems is different now that the required item catalog has a release. Sanctuary pins and downloads the exact GitHub Release asset:
+
+```text
+ExtendedItems 0.1.0-alpha.2
+extendeditems-0.1.0-alpha.2.jar
+```
+
+It is not resolved from an unspecified latest build and is not installed as a separate Paper plugin.
 
 ## First setup
 
 Use JDK 25 for both the IntelliJ Project SDK and Gradle JVM.
 
-If the Gradle wrapper JAR has not been generated yet, run:
+If the Gradle wrapper JAR must be reconstructed, run:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\bootstrap-wrapper.ps1
 ```
 
-Then verify Java 25:
+Verify Java 25:
 
 ```powershell
 .\gradlew.bat -q javaToolchains
@@ -36,6 +44,8 @@ Build and test:
 ```powershell
 .\gradlew.bat clean build
 ```
+
+The first build needs network access to download the pinned ExtendedItems release JAR. Subsequent builds reuse Gradle task output unless `clean` removes it.
 
 ## Development deployment
 
@@ -53,40 +63,54 @@ Build and copy the shaded plugin there with:
 
 Use a full Paper server restart after deploying. Do not use `/reload` as the normal development loop.
 
-## First runtime check
+## Runtime validation for the anchor milestone
 
-After the server starts, run:
+After the server starts:
 
 ```text
 /sanctuary status
 ```
 
-Expected result:
+Then, as an operator/admin:
 
-- Sanctuary reports its version.
-- Database reports ready.
-- The server log reports the path to `sanctuary.db`.
-- `plugins/Sanctuary.jar` is the only Sanctuary-related runtime JAR needed. ExtendedUI and ExtendedItems are embedded in it.
+```text
+/sanctuary admin givebeacon <player>
+```
 
-The SQLite database should be created under the plugin data directory:
+Validate:
+
+1. The target receives a `Sanctuary Beacon`, not an ordinary Beacon.
+2. The item places normally for its first placement.
+3. Placement reports the newly created Sanctuary name and UUID.
+4. `/sanctuary status` remains healthy.
+5. Restart Paper and verify the Sanctuary still exists in `sanctuary.db`.
+6. Attempting to place an already-bound Beacon is rejected because re-placement is intentionally the next milestone.
+
+The SQLite database is under:
 
 ```text
 plugins/Sanctuary/sanctuary.db
 ```
 
-## GitHub Actions and private shared repositories
+## GitHub Actions
 
-The workflow checks out ExtendedUI and ExtendedItems beside Sanctuary so Gradle can use the same composite-build arrangement as local development.
+The workflow checks out Sanctuary and ExtendedUI, sets up Java 25, and runs:
 
-If all repositories are public, the default GitHub token is sufficient. If either shared repository is private, add a repository secret named:
+```text
+./gradlew clean build --no-daemon
+```
+
+The Sanctuary build downloads the exact ExtendedItems `0.1.0-alpha.2` release JAR itself.
+
+If ExtendedUI becomes private, add a repository secret named:
 
 ```text
 SHARED_REPOS_TOKEN
 ```
 
-Use a token that has read access to ExtendedUI and ExtendedItems.
+with read access to ExtendedUI.
 
-Before the first CI push, verify the wrapper executable bit:
+Before CI, verify the wrapper executable bit:
 
 ```powershell
 git update-index --chmod=+x gradlew

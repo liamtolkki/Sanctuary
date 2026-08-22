@@ -66,14 +66,12 @@ public final class MigrationRunner {
         String sql = readResource(migration.resourcePath());
         boolean originalAutoCommit = connection.getAutoCommit();
         connection.setAutoCommit(false);
-
         try {
             for (String statementSql : splitStatements(sql)) {
                 try (var statement = connection.createStatement()) {
                     statement.execute(statementSql);
                 }
             }
-
             try (var statement = connection.prepareStatement("""
                 INSERT INTO schema_migrations(version, name, applied_at)
                 VALUES (?, ?, ?)
@@ -83,7 +81,6 @@ public final class MigrationRunner {
                 statement.setString(3, Instant.now().toString());
                 statement.executeUpdate();
             }
-
             connection.commit();
         } catch (SQLException exception) {
             connection.rollback();
@@ -103,7 +100,7 @@ public final class MigrationRunner {
     }
 
     private static List<String> splitStatements(String sql) {
-        String withoutComments = sql.replaceAll("(?m)^\\s*--.*$", "");
+        String withoutComments = sql.replaceAll("(?m)^\s*--.*$", "");
         return java.util.Arrays.stream(withoutComments.split(";"))
             .map(String::trim)
             .filter(statement -> !statement.isEmpty())

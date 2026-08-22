@@ -4,3 +4,6 @@ database:
 names:
   minimum-length: 1
   maximum-length: 32
+
+anchors:
+  initial-territory-area: 100.0

@@ -1,5 +1,8 @@
 package dev.liamtolkkinen.sanctuary;
 
+import dev.liamtolkkinen.sanctuary.anchor.AnchorItemService;
+import dev.liamtolkkinen.sanctuary.anchor.AnchorPlacementListener;
+import dev.liamtolkkinen.sanctuary.anchor.InitialAnchorPlacementService;
 import dev.liamtolkkinen.sanctuary.api.DefaultSanctuaryApi;
 import dev.liamtolkkinen.sanctuary.api.SanctuaryApi;
 import dev.liamtolkkinen.sanctuary.command.SanctuaryCommand;
@@ -16,6 +19,8 @@ import org.bukkit.plugin.ServicePriority;
 import org.bukkit.plugin.java.JavaPlugin;
 
 public final class SanctuaryPlugin extends JavaPlugin {
+    private static final double DEFAULT_INITIAL_TERRITORY_AREA = 100.0;
+
     private SanctuaryApi sanctuaryApi;
 
     @Override
@@ -28,7 +33,6 @@ public final class SanctuaryPlugin extends JavaPlugin {
 
             String databaseFilename = getConfig().getString("database.filename", "sanctuary.db");
             Path databasePath = dataDirectory.resolve(databaseFilename);
-
             DatabaseManager databaseManager = new DatabaseManager(databasePath);
             new MigrationRunner(databaseManager).migrate();
 
@@ -42,7 +46,21 @@ public final class SanctuaryPlugin extends JavaPlugin {
                 ServicePriority.Normal
             );
 
-            SanctuaryCommand sanctuaryCommand = new SanctuaryCommand(this);
+            AnchorItemService anchorItemService = new AnchorItemService(this);
+            InitialAnchorPlacementService placementService =
+                new InitialAnchorPlacementService(repository);
+
+            getServer().getPluginManager().registerEvents(
+                new AnchorPlacementListener(
+                    anchorItemService,
+                    placementService,
+                    this::getInitialTerritoryArea,
+                    getLogger()
+                ),
+                this
+            );
+
+            SanctuaryCommand sanctuaryCommand = new SanctuaryCommand(this, anchorItemService);
             var command = Objects.requireNonNull(
                 getCommand("sanctuary"),
                 "sanctuary command is missing from plugin.yml"
@@ -50,9 +68,11 @@ public final class SanctuaryPlugin extends JavaPlugin {
             command.setExecutor(sanctuaryCommand);
             command.setTabCompleter(sanctuaryCommand);
 
+            getInitialTerritoryArea();
+
             getLogger().info("Sanctuary database initialized at " + databasePath.toAbsolutePath());
-            getLogger().info("Sanctuary foundation loaded successfully.");
-        } catch (SQLException | IOException exception) {
+            getLogger().info("Sanctuary anchor identity and first-placement support loaded.");
+        } catch (SQLException | IOException | IllegalStateException exception) {
             getLogger().log(Level.SEVERE, "Failed to initialize Sanctuary", exception);
             getServer().getPluginManager().disablePlugin(this);
         }
@@ -73,5 +93,19 @@ public final class SanctuaryPlugin extends JavaPlugin {
 
     public void reloadSanctuaryConfig() {
         reloadConfig();
+        getInitialTerritoryArea();
+    }
+
+    private double getInitialTerritoryArea() {
+        double value = getConfig().getDouble(
+            "anchors.initial-territory-area",
+            DEFAULT_INITIAL_TERRITORY_AREA
+        );
+        if (!Double.isFinite(value) || value <= 0.0) {
+            throw new IllegalStateException(
+                "anchors.initial-territory-area must be finite and greater than zero"
+            );
+        }
+        return value;
     }
 }

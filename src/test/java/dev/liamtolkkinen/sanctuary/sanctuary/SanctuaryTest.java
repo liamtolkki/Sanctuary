@@ -11,7 +11,6 @@ class SanctuaryTest {
     @Test
     void activeSanctuaryRequiresPosition() {
         Instant now = Instant.parse("2026-08-21T00:00:00Z");
-
         assertThrows(
             IllegalArgumentException.class,
             () -> new Sanctuary(

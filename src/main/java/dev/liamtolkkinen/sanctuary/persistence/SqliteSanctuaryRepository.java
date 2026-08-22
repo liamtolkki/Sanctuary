@@ -101,7 +101,6 @@ public final class SqliteSanctuaryRepository implements SanctuaryRepository {
             statement.setString(2, sanctuary.ownerId().toString());
             statement.setString(3, sanctuary.type().name());
             statement.setString(4, sanctuary.name());
-
             if (sanctuary.position().isPresent()) {
                 SanctuaryPosition position = sanctuary.position().orElseThrow();
                 statement.setString(5, position.world());
@@ -114,7 +113,6 @@ public final class SqliteSanctuaryRepository implements SanctuaryRepository {
                 statement.setNull(7, Types.INTEGER);
                 statement.setNull(8, Types.INTEGER);
             }
-
             statement.setInt(9, sanctuary.tier());
             statement.setDouble(10, sanctuary.territoryArea());
             statement.setString(11, sanctuary.state().name());

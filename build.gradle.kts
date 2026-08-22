@@ -1,4 +1,10 @@
 import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
+import java.net.URI
+import java.net.http.HttpClient
+import java.net.http.HttpRequest
+import java.net.http.HttpResponse
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 
 plugins {
     java
@@ -16,13 +22,65 @@ repositories {
     maven("https://repo.xenondevs.xyz/releases")
 }
 
-dependencies {
-    compileOnly("io.papermc.paper:paper-api:26.1.2.build.+")
+val extendedItemsVersion = "0.1.0-alpha.2"
+val extendedItemsJar = layout.buildDirectory.file(
+    "dependencies/extendeditems-$extendedItemsVersion.jar"
+)
 
-    // During development these are resolved from sibling composite builds
-    // when ../ExtendedUI and ../ExtendedItems exist.
+val downloadExtendedItems by tasks.registering {
+    group = "build setup"
+    description = "Downloads the pinned ExtendedItems GitHub Release JAR."
+    outputs.file(extendedItemsJar)
+
+    doLast {
+        val outputPath = extendedItemsJar.get().asFile.toPath()
+        Files.createDirectories(outputPath.parent)
+
+        val temporaryPath = outputPath.resolveSibling("${outputPath.fileName}.download")
+        val releaseUrl = URI.create(
+            "https://github.com/liamtolkki/ExtendedItems/releases/download/" +
+                "v$extendedItemsVersion/extendeditems-$extendedItemsVersion.jar"
+        )
+
+        try {
+            val client = HttpClient.newBuilder()
+                .followRedirects(HttpClient.Redirect.NORMAL)
+                .build()
+            val request = HttpRequest.newBuilder(releaseUrl)
+                .header("User-Agent", "Sanctuary-Gradle-Build")
+                .GET()
+                .build()
+            val response = client.send(
+                request,
+                HttpResponse.BodyHandlers.ofFile(temporaryPath)
+            )
+
+            if (response.statusCode() !in 200..299) {
+                throw GradleException(
+                    "Failed to download ExtendedItems $extendedItemsVersion from " +
+                        "$releaseUrl: HTTP ${response.statusCode()}"
+                )
+            }
+
+            Files.move(
+                temporaryPath,
+                outputPath,
+                StandardCopyOption.REPLACE_EXISTING
+            )
+        } finally {
+            Files.deleteIfExists(temporaryPath)
+        }
+    }
+}
+
+dependencies {
+    // ExtendedUI is still resolved from its sibling composite build during development.
     implementation("dev.liamtolkkinen:ExtendedUI:0.1.0-SNAPSHOT")
-    implementation("dev.liamtolkkinen:ExtendedItems:0.1.0-SNAPSHOT")
+
+    // ExtendedItems is pinned to the authoritative release containing Sanctuary IDs.
+    implementation(files(extendedItemsJar))
+
+    compileOnly("io.papermc.paper:paper-api:26.1.2.build.+")
 
     implementation("org.xerial:sqlite-jdbc:3.53.2.1") {
         exclude(group = "org.slf4j")
@@ -39,6 +97,7 @@ java {
 }
 
 tasks.withType<JavaCompile>().configureEach {
+    dependsOn(downloadExtendedItems)
     options.encoding = "UTF-8"
     options.release.set(25)
 }
@@ -59,6 +118,7 @@ tasks.jar {
 }
 
 tasks.named<ShadowJar>("shadowJar") {
+    dependsOn(downloadExtendedItems)
     archiveBaseName.set("sanctuary")
     archiveClassifier.set("")
 

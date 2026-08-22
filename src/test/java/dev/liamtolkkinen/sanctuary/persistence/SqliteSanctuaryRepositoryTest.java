@@ -36,7 +36,6 @@ class SqliteSanctuaryRepositoryTest {
         UUID ownerId = UUID.randomUUID();
         Instant created = Instant.parse("2026-08-21T12:00:00Z");
         Instant updated = Instant.parse("2026-08-21T12:01:00Z");
-
         Sanctuary expected = new Sanctuary(
             id,
             ownerId,
@@ -61,7 +60,6 @@ class SqliteSanctuaryRepositoryTest {
         UUID id = UUID.randomUUID();
         UUID ownerId = UUID.randomUUID();
         Instant created = Instant.parse("2026-08-21T12:00:00Z");
-
         Sanctuary active = new Sanctuary(
             id,
             ownerId,

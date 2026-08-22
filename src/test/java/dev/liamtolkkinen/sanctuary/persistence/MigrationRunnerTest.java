@@ -30,7 +30,7 @@ class MigrationRunnerTest {
             )
         ) {
             assertTrue(result.next());
-            assertEquals(7, result.getInt(1));
+            assertEquals(8, result.getInt(1));
         }
 
         try (
@@ -39,12 +39,22 @@ class MigrationRunnerTest {
                 SELECT COUNT(*)
                 FROM sqlite_master
                 WHERE type = 'table'
-                  AND name IN ('sanctuaries', 'sanctuary_trust', 'sanctuary_capabilities', 'sanctuary_security', 'sanctuary_blacklist', 'sanctuary_effect_levels')
+                  AND name IN (
+                      'sanctuaries',
+                      'sanctuary_trust',
+                      'sanctuary_capabilities',
+                      'sanctuary_security',
+                      'sanctuary_blacklist',
+                      'sanctuary_effect_levels',
+                      'sanctuary_sentry_defaults',
+                      'sentries',
+                      'sentry_overrides'
+                  )
                 """);
             var result = statement.executeQuery()
         ) {
             assertTrue(result.next());
-            assertEquals(6, result.getInt(1));
+            assertEquals(9, result.getInt(1));
         }
     }
 }

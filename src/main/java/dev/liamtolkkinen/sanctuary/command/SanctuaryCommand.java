@@ -1,5 +1,8 @@
 package dev.liamtolkkinen.sanctuary.command;
 
+import dev.liamtolkkinen.extendeditems.ExtendedItemId;
+import dev.liamtolkkinen.extendeditems.ExtendedItemIds;
+import dev.liamtolkkinen.extendeditems.ExtendedItems;
 import dev.liamtolkkinen.sanctuary.SanctuaryPlugin;
 import dev.liamtolkkinen.sanctuary.anchor.AnchorItemService;
 import dev.liamtolkkinen.sanctuary.anchor.AnchorLifecycleService;
@@ -198,6 +201,15 @@ public final class SanctuaryCommand implements CommandExecutor, TabCompleter {
                     target.sendMessage(ChatColor.GOLD + "You received an unbound Sanctuary Beacon.");
                 }
                 return true;
+            }
+
+            if (args.length == 4 && args[1].equalsIgnoreCase("givesentry")) {
+                Player target = Bukkit.getPlayerExact(args[2]);
+                if (target == null) {
+                    sender.sendMessage(ChatColor.RED + "That player is not online.");
+                    return true;
+                }
+                return giveSentry(sender, target, args[3]);
             }
         }
 
@@ -575,6 +587,84 @@ public final class SanctuaryCommand implements CommandExecutor, TabCompleter {
         }
     }
 
+    private boolean giveSentry(CommandSender sender, Player target, String typeText) {
+        if (typeText.equalsIgnoreCase("all")) {
+            for (String type : sentryTypeNames()) {
+                giveOrDrop(target, ExtendedItems.create(sentryId(type)));
+            }
+            sender.sendMessage(ChatColor.GREEN + "Gave all " + sentryTypeNames().size()
+                + " Sanctuary sentry posts to " + target.getName() + ".");
+            if (!target.equals(sender)) {
+                target.sendMessage(ChatColor.GOLD + "You received all Sanctuary sentry posts for testing.");
+            }
+            return true;
+        }
+
+        ExtendedItemId sentryId;
+        try {
+            sentryId = sentryId(typeText);
+        } catch (IllegalArgumentException exception) {
+            sender.sendMessage(ChatColor.RED + exception.getMessage());
+            sender.sendMessage(ChatColor.GRAY + "Available types: " + String.join(", ", sentryTypeNames()) + ", all");
+            return true;
+        }
+
+        giveOrDrop(target, ExtendedItems.create(sentryId));
+        sender.sendMessage(ChatColor.GREEN + "Gave " + normalizeSentryType(typeText)
+            + " sentry post to " + target.getName() + ".");
+        if (!target.equals(sender)) {
+            target.sendMessage(ChatColor.GOLD + "You received a " + normalizeSentryType(typeText) + " sentry post.");
+        }
+        return true;
+    }
+
+    private static ExtendedItemId sentryId(String typeText) {
+        return switch (normalizeSentryType(typeText)) {
+            case "iron_golem" -> ExtendedItemIds.SENTRY_IRON_GOLEM;
+            case "pillager" -> ExtendedItemIds.SENTRY_PILLAGER;
+            case "skeleton" -> ExtendedItemIds.SENTRY_SKELETON;
+            case "piglin_brute" -> ExtendedItemIds.SENTRY_PIGLIN_BRUTE;
+            case "enderman" -> ExtendedItemIds.SENTRY_ENDERMAN;
+            case "evoker" -> ExtendedItemIds.SENTRY_EVOKER;
+            case "baby_zombie" -> ExtendedItemIds.SENTRY_BABY_ZOMBIE;
+            case "blaze" -> ExtendedItemIds.SENTRY_BLAZE;
+            case "warden" -> ExtendedItemIds.SENTRY_WARDEN;
+            case "creaking" -> ExtendedItemIds.SENTRY_CREAKING;
+            case "wither" -> ExtendedItemIds.SENTRY_WITHER;
+            case "drowned" -> ExtendedItemIds.SENTRY_DROWNED;
+            case "guardian" -> ExtendedItemIds.SENTRY_GUARDIAN;
+            case "elder_guardian" -> ExtendedItemIds.SENTRY_ELDER_GUARDIAN;
+            default -> throw new IllegalArgumentException("Unknown sentry type '" + typeText + "'.");
+        };
+    }
+
+    private static String normalizeSentryType(String typeText) {
+        String normalized = typeText.trim().toLowerCase(Locale.ROOT).replace('-', '_');
+        if (normalized.startsWith("sentry_")) {
+            normalized = normalized.substring("sentry_".length());
+        }
+        return normalized;
+    }
+
+    private static List<String> sentryTypeNames() {
+        return List.of(
+            "iron_golem",
+            "pillager",
+            "skeleton",
+            "piglin_brute",
+            "enderman",
+            "evoker",
+            "baby_zombie",
+            "blaze",
+            "warden",
+            "creaking",
+            "wither",
+            "drowned",
+            "guardian",
+            "elder_guardian"
+        );
+    }
+
     private boolean printRegisteredBeacons(CommandSender sender) {
         try {
             List<Sanctuary> beacons = repository.findAll().stream().filter(value -> value.type() == SanctuaryType.BEACON).toList();
@@ -689,7 +779,7 @@ public final class SanctuaryCommand implements CommandExecutor, TabCompleter {
         }
 
         if (args.length == 2 && args[0].equalsIgnoreCase("admin") && sender.hasPermission("sanctuary.admin")) {
-            return filter(List.of("reload", "beacons", "ui", "givebeacon", "debugbeacon", "debugtrust", "permissions"), args[1]);
+            return filter(List.of("reload", "beacons", "ui", "givebeacon", "givesentry", "debugbeacon", "debugtrust", "permissions"), args[1]);
         }
 
         if (args.length == 3 && args[0].equalsIgnoreCase("admin") && args[1].equalsIgnoreCase("ui") && sender.hasPermission("sanctuary.admin")) {
@@ -743,9 +833,18 @@ public final class SanctuaryCommand implements CommandExecutor, TabCompleter {
         }
 
         if (args.length == 3 && args[0].equalsIgnoreCase("admin")
-            && (args[1].equalsIgnoreCase("givebeacon") || args[1].equalsIgnoreCase("debugbeacon"))
+            && (args[1].equalsIgnoreCase("givebeacon") || args[1].equalsIgnoreCase("debugbeacon")
+                || args[1].equalsIgnoreCase("givesentry"))
             && sender.hasPermission("sanctuary.admin")) {
             return filter(Bukkit.getOnlinePlayers().stream().map(Player::getName).sorted(String.CASE_INSENSITIVE_ORDER).toList(), args[2]);
+        }
+
+        if (args.length == 4 && args[0].equalsIgnoreCase("admin")
+            && args[1].equalsIgnoreCase("givesentry")
+            && sender.hasPermission("sanctuary.admin")) {
+            List<String> values = new ArrayList<>(sentryTypeNames());
+            values.add("all");
+            return filter(values, args[3]);
         }
 
         return List.of();

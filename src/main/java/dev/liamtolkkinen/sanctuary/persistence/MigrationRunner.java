@@ -45,6 +45,11 @@ public final class MigrationRunner {
             7,
             "beacon_effect_levels",
             "/db/migration/V007__beacon_effect_levels.sql"
+        ),
+        new DatabaseMigration(
+            8,
+            "sentries",
+            "/db/migration/V008__sentries.sql"
         )
     );
 

@@ -22,6 +22,7 @@ import dev.liamtolkkinen.sanctuary.security.SanctuaryRelationship;
 import dev.liamtolkkinen.sanctuary.security.SanctuarySecurityMode;
 import dev.liamtolkkinen.sanctuary.security.SanctuarySecurityService;
 import dev.liamtolkkinen.sanctuary.security.SanctuaryThreat;
+import dev.liamtolkkinen.sanctuary.sentry.SentryUiService;
 import dev.liamtolkkinen.sanctuary.territory.TerritoryBoundaryService;
 import dev.liamtolkkinen.sanctuary.trust.SanctuaryCapability;
 import dev.liamtolkkinen.sanctuary.trust.SanctuaryPermissionService;
@@ -53,6 +54,7 @@ public final class SanctuaryUiService {
     private final SanctuarySecurityService securityService;
     private final SanctuaryEffectService effectService;
     private final TerritoryBoundaryService boundaryService;
+    private final SentryUiService sentryUiService;
 
     public SanctuaryUiService(
         SanctuaryPlugin plugin,
@@ -61,7 +63,8 @@ public final class SanctuaryUiService {
         SanctuaryPermissionService permissionService,
         SanctuarySecurityService securityService,
         SanctuaryEffectService effectService,
-        TerritoryBoundaryService boundaryService
+        TerritoryBoundaryService boundaryService,
+        SentryUiService sentryUiService
     ) {
         this.plugin = plugin;
         this.ui = ui;
@@ -70,6 +73,7 @@ public final class SanctuaryUiService {
         this.securityService = securityService;
         this.effectService = effectService;
         this.boundaryService = boundaryService;
+        this.sentryUiService = sentryUiService;
     }
 
     public void openPersonal(Player player, Sanctuary sanctuary) {
@@ -184,6 +188,12 @@ public final class SanctuaryUiService {
                 "<red>Security",
                 List.of("<gray>View security mode and threat policy."),
                 click -> click.menu().open(new SecurityMenu(sanctuary.id(), adminMode))
+            ));
+            menu.set(30, button(
+                Material.ARMOR_STAND,
+                "<yellow>Sentries",
+                List.of("<gray>Manage global sentry behavior and", "<gray>registered sentry posts."),
+                click -> sentryUiService.openDashboard(click.player(), sanctuary)
             ));
 
             if (adminMode && sanctuary.debugEphemeral()) {

@@ -278,3 +278,38 @@ Implemented:
 - Neutral players entering a Sanctuary in Lockdown receive an action-bar warning that they do not have permission to enter.
 - Elytra suppression now displays `Sanctuary defenses active | Elytra Disabled` in the action bar while suppression is active and immediately when a blocked glide attempt occurs.
 - Elytra suppression remains event-driven with the periodic effect task retained as a safety net.
+
+## Sentry defense foundation
+
+Implemented:
+
+- Sanctuary uses the released ExtendedItems sentry post IDs as the item identity source.
+- Sentry posts can only register when placed inside an active Sanctuary.
+- A placed sentry belongs to the Sanctuary containing its post, not to the player who placed the item.
+- Breaking a registered sentry post unregisters it, clears its per-sentry overrides, despawns its mob, and returns a clean ExtendedItems sentry post item.
+- Normal Sanctuary sentries can be managed by the Sanctuary owner. Admins can manage sentries inside debug Sanctuaries.
+- Beacon UI now exposes global sentry behavior defaults and the registered sentry list.
+- Individual sentries have three-state behavior overrides: INHERIT, ENABLED, DISABLED.
+- Implemented triggers: container opened, entity hurt by an untrusted player, hostile mob present, neutral mob present, Beacon proximity, owner attacked, block broken, block placed, redstone/interactable used, sentry attacked, Beacon attacked.
+- Each sentry type has its own target leash radius measured from its home post. Enderman currently has the largest radius at 40 blocks.
+- Sentries only acquire targets inside both their home leash and their Sanctuary.
+- Target and return-home paths are rejected if Paper pathfinding reports points outside the Sanctuary.
+- Entity movement is also checked directly. A sentry that physically crosses the Sanctuary boundary is removed and enters respawn cooldown.
+- Idle sentries continuously pathfind back to their home post.
+- Recall clears the target, blocks normal combat by entering RECALLING state, paths home, and teleports home only if it has not returned after 15 seconds.
+- Sentry death drops no items or XP and starts a 30 second respawn cooldown. Respawn occurs at the home post.
+- Disabled sentries keep registration and overrides, stop normal AI, and show a visible `[Disabled]` name marker.
+- Vanilla mobs cannot target registered sentries. Non-player mob damage against sentries is cancelled.
+- Managed Wardens cannot build anger toward targets that Sanctuary has not authorized.
+- Managed Wither explosions do not damage blocks.
+- Home-chunk unloads do not count as sentry death, avoiding duplicate respawns after chunk reload.
+
+## Admin sentry give command
+
+For testing, admins can create released ExtendedItems sentry post items with:
+
+```text
+/sanctuary admin givesentry <player> <type|all>
+```
+
+The command accepts short sentry names such as `skeleton`, `enderman`, and `warden`, as well as full `sentry_*` IDs. `all` gives the complete released sentry post catalog. This is admin/debug tooling only and does not define normal gameplay acquisition.

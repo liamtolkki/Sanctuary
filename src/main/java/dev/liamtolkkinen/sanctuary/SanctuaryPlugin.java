@@ -17,6 +17,11 @@ import dev.liamtolkkinen.sanctuary.persistence.SqliteSanctuaryRepository;
 import dev.liamtolkkinen.sanctuary.persistence.SqliteSanctuaryEffectRepository;
 import dev.liamtolkkinen.sanctuary.persistence.SqliteSanctuarySecurityRepository;
 import dev.liamtolkkinen.sanctuary.persistence.SqliteSanctuaryTrustRepository;
+import dev.liamtolkkinen.sanctuary.persistence.SqliteSentryRepository;
+import dev.liamtolkkinen.sanctuary.sentry.SentryListener;
+import dev.liamtolkkinen.sanctuary.sentry.SentryService;
+import dev.liamtolkkinen.sanctuary.sentry.SentryTask;
+import dev.liamtolkkinen.sanctuary.sentry.SentryUiService;
 import dev.liamtolkkinen.sanctuary.effect.ElytraSuppressionListener;
 import dev.liamtolkkinen.sanctuary.effect.SanctuaryEffectService;
 import dev.liamtolkkinen.sanctuary.effect.SanctuaryEffectTask;
@@ -81,6 +86,7 @@ public final class SanctuaryPlugin extends JavaPlugin {
             var securityService = new SanctuarySecurityService(securityRepository, permissionService);
             var effectRepository = new SqliteSanctuaryEffectRepository(databaseManager);
             var effectService = new SanctuaryEffectService(effectRepository, securityService);
+            var sentryRepository = new SqliteSentryRepository(databaseManager);
             sanctuaryApi = new DefaultSanctuaryApi(repository, getLogger());
 
             getServer().getServicesManager().register(
@@ -134,6 +140,9 @@ public final class SanctuaryPlugin extends JavaPlugin {
             );
 
             TerritoryPresenceService territoryPresenceService = new TerritoryPresenceService();
+            SentryService sentryService = new SentryService(
+                this, repository, sentryRepository, securityService, territoryPresenceService, getLogger()
+            );
             getServer().getPluginManager().registerEvents(
                 new TerritoryAwarenessListener(
                     repository,
@@ -184,6 +193,9 @@ public final class SanctuaryPlugin extends JavaPlugin {
             );
 
             extendedUi = new ExtendedUI(this);
+            SentryUiService sentryUiService = new SentryUiService(
+                extendedUi, repository, sentryRepository, sentryService, getLogger()
+            );
             SanctuaryUiService uiService = new SanctuaryUiService(
                 this,
                 extendedUi,
@@ -191,8 +203,16 @@ public final class SanctuaryPlugin extends JavaPlugin {
                 permissionService,
                 securityService,
                 effectService,
-                boundaryService
+                boundaryService,
+                sentryUiService
             );
+            getServer().getPluginManager().registerEvents(
+                new SentryListener(
+                    sentryService, sentryRepository, repository, anchorItemService, sentryUiService, getLogger()
+                ),
+                this
+            );
+            new SentryTask(sentryService, sentryRepository, repository, getLogger()).start(this);
             getServer().getPluginManager().registerEvents(
                 new SanctuaryUiListener(
                     anchorItemService,
@@ -224,7 +244,7 @@ public final class SanctuaryPlugin extends JavaPlugin {
             validateConfiguration();
 
             getLogger().info("Sanctuary database initialized at " + databasePath.toAbsolutePath());
-            getLogger().info("Sanctuary Beacon lifecycle, territory, awareness, trust, security, layered Beacon effects, player protections, and management UI loaded.");
+            getLogger().info("Sanctuary Beacon lifecycle, territory, awareness, trust, security, layered Beacon effects, player protections, and management UI and sentry defenses loaded.");
         } catch (SQLException | IOException | IllegalStateException exception) {
             getLogger().log(Level.SEVERE, "Failed to initialize Sanctuary", exception);
             getServer().getPluginManager().disablePlugin(this);

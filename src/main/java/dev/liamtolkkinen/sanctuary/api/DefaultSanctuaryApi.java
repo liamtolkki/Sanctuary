@@ -56,7 +56,7 @@ public final class DefaultSanctuaryApi implements SanctuaryApi {
             sanctuary.name(),
             position,
             sanctuary.tier(),
-            sanctuary.territoryArea(),
+            sanctuary.territoryRadius(),
             sanctuary.state()
         );
     }

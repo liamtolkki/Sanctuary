@@ -70,7 +70,7 @@ class InitialAnchorPlacementServiceTest {
         assertEquals(Optional.of(position), created.position());
         assertEquals(1, created.tier());
         assertEquals(1, created.anchorGeneration());
-        assertEquals(100.0, created.territoryArea());
+        assertEquals(100.0, created.territoryRadius());
         assertEquals(SanctuaryState.ACTIVE, created.state());
         assertEquals(1, repository.values.size());
         assertEquals(created, repository.findById(anchorId).orElseThrow());

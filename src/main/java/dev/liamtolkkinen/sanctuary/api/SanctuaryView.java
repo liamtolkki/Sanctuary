@@ -12,7 +12,7 @@ public record SanctuaryView(
     String name,
     Optional<SanctuaryPositionView> position,
     int tier,
-    double territoryArea,
+    double territoryRadius,
     SanctuaryState state
 ) {
 }

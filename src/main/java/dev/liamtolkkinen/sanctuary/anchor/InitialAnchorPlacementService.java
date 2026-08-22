@@ -42,7 +42,7 @@ public final class InitialAnchorPlacementService {
         AnchorMetadata metadata,
         String ownerName,
         SanctuaryPosition position,
-        double territoryArea,
+        double territoryRadius,
         double maximumRadius,
         double spacingMargin
     ) throws SQLException, AnchorPlacementException {
@@ -59,9 +59,9 @@ public final class InitialAnchorPlacementService {
         if (ownerName.isBlank()) {
             throw new AnchorPlacementException("Owner name must not be blank");
         }
-        if (!Double.isFinite(territoryArea) || territoryArea <= 0.0) {
+        if (!Double.isFinite(territoryRadius) || territoryRadius <= 0.0) {
             throw new AnchorPlacementException(
-                "Initial territory area must be finite and greater than zero"
+                "Initial territory radius must be finite and greater than zero"
             );
         }
 
@@ -82,7 +82,7 @@ public final class InitialAnchorPlacementService {
             Optional.of(position),
             metadata.tier(),
             metadata.generation(),
-            territoryArea,
+            territoryRadius,
             SanctuaryState.ACTIVE,
             Optional.empty(),
             Optional.empty(),

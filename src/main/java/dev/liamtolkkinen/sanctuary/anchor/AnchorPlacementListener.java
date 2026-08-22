@@ -19,7 +19,7 @@ public final class AnchorPlacementListener implements Listener {
     private final AnchorItemService anchorItemService;
     private final InitialAnchorPlacementService initialPlacementService;
     private final AnchorLifecycleService lifecycleService;
-    private final DoubleSupplier initialTerritoryArea;
+    private final DoubleSupplier initialTerritoryRadius;
     private final DoubleSupplier maximumTerritoryRadius;
     private final DoubleSupplier spacingMargin;
     private final Logger logger;
@@ -28,7 +28,7 @@ public final class AnchorPlacementListener implements Listener {
         AnchorItemService anchorItemService,
         InitialAnchorPlacementService initialPlacementService,
         AnchorLifecycleService lifecycleService,
-        DoubleSupplier initialTerritoryArea,
+        DoubleSupplier initialTerritoryRadius,
         DoubleSupplier maximumTerritoryRadius,
         DoubleSupplier spacingMargin,
         Logger logger
@@ -36,7 +36,7 @@ public final class AnchorPlacementListener implements Listener {
         this.anchorItemService = anchorItemService;
         this.initialPlacementService = initialPlacementService;
         this.lifecycleService = lifecycleService;
-        this.initialTerritoryArea = initialTerritoryArea;
+        this.initialTerritoryRadius = initialTerritoryRadius;
         this.maximumTerritoryRadius = maximumTerritoryRadius;
         this.spacingMargin = spacingMargin;
         this.logger = logger;
@@ -106,7 +106,7 @@ public final class AnchorPlacementListener implements Listener {
                 boundMetadata,
                 event.getPlayer().getName(),
                 position,
-                initialTerritoryArea.getAsDouble(),
+                initialTerritoryRadius.getAsDouble(),
                 maximumTerritoryRadius.getAsDouble(),
                 spacingMargin.getAsDouble()
             );

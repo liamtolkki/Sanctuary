@@ -135,7 +135,7 @@ territory:
   spacing-margin: 16.0
 ```
 
-The current Sanctuary radius is still derived from each Sanctuary's stored `territory_area`:
+The current Sanctuary radius is still derived from each Sanctuary's stored `territory_radius`:
 
 ```text
 radius = sqrt(area / PI)
@@ -186,3 +186,23 @@ Restore the intended production values after testing.
 3. The `INACTIVE` Sanctuary ID should be listed.
 4. The `DESTROYED` Sanctuary ID must not be listed.
 5. Active and ephemeral debug Sanctuaries must not be listed either.
+
+## Runtime validation for territory awareness
+
+Build and deploy, fully restart Paper, then use `/sanctuary admin beacons` to obtain an active Sanctuary ID.
+
+Test normal entry by walking from outside the calculated radius to inside it. With `territory.awareness.entry-title: true`, the Sanctuary name should appear as a title once per entry. Walk back out and re-enter to verify a second transition.
+
+Test debug entry with `/sanctuary admin debugbeacon`, place it, walk outside its territory, then enter it. The entering player should receive a `[Sanctuary Debug]` chat line in addition to normal configured awareness behavior. Normal Sanctuary entries must not print this debug line.
+
+Test boundary visualization with `/sanctuary boundary <name|all>`. The particle ring should be centered on the Beacon block and match the same horizontal radius used by entry detection.
+
+## Radius-Based Territory and Proximity Boundaries
+
+Territory progression now stores radius directly. V004 converts existing `territory_area` values to an equivalent `territory_radius` so existing physical boundaries do not move during upgrade.
+
+Boundary particles are viewer-scoped with `Player.spawnParticle`, so manual and automatic boundary rendering is visible only to the player receiving it.
+
+Automatic proximity rendering draws only cylinder-surface points within the configured trigger distance. For each horizontal boundary point at distance `d` from the viewer, the vertical half-height is `sqrt(triggerDistance^2 - d^2)`. This produces a local curved patch that grows as the viewer approaches and disappears outside the trigger distance.
+
+`/sanctuary boundary <name>` uses human-readable name selectors. `/sanctuary boundary all` renders all eligible active boundaries whose boundary edge is within `territory.boundary.maximum-render-distance` of the viewer.

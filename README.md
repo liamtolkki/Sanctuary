@@ -172,7 +172,7 @@ Recovery and territory configuration:
 
 ```yaml
 anchors:
-  initial-territory-area: 100.0
+  initial-territory-radius: 18.0
   recovery:
     enabled: true
     cooldown-seconds: 300
@@ -232,8 +232,48 @@ Admins may place the debug Beacon even though its synthetic owner is not the pla
 
 ## Next milestone
 
-The Beacon lifecycle, territory math, and anchor spacing foundation are now established. Entry/exit tracking and boundary visualization are natural next territory-facing steps.
+The Beacon lifecycle, territory math, spacing, presence tracking, and boundary visualization foundations are now established. Trust/capability and protection work can build on this runtime territory awareness.
 
 UI, trust, protections, advancements, sentries, companions, and Conduit-specific gameplay remain later work.
 
 See `IMPLEMENTATION-STATUS.md`, `DEVELOPMENT.md`, and `docs/Minecraft-Plugin-Architecture-and-Development-Plan.md` for additional project detail.
+
+## Territory presence and awareness
+
+Active Sanctuary territory is now evaluated while players move horizontally through the world.
+
+- Entering an active Sanctuary may show an entry title.
+- Leaving may print a configurable exit message.
+- An online owner may receive a configurable alert when another player enters.
+- Direct movement from one Sanctuary into another is handled as an exit followed by an entry.
+- If same-owner territories overlap, the closest anchor is selected deterministically.
+- `INACTIVE` and `DESTROYED` Sanctuaries never count as current territory.
+- Entering a `DEBUG-EPHEMERAL` Sanctuary additionally prints a debug chat message to the entering player.
+
+Boundary visualization:
+
+```text
+/sanctuary boundary <name|all>
+```
+
+Owners may display their own active Sanctuary boundary. Players with `sanctuary.admin` may display any active Sanctuary boundary. The boundary is drawn with `END_ROD` particles around the horizontal territory circle.
+
+Awareness and boundary configuration:
+
+```yaml
+territory:
+  maximum-radius: 96.0
+  spacing-margin: 16.0
+  awareness:
+    entry-title: true
+    exit-message: false
+    owner-entry-alerts: true
+  boundary:
+    particle-spacing: 1.5
+    display-seconds: 10
+    maximum-render-distance: 128.0
+    automatic:
+      enabled: true
+      trigger-distance: 12.0
+      vertical-particle-spacing: 1.5
+```

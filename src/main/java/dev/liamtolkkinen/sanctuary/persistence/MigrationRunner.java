@@ -25,6 +25,11 @@ public final class MigrationRunner {
             3,
             "territory_debug_beacons",
             "/db/migration/V003__territory_debug_beacons.sql"
+        ),
+        new DatabaseMigration(
+            4,
+            "territory_radius",
+            "/db/migration/V004__territory_radius.sql"
         )
     );
 
@@ -82,6 +87,9 @@ public final class MigrationRunner {
                     statement.execute(statementSql);
                 }
             }
+            if (migration.version() == 4) {
+                backfillTerritoryRadius(connection);
+            }
             try (var statement = connection.prepareStatement("""
                 INSERT INTO schema_migrations(version, name, applied_at)
                 VALUES (?, ?, ?)
@@ -97,6 +105,35 @@ public final class MigrationRunner {
             throw exception;
         } finally {
             connection.setAutoCommit(originalAutoCommit);
+        }
+    }
+
+    private static void backfillTerritoryRadius(Connection connection) throws SQLException {
+        java.util.List<String> ids = new java.util.ArrayList<>();
+        java.util.List<Double> radii = new java.util.ArrayList<>();
+        try (
+            var select = connection.createStatement();
+            ResultSet rows = select.executeQuery("SELECT id, territory_area FROM sanctuaries")
+        ) {
+            while (rows.next()) {
+                double area = rows.getDouble("territory_area");
+                if (!Double.isFinite(area) || area <= 0.0) {
+                    throw new SQLException("Cannot migrate invalid territory area for " + rows.getString("id"));
+                }
+                ids.add(rows.getString("id"));
+                radii.add(Math.sqrt(area / Math.PI));
+            }
+        }
+
+        try (var update = connection.prepareStatement(
+            "UPDATE sanctuaries SET territory_radius = ? WHERE id = ?"
+        )) {
+            for (int index = 0; index < ids.size(); index++) {
+                update.setDouble(1, radii.get(index));
+                update.setString(2, ids.get(index));
+                update.addBatch();
+            }
+            update.executeBatch();
         }
     }
 

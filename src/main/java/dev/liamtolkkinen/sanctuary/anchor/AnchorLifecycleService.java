@@ -308,7 +308,7 @@ public final class AnchorLifecycleService {
             position,
             sanctuary.tier(),
             anchorGeneration,
-            sanctuary.territoryArea(),
+            sanctuary.territoryRadius(),
             state,
             destroyedAt,
             destructionReason,

@@ -122,13 +122,14 @@ public final class SqliteSanctuaryRepository implements SanctuaryRepository {
                     tier,
                     anchor_generation,
                     territory_area,
+                    territory_radius,
                     state,
                     destroyed_at,
                     destruction_reason,
                     debug_ephemeral,
                     created_at,
                     updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     owner_uuid = excluded.owner_uuid,
                     type = excluded.type,
@@ -140,6 +141,7 @@ public final class SqliteSanctuaryRepository implements SanctuaryRepository {
                     tier = excluded.tier,
                     anchor_generation = excluded.anchor_generation,
                     territory_area = excluded.territory_area,
+                    territory_radius = excluded.territory_radius,
                     state = excluded.state,
                     destroyed_at = excluded.destroyed_at,
                     destruction_reason = excluded.destruction_reason,
@@ -165,17 +167,18 @@ public final class SqliteSanctuaryRepository implements SanctuaryRepository {
             }
             statement.setInt(9, sanctuary.tier());
             statement.setInt(10, sanctuary.anchorGeneration());
-            statement.setDouble(11, sanctuary.territoryArea());
-            statement.setString(12, sanctuary.state().name());
-            setOptionalInstant(statement, 13, sanctuary.destroyedAt());
+            statement.setDouble(11, Math.PI * sanctuary.territoryRadius() * sanctuary.territoryRadius());
+            statement.setDouble(12, sanctuary.territoryRadius());
+            statement.setString(13, sanctuary.state().name());
+            setOptionalInstant(statement, 14, sanctuary.destroyedAt());
             if (sanctuary.destructionReason().isPresent()) {
-                statement.setString(14, sanctuary.destructionReason().orElseThrow());
+                statement.setString(15, sanctuary.destructionReason().orElseThrow());
             } else {
-                statement.setNull(14, Types.VARCHAR);
+                statement.setNull(15, Types.VARCHAR);
             }
-            statement.setInt(15, sanctuary.debugEphemeral() ? 1 : 0);
-            statement.setString(16, sanctuary.createdAt().toString());
-            statement.setString(17, sanctuary.updatedAt().toString());
+            statement.setInt(16, sanctuary.debugEphemeral() ? 1 : 0);
+            statement.setString(17, sanctuary.createdAt().toString());
+            statement.setString(18, sanctuary.updatedAt().toString());
             statement.executeUpdate();
         }
     }
@@ -214,7 +217,7 @@ public final class SqliteSanctuaryRepository implements SanctuaryRepository {
             position,
             result.getInt("tier"),
             result.getInt("anchor_generation"),
-            result.getDouble("territory_area"),
+            result.getDouble("territory_radius"),
             SanctuaryState.valueOf(result.getString("state")),
             destroyedAtValue == null
                 ? Optional.empty()

@@ -6,7 +6,7 @@ names:
   maximum-length: 32
 
 anchors:
-  initial-territory-area: 100.0
+  initial-territory-radius: 18.0
   recovery:
     enabled: true
     cooldown-seconds: 300
@@ -14,3 +14,15 @@ anchors:
 territory:
   maximum-radius: 96.0
   spacing-margin: 16.0
+  awareness:
+    entry-title: true
+    exit-message: false
+    owner-entry-alerts: true
+  boundary:
+    particle-spacing: 1.5
+    display-seconds: 10
+    maximum-render-distance: 128.0
+    automatic:
+      enabled: true
+      trigger-distance: 12.0
+      vertical-particle-spacing: 1.5

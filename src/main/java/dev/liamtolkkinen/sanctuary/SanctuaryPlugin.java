@@ -18,16 +18,24 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.SQLException;
 import java.util.Objects;
-import dev.liamtolkkinen.sanctuary.territory.TerritoryCalculator;
+import dev.liamtolkkinen.sanctuary.territory.TerritoryAwarenessListener;
+import dev.liamtolkkinen.sanctuary.territory.TerritoryBoundaryService;
+import dev.liamtolkkinen.sanctuary.territory.TerritoryBoundaryProximityTask;
+import dev.liamtolkkinen.sanctuary.territory.TerritoryPresenceService;
 import java.util.logging.Level;
 import org.bukkit.plugin.ServicePriority;
 import org.bukkit.plugin.java.JavaPlugin;
 
 public final class SanctuaryPlugin extends JavaPlugin {
-    private static final double DEFAULT_INITIAL_TERRITORY_AREA = 100.0;
+    private static final double DEFAULT_INITIAL_TERRITORY_RADIUS = 18.0;
     private static final long DEFAULT_RECOVERY_COOLDOWN_SECONDS = 300L;
-    private static final double DEFAULT_MAXIMUM_TERRITORY_RADIUS = 64.0;
+    private static final double DEFAULT_MAXIMUM_TERRITORY_RADIUS = 96.0;
     private static final double DEFAULT_TERRITORY_SPACING_MARGIN = 16.0;
+    private static final double DEFAULT_BOUNDARY_PARTICLE_SPACING = 1.5;
+    private static final int DEFAULT_BOUNDARY_DISPLAY_SECONDS = 10;
+    private static final double DEFAULT_BOUNDARY_MAX_RENDER_DISTANCE = 128.0;
+    private static final double DEFAULT_BOUNDARY_TRIGGER_DISTANCE = 12.0;
+    private static final double DEFAULT_BOUNDARY_VERTICAL_SPACING = 1.5;
 
     private SanctuaryApi sanctuaryApi;
 
@@ -64,7 +72,7 @@ public final class SanctuaryPlugin extends JavaPlugin {
                     anchorItemService,
                     initialPlacementService,
                     lifecycleService,
-                    this::getInitialTerritoryArea,
+                    this::getInitialTerritoryRadius,
                     this::getMaximumTerritoryRadius,
                     this::getTerritorySpacingMargin,
                     getLogger()
@@ -87,12 +95,35 @@ public final class SanctuaryPlugin extends JavaPlugin {
                 ),
                 this
             );
+            TerritoryBoundaryService boundaryService = new TerritoryBoundaryService(this);
+
+            getServer().getPluginManager().registerEvents(
+                new TerritoryAwarenessListener(
+                    repository,
+                    new TerritoryPresenceService(),
+                    this::isTerritoryEntryTitleEnabled,
+                    this::isTerritoryExitMessageEnabled,
+                    this::isOwnerEntryAlertsEnabled,
+                    getLogger()
+                ),
+                this
+            );
+            new TerritoryBoundaryProximityTask(
+                repository,
+                boundaryService,
+                this::isAutomaticBoundaryEnabled,
+                this::getAutomaticBoundaryTriggerDistance,
+                this::getBoundaryParticleSpacing,
+                this::getBoundaryVerticalParticleSpacing,
+                getLogger()
+            ).start(this);
 
             SanctuaryCommand sanctuaryCommand = new SanctuaryCommand(
                 this,
                 anchorItemService,
                 lifecycleService,
                 new DebugBeaconRegistrationService(repository),
+                boundaryService,
                 repository
             );
             var command = Objects.requireNonNull(
@@ -105,7 +136,7 @@ public final class SanctuaryPlugin extends JavaPlugin {
             validateConfiguration();
 
             getLogger().info("Sanctuary database initialized at " + databasePath.toAbsolutePath());
-            getLogger().info("Sanctuary Beacon lifecycle, territory, and spacing support loaded.");
+            getLogger().info("Sanctuary Beacon lifecycle, territory, spacing, and awareness support loaded.");
         } catch (SQLException | IOException | IllegalStateException exception) {
             getLogger().log(Level.SEVERE, "Failed to initialize Sanctuary", exception);
             getServer().getPluginManager().disablePlugin(this);
@@ -148,9 +179,8 @@ public final class SanctuaryPlugin extends JavaPlugin {
     }
 
     private void validateConfiguration() {
-        getInitialTerritoryArea();
+        double initialRadius = getInitialTerritoryRadius();
         getAnchorRecoveryCooldownSeconds();
-        double initialRadius = TerritoryCalculator.radiusForArea(getInitialTerritoryArea());
         if (getMaximumTerritoryRadius() < initialRadius) {
             throw new IllegalStateException(
                 "territory.maximum-radius must be at least the initial territory radius ("
@@ -159,6 +189,49 @@ public final class SanctuaryPlugin extends JavaPlugin {
             );
         }
         getTerritorySpacingMargin();
+        getBoundaryParticleSpacing();
+        getBoundaryDisplaySeconds();
+        getBoundaryMaximumRenderDistance();
+        getAutomaticBoundaryTriggerDistance();
+        getBoundaryVerticalParticleSpacing();
+    }
+
+    public boolean isTerritoryEntryTitleEnabled() {
+        return getConfig().getBoolean("territory.awareness.entry-title", true);
+    }
+
+    public boolean isTerritoryExitMessageEnabled() {
+        return getConfig().getBoolean("territory.awareness.exit-message", false);
+    }
+
+    public boolean isOwnerEntryAlertsEnabled() {
+        return getConfig().getBoolean("territory.awareness.owner-entry-alerts", true);
+    }
+
+    public double getBoundaryParticleSpacing() {
+        double value = getConfig().getDouble(
+            "territory.boundary.particle-spacing",
+            DEFAULT_BOUNDARY_PARTICLE_SPACING
+        );
+        if (!Double.isFinite(value) || value <= 0.0) {
+            throw new IllegalStateException(
+                "territory.boundary.particle-spacing must be finite and greater than zero"
+            );
+        }
+        return value;
+    }
+
+    public int getBoundaryDisplaySeconds() {
+        int value = getConfig().getInt(
+            "territory.boundary.display-seconds",
+            DEFAULT_BOUNDARY_DISPLAY_SECONDS
+        );
+        if (value < 1) {
+            throw new IllegalStateException(
+                "territory.boundary.display-seconds must be at least 1"
+            );
+        }
+        return value;
     }
 
     public double getMaximumTerritoryRadius() {
@@ -187,14 +260,57 @@ public final class SanctuaryPlugin extends JavaPlugin {
         return value;
     }
 
-    public double getInitialTerritoryArea() {
+    public double getInitialTerritoryRadius() {
         double value = getConfig().getDouble(
-            "anchors.initial-territory-area",
-            DEFAULT_INITIAL_TERRITORY_AREA
+            "anchors.initial-territory-radius",
+            DEFAULT_INITIAL_TERRITORY_RADIUS
         );
         if (!Double.isFinite(value) || value <= 0.0) {
             throw new IllegalStateException(
-                "anchors.initial-territory-area must be finite and greater than zero"
+                "anchors.initial-territory-radius must be finite and greater than zero"
+            );
+        }
+        return value;
+    }
+
+    public double getBoundaryMaximumRenderDistance() {
+        double value = getConfig().getDouble(
+            "territory.boundary.maximum-render-distance",
+            DEFAULT_BOUNDARY_MAX_RENDER_DISTANCE
+        );
+        if (!Double.isFinite(value) || value <= 0.0) {
+            throw new IllegalStateException(
+                "territory.boundary.maximum-render-distance must be finite and greater than zero"
+            );
+        }
+        return value;
+    }
+
+    public boolean isAutomaticBoundaryEnabled() {
+        return getConfig().getBoolean("territory.boundary.automatic.enabled", true);
+    }
+
+    public double getAutomaticBoundaryTriggerDistance() {
+        double value = getConfig().getDouble(
+            "territory.boundary.automatic.trigger-distance",
+            DEFAULT_BOUNDARY_TRIGGER_DISTANCE
+        );
+        if (!Double.isFinite(value) || value <= 0.0) {
+            throw new IllegalStateException(
+                "territory.boundary.automatic.trigger-distance must be finite and greater than zero"
+            );
+        }
+        return value;
+    }
+
+    public double getBoundaryVerticalParticleSpacing() {
+        double value = getConfig().getDouble(
+            "territory.boundary.automatic.vertical-particle-spacing",
+            DEFAULT_BOUNDARY_VERTICAL_SPACING
+        );
+        if (!Double.isFinite(value) || value <= 0.0) {
+            throw new IllegalStateException(
+                "territory.boundary.automatic.vertical-particle-spacing must be finite and greater than zero"
             );
         }
         return value;

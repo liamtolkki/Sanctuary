@@ -24,10 +24,10 @@ public final class DebugBeaconRegistrationService {
         this.clock = Objects.requireNonNull(clock, "clock");
     }
 
-    public Sanctuary register(double territoryArea) throws SQLException {
-        if (!Double.isFinite(territoryArea) || territoryArea <= 0.0) {
+    public Sanctuary register(double territoryRadius) throws SQLException {
+        if (!Double.isFinite(territoryRadius) || territoryRadius <= 0.0) {
             throw new IllegalArgumentException(
-                "territoryArea must be finite and greater than zero"
+                "territoryRadius must be finite and greater than zero"
             );
         }
 
@@ -43,7 +43,7 @@ public final class DebugBeaconRegistrationService {
             Optional.empty(),
             1,
             1,
-            territoryArea,
+            territoryRadius,
             SanctuaryState.INACTIVE,
             Optional.empty(),
             Optional.empty(),

@@ -13,7 +13,7 @@ public record Sanctuary(
     Optional<SanctuaryPosition> position,
     int tier,
     int anchorGeneration,
-    double territoryArea,
+    double territoryRadius,
     SanctuaryState state,
     Optional<Instant> destroyedAt,
     Optional<String> destructionReason,
@@ -42,8 +42,8 @@ public record Sanctuary(
         if (anchorGeneration < 1) {
             throw new IllegalArgumentException("anchorGeneration must be at least 1");
         }
-        if (!Double.isFinite(territoryArea) || territoryArea <= 0.0) {
-            throw new IllegalArgumentException("territoryArea must be finite and greater than zero");
+        if (!Double.isFinite(territoryRadius) || territoryRadius <= 0.0) {
+            throw new IllegalArgumentException("territoryRadius must be finite and greater than zero");
         }
         if (state == SanctuaryState.ACTIVE && position.isEmpty()) {
             throw new IllegalArgumentException("an active Sanctuary must have an anchor position");

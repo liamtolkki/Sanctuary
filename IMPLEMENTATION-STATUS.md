@@ -78,7 +78,7 @@
 
 ```yaml
 anchors:
-  initial-territory-area: 100.0
+  initial-territory-radius: 18.0
   recovery:
     enabled: true
     cooldown-seconds: 300
@@ -130,4 +130,30 @@ ExtendedItems `0.1.0-alpha.2` is downloaded from its exact GitHub Release asset 
 
 ## Next implementation milestone
 
-Build player entry/exit tracking and local boundary visualization on top of the completed territory and spacing foundation.
+Territory presence and boundary visualization are now implemented. The next major gameplay layer is trust/capability and protection behavior.
+
+## Territory presence and awareness completed
+
+Implemented after the territory/spacing milestone:
+
+- Runtime active-territory membership detection
+- Enter and exit transition tracking
+- Direct Sanctuary-to-Sanctuary transitions
+- Closest-anchor selection for overlapping same-owner territories
+- Configurable entry titles
+- Configurable exit chat messages
+- Configurable online-owner entry alerts
+- Debug-only entry chat output for ephemeral debug Sanctuaries
+- `/sanctuary boundary <name|all>` particle visualization
+- Boundary particle spacing and display-duration configuration
+- Tests for territory membership selection and boundary point calculation
+
+## Boundary Refactor
+
+Implemented:
+- Radius is the gameplay/persistence primitive (`territory_radius`).
+- V004 preserves old territory size by converting legacy area values.
+- Manual boundary particles are visible only to the invoking player.
+- Automatic local proximity boundary visualization uses distance-limited vertical blob geometry.
+- Human-readable boundary selectors prefer Sanctuary display names and owner names before short ID suffixes.
+- `/sanctuary boundary all` respects the configured maximum render distance.

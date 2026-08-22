@@ -11,7 +11,7 @@ import dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryPosition;
 import dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryRepository;
 import dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryState;
 import dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryType;
-import dev.liamtolkkinen.sanctuary.territory.TerritoryCalculator;
+import dev.liamtolkkinen.sanctuary.territory.TerritoryBoundaryService;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -37,6 +37,7 @@ public final class SanctuaryCommand implements CommandExecutor, TabCompleter {
     private final AnchorItemService anchorItemService;
     private final AnchorLifecycleService lifecycleService;
     private final DebugBeaconRegistrationService debugBeaconService;
+    private final TerritoryBoundaryService boundaryService;
     private final SanctuaryRepository repository;
 
     public SanctuaryCommand(
@@ -44,12 +45,14 @@ public final class SanctuaryCommand implements CommandExecutor, TabCompleter {
         AnchorItemService anchorItemService,
         AnchorLifecycleService lifecycleService,
         DebugBeaconRegistrationService debugBeaconService,
+        TerritoryBoundaryService boundaryService,
         SanctuaryRepository repository
     ) {
         this.plugin = plugin;
         this.anchorItemService = anchorItemService;
         this.lifecycleService = lifecycleService;
         this.debugBeaconService = debugBeaconService;
+        this.boundaryService = boundaryService;
         this.repository = repository;
     }
 
@@ -72,6 +75,14 @@ public final class SanctuaryCommand implements CommandExecutor, TabCompleter {
                 ChatColor.GRAY + "Beacon lifecycle, territory, and spacing validation are active."
             );
             return true;
+        }
+
+        if (args.length == 2 && args[0].equalsIgnoreCase("boundary")) {
+            if (!(sender instanceof Player player)) {
+                sender.sendMessage(ChatColor.RED + "Only a player can display Sanctuary boundaries.");
+                return true;
+            }
+            return showBoundary(player, args[1]);
         }
 
         if (args.length == 2 && args[0].equalsIgnoreCase("recover")) {
@@ -145,10 +156,99 @@ public final class SanctuaryCommand implements CommandExecutor, TabCompleter {
 
         sender.sendMessage(
             ChatColor.YELLOW
-                + "Usage: /sanctuary [status|recover <sanctuary-id>|admin reload|"
+                + "Usage: /sanctuary [status|boundary <name|all>|recover <sanctuary-id>|admin reload|"
                 + "admin beacons|admin givebeacon <player>|admin debugbeacon [player]]"
         );
         return true;
+    }
+
+    private boolean showBoundary(Player player, String selector) {
+        try {
+            List<Sanctuary> visible = boundaryCandidates(player);
+            if (selector.equalsIgnoreCase("all")) {
+                boundaryService.showAll(
+                    player,
+                    visible,
+                    plugin.getBoundaryParticleSpacing(),
+                    plugin.getBoundaryDisplaySeconds(),
+                    plugin.getBoundaryMaximumRenderDistance()
+                );
+                player.sendMessage(
+                    ChatColor.GREEN + "Displaying nearby Sanctuary boundaries"
+                        + ChatColor.GRAY + " within "
+                        + plugin.getBoundaryMaximumRenderDistance()
+                        + " blocks of their boundary."
+                );
+                return true;
+            }
+
+            Optional<Sanctuary> result = resolveBoundarySelector(selector, visible);
+            if (result.isEmpty()) {
+                player.sendMessage(ChatColor.RED + "No active Sanctuary matches '" + selector + "'.");
+                return true;
+            }
+
+            Sanctuary sanctuary = result.orElseThrow();
+            boundaryService.show(
+                player,
+                sanctuary,
+                plugin.getBoundaryParticleSpacing(),
+                plugin.getBoundaryDisplaySeconds()
+            );
+            player.sendMessage(
+                ChatColor.GREEN + "Displaying the boundary for " + sanctuary.name()
+                    + ChatColor.GRAY + " for " + plugin.getBoundaryDisplaySeconds() + " seconds."
+            );
+        } catch (SQLException exception) {
+            player.sendMessage(ChatColor.RED + "Sanctuary could not read the territory registry.");
+            plugin.getLogger().log(Level.SEVERE, "Failed to show Sanctuary boundary", exception);
+        } catch (IllegalArgumentException exception) {
+            player.sendMessage(ChatColor.RED + exception.getMessage());
+        }
+        return true;
+    }
+
+    private List<Sanctuary> boundaryCandidates(Player player) throws SQLException {
+        return repository.findAll().stream()
+            .filter(value -> value.type() == SanctuaryType.BEACON)
+            .filter(value -> value.state() == SanctuaryState.ACTIVE)
+            .filter(value -> value.position().isPresent())
+            .filter(value -> value.ownerId().equals(player.getUniqueId())
+                || player.hasPermission("sanctuary.admin"))
+            .toList();
+    }
+
+    private Optional<Sanctuary> resolveBoundarySelector(String selector, List<Sanctuary> candidates) {
+        try {
+            UUID id = UUID.fromString(selector);
+            return candidates.stream().filter(value -> value.id().equals(id)).findFirst();
+        } catch (IllegalArgumentException ignored) {
+            return candidates.stream()
+                .filter(value -> boundaryLabel(value, candidates).equalsIgnoreCase(selector))
+                .findFirst();
+        }
+    }
+
+    private static String boundaryLabel(Sanctuary sanctuary, List<Sanctuary> candidates) {
+        String base = sanctuary.name().trim().replaceAll("\\s+", "_");
+        long sameName = candidates.stream()
+            .filter(value -> value.name().equalsIgnoreCase(sanctuary.name()))
+            .count();
+        if (sameName == 1) {
+            return base;
+        }
+        String ownerName = Bukkit.getOfflinePlayer(sanctuary.ownerId()).getName();
+        if (ownerName != null && !ownerName.isBlank()) {
+            String ownerLabel = base + "@" + ownerName;
+            long sameOwnerLabel = candidates.stream()
+                .filter(value -> value.name().equalsIgnoreCase(sanctuary.name()))
+                .filter(value -> value.ownerId().equals(sanctuary.ownerId()))
+                .count();
+            if (sameOwnerLabel == 1) {
+                return ownerLabel;
+            }
+        }
+        return base + "~" + sanctuary.id().toString().substring(0, 8);
     }
 
     private boolean recoverBeacon(Player player, String idText) {
@@ -201,7 +301,7 @@ public final class SanctuaryCommand implements CommandExecutor, TabCompleter {
     private boolean giveDebugBeacon(CommandSender sender, Player target) {
         Sanctuary sanctuary = null;
         try {
-            sanctuary = debugBeaconService.register(plugin.getInitialTerritoryArea());
+            sanctuary = debugBeaconService.register(plugin.getInitialTerritoryRadius());
             ItemStack item = anchorItemService.createBoundBeacon(sanctuary);
             giveOrDrop(target, item);
 
@@ -285,14 +385,8 @@ public final class SanctuaryCommand implements CommandExecutor, TabCompleter {
                         + sanctuary.tier()
                         + " generation="
                         + sanctuary.anchorGeneration()
-                        + " territoryArea="
-                        + sanctuary.territoryArea()
                         + " radius="
-                        + String.format(
-                            Locale.ROOT,
-                            "%.2f",
-                            TerritoryCalculator.radiusForArea(sanctuary.territoryArea())
-                        )
+                        + String.format(Locale.ROOT, "%.2f", sanctuary.territoryRadius())
                 );
                 sender.sendMessage(
                     ChatColor.GRAY
@@ -347,11 +441,31 @@ public final class SanctuaryCommand implements CommandExecutor, TabCompleter {
         @NotNull String[] args
     ) {
         if (args.length == 1) {
-            List<String> values = new ArrayList<>(List.of("status", "recover"));
+            List<String> values = new ArrayList<>(List.of("status", "boundary", "recover"));
             if (sender.hasPermission("sanctuary.admin")) {
                 values.add("admin");
             }
             return filter(values, args[0]);
+        }
+
+
+        if (
+            args.length == 2
+                && args[0].equalsIgnoreCase("boundary")
+                && sender instanceof Player player
+        ) {
+            try {
+                List<Sanctuary> candidates = boundaryCandidates(player);
+                List<String> values = new ArrayList<>();
+                values.add("all");
+                values.addAll(candidates.stream()
+                    .map(value -> boundaryLabel(value, candidates))
+                    .sorted(String.CASE_INSENSITIVE_ORDER)
+                    .toList());
+                return filter(values, args[1]);
+            } catch (SQLException exception) {
+                return List.of();
+            }
         }
 
         if (

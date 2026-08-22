@@ -1,10 +1,12 @@
 package dev.liamtolkkinen.sanctuary.protection;
 
+import dev.liamtolkkinen.sanctuary.sanctuary.Sanctuary;
 import dev.liamtolkkinen.sanctuary.trust.SanctuaryCapability;
 import java.sql.SQLException;
 import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -12,6 +14,7 @@ import org.bukkit.ChatColor;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.block.Block;
+import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Projectile;
@@ -25,7 +28,6 @@ import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.inventory.InventoryOpenEvent;
 import org.bukkit.event.player.PlayerInteractEntityEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
-import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.projectiles.ProjectileSource;
 
 public final class SanctuaryProtectionListener implements Listener {
@@ -45,24 +47,13 @@ public final class SanctuaryProtectionListener implements Listener {
 
     @EventHandler(priority = EventPriority.NORMAL, ignoreCancelled = true)
     public void onBlockPlace(BlockPlaceEvent event) {
-        denyIfNeeded(
-            event.getPlayer(),
-            SanctuaryCapability.BUILD,
-            event.getBlockPlaced().getLocation(),
-            () -> event.setCancelled(true)
-        );
+        denyIfNeeded(event.getPlayer(), SanctuaryCapability.BUILD, event.getBlockPlaced().getLocation(), () -> event.setCancelled(true));
     }
 
     @EventHandler(priority = EventPriority.NORMAL, ignoreCancelled = true)
     public void onBlockBreak(BlockBreakEvent event) {
-        /*
-         * Sanctuary Beacons are intentionally included here.
-         *
-         * This listener decides whether the player has BREAK permission at the
-         * location. If allowed, the dedicated AnchorBreakListener runs later
-         * and handles the Sanctuary-specific lifecycle such as generation,
-         * bound Beacon drops, debug deletion, and orphan cleanup.
-         */
+        // BREAK permission applies to Sanctuary anchors too. If this check allows the
+        // break, AnchorBreakListener runs later and handles the anchor lifecycle.
         denyIfNeeded(
             event.getPlayer(),
             SanctuaryCapability.BREAK,
@@ -79,14 +70,9 @@ public final class SanctuaryProtectionListener implements Listener {
 
         Block block = event.getClickedBlock();
 
-        /*
-         * Sneak-right-clicking with a block is a placement attempt. The
-         * BlockPlaceEvent is responsible for checking BUILD permission.
-         *
-         * Without this exception, placing a block against a door, chest,
-         * lever, or another interactable block would incorrectly require
-         * INTERACT, CONTAINER, or REDSTONE in addition to BUILD.
-         */
+        // Sneak-right-clicking with a block is a placement attempt. BlockPlaceEvent
+        // is the authority for BUILD permission, even when placing against an
+        // otherwise interactable block such as a door or lever.
         if (event.getPlayer().isSneaking()
             && event.getItem() != null
             && event.getItem().getType().isBlock()) {
@@ -94,10 +80,7 @@ public final class SanctuaryProtectionListener implements Listener {
         }
 
         if (block.getState() instanceof InventoryHolder) {
-            /*
-             * InventoryOpenEvent handles containers using the actual
-             * inventory location.
-             */
+            // InventoryOpenEvent evaluates the container's actual location.
             return;
         }
 
@@ -111,11 +94,8 @@ public final class SanctuaryProtectionListener implements Listener {
             return;
         }
 
-        /*
-         * Ordinary block right-clicks are also how Minecraft places blocks.
-         * Only require INTERACT when the clicked block itself actually has an
-         * interaction.
-         */
+        // Ordinary right-clicks are also used by Minecraft to place blocks.
+        // Only require INTERACT when the clicked block itself has an interaction.
         if (!block.getType().isInteractable()) {
             return;
         }
@@ -133,141 +113,97 @@ public final class SanctuaryProtectionListener implements Listener {
         if (!(event.getPlayer() instanceof Player player)) {
             return;
         }
-
         Location location = event.getInventory().getLocation();
         if (location == null) {
             return;
         }
-
-        denyIfNeeded(
-            player,
-            SanctuaryCapability.CONTAINER,
-            location,
-            () -> event.setCancelled(true)
-        );
+        denyIfNeeded(player, SanctuaryCapability.CONTAINER, location, () -> event.setCancelled(true));
     }
 
     @EventHandler(priority = EventPriority.NORMAL, ignoreCancelled = true)
     public void onEntityInteract(PlayerInteractEntityEvent event) {
-        denyIfNeeded(
-            event.getPlayer(),
-            SanctuaryCapability.ENTITIES,
-            event.getRightClicked().getLocation(),
-            () -> event.setCancelled(true)
-        );
+        denyIfNeeded(event.getPlayer(), SanctuaryCapability.ENTITIES, event.getRightClicked().getLocation(), () -> event.setCancelled(true));
     }
 
     @EventHandler(priority = EventPriority.NORMAL, ignoreCancelled = true)
     public void onEntityDamage(EntityDamageByEntityEvent event) {
-        Player player = resolvePlayerDamager(event.getDamager());
+        Player player = responsiblePlayer(event.getDamager());
         if (player == null) {
             return;
         }
-
-        denyIfNeeded(
-            player,
-            SanctuaryCapability.ENTITIES,
-            event.getEntity().getLocation(),
-            () -> event.setCancelled(true)
-        );
+        denyIfNeeded(player, SanctuaryCapability.ENTITIES, event.getEntity().getLocation(), () -> event.setCancelled(true));
     }
 
     private void denyIfNeeded(
         Player player,
         SanctuaryCapability capability,
         Location location,
-        Runnable cancelAction
+        Runnable cancel
     ) {
         try {
-            var blockingSanctuary = protectionService.findBlockingSanctuary(
+            Optional<Sanctuary> blocking = protectionService.findBlockingSanctuary(
                 player.getUniqueId(),
                 capability,
                 location.getWorld().getName(),
                 location.getX(),
                 location.getZ()
             );
-
-            if (blockingSanctuary.isEmpty()) {
+            if (blocking.isEmpty()) {
                 return;
             }
-
-            cancelAction.run();
-            warnPlayer(player, capability);
+            cancel.run();
+            sendWarning(player, capability, blocking.orElseThrow());
         } catch (SQLException exception) {
-            /*
-             * Fail closed. A database failure must not temporarily disable
-             * Sanctuary protections.
-             */
-            cancelAction.run();
-            player.sendMessage(
-                ChatColor.RED
-                    + "Sanctuary could not verify permissions. This action was blocked."
-            );
-            logger.log(
-                Level.SEVERE,
-                "Failed to evaluate Sanctuary "
-                    + capability
-                    + " permission for "
-                    + player.getUniqueId(),
-                exception
-            );
+            cancel.run();
+            player.sendMessage(ChatColor.RED + "Sanctuary could not verify permissions. The action was blocked.");
+            logger.log(Level.SEVERE, "Failed to evaluate Sanctuary protection at " + location, exception);
         }
     }
 
-    private void warnPlayer(Player player, SanctuaryCapability capability) {
+    private void sendWarning(Player player, SanctuaryCapability capability, Sanctuary sanctuary) {
         long now = System.nanoTime();
-
-        EnumMap<SanctuaryCapability, Long> playerWarnings =
-            lastWarning.computeIfAbsent(
-                player.getUniqueId(),
-                ignored -> new EnumMap<>(SanctuaryCapability.class)
-            );
-
-        Long previous = playerWarnings.get(capability);
-        if (previous != null && now - previous < WARNING_COOLDOWN_NANOS) {
+        EnumMap<SanctuaryCapability, Long> warnings = lastWarning.computeIfAbsent(
+            player.getUniqueId(),
+            ignored -> new EnumMap<>(SanctuaryCapability.class)
+        );
+        long previous = warnings.getOrDefault(capability, 0L);
+        if (now - previous < WARNING_COOLDOWN_NANOS) {
             return;
         }
-
-        playerWarnings.put(capability, now);
-
-        player.sendMessage(
-            ChatColor.RED + denialMessage(capability)
-        );
+        warnings.put(capability, now);
+        player.sendMessage(ChatColor.RED + denialMessage(capability) + ChatColor.GRAY + " [" + sanctuary.name() + "]");
     }
 
     private static String denialMessage(SanctuaryCapability capability) {
         return switch (capability) {
             case BUILD -> "You cannot place blocks in this Sanctuary.";
             case BREAK -> "You cannot break blocks in this Sanctuary.";
-            case INTERACT -> "You cannot interact with that in this Sanctuary.";
+            case INTERACT -> "You cannot use that in this Sanctuary.";
             case CONTAINER -> "You cannot use containers in this Sanctuary.";
-            case REDSTONE -> "You cannot use redstone controls in this Sanctuary.";
+            case REDSTONE -> "You cannot operate redstone controls in this Sanctuary.";
             case ENTITIES -> "You cannot interact with protected entities in this Sanctuary.";
         };
     }
 
-    private static Player resolvePlayerDamager(Entity damager) {
+    static boolean isDirectRedstoneControl(Material material) {
+        String name = material.name();
+        return material == Material.LEVER
+            || material == Material.REPEATER
+            || material == Material.COMPARATOR
+            || material == Material.DAYLIGHT_DETECTOR
+            || name.endsWith("_BUTTON");
+    }
+
+    private static Player responsiblePlayer(Entity damager) {
         if (damager instanceof Player player) {
             return player;
         }
-
-        if (!(damager instanceof Projectile projectile)) {
-            return null;
+        if (damager instanceof Projectile projectile) {
+            ProjectileSource shooter = projectile.getShooter();
+            if (shooter instanceof Player player) {
+                return player;
+            }
         }
-
-        ProjectileSource shooter = projectile.getShooter();
-        return shooter instanceof Player player
-            ? player
-            : null;
-    }
-
-    private static boolean isDirectRedstoneControl(Material material) {
-        return switch (material) {
-            case LEVER,
-                 REPEATER,
-                 COMPARATOR,
-                 DAYLIGHT_DETECTOR -> true;
-            default -> material.name().endsWith("_BUTTON");
-        };
+        return null;
     }
 }

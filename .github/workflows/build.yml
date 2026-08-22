@@ -14,15 +14,6 @@ jobs:
     steps:
       - name: Checkout Sanctuary
         uses: actions/checkout@v6
-        with:
-          path: Sanctuary
-
-      - name: Checkout ExtendedUI
-        uses: actions/checkout@v6
-        with:
-          repository: ${{ github.repository_owner }}/ExtendedUI
-          path: ExtendedUI
-          token: ${{ secrets.SHARED_REPOS_TOKEN || github.token }}
 
       - name: Set up Java 25
         uses: actions/setup-java@v5
@@ -34,16 +25,14 @@ jobs:
         uses: gradle/actions/setup-gradle@v6
 
       - name: Ensure Gradle wrapper is executable
-        working-directory: Sanctuary
         run: chmod +x gradlew
 
       - name: Build and test
-        working-directory: Sanctuary
         run: ./gradlew clean build --no-daemon
 
       - name: Upload plugin artifact
         uses: actions/upload-artifact@v6
         with:
           name: sanctuary-${{ github.sha }}
-          path: Sanctuary/build/libs/sanctuary-*.jar
+          path: build/libs/sanctuary-*.jar
           if-no-files-found: error

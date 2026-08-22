@@ -22,6 +22,57 @@ repositories {
     maven("https://repo.xenondevs.xyz/releases")
 }
 
+val extendedUiVersion = "0.1.0"
+val extendedUiJar = layout.buildDirectory.file(
+    "dependencies/extendedui-$extendedUiVersion.jar"
+)
+
+val downloadExtendedUi by tasks.registering {
+    group = "build setup"
+    description = "Downloads the pinned ExtendedUI GitHub Release JAR."
+    outputs.file(extendedUiJar)
+
+    doLast {
+        val outputPath = extendedUiJar.get().asFile.toPath()
+        Files.createDirectories(outputPath.parent)
+
+        val temporaryPath = outputPath.resolveSibling("${outputPath.fileName}.download")
+        val releaseUrl = URI.create(
+            "https://github.com/liamtolkki/ExtendedUI/releases/download/" +
+                "v$extendedUiVersion/extendedui-$extendedUiVersion.jar"
+        )
+
+        try {
+            val client = HttpClient.newBuilder()
+                .followRedirects(HttpClient.Redirect.NORMAL)
+                .build()
+            val request = HttpRequest.newBuilder(releaseUrl)
+                .header("User-Agent", "Sanctuary-Gradle-Build")
+                .GET()
+                .build()
+            val response = client.send(
+                request,
+                HttpResponse.BodyHandlers.ofFile(temporaryPath)
+            )
+
+            if (response.statusCode() !in 200..299) {
+                throw GradleException(
+                    "Failed to download ExtendedUI $extendedUiVersion from " +
+                        "$releaseUrl: HTTP ${response.statusCode()}"
+                )
+            }
+
+            Files.move(
+                temporaryPath,
+                outputPath,
+                StandardCopyOption.REPLACE_EXISTING
+            )
+        } finally {
+            Files.deleteIfExists(temporaryPath)
+        }
+    }
+}
+
 val extendedItemsVersion = "0.1.0-alpha.2"
 val extendedItemsJar = layout.buildDirectory.file(
     "dependencies/extendeditems-$extendedItemsVersion.jar"
@@ -74,8 +125,9 @@ val downloadExtendedItems by tasks.registering {
 }
 
 dependencies {
-    // ExtendedUI is still resolved from its sibling composite build during development.
-    implementation("dev.liamtolkkinen:ExtendedUI:0.1.0-SNAPSHOT")
+    // ExtendedUI is pinned to the stable shared UI release.
+    implementation(files(extendedUiJar))
+    implementation("xyz.xenondevs.invui:invui:2.1.0")
 
     // ExtendedItems is pinned to the authoritative release containing Sanctuary IDs.
     implementation(files(extendedItemsJar))
@@ -98,7 +150,7 @@ java {
 }
 
 tasks.withType<JavaCompile>().configureEach {
-    dependsOn(downloadExtendedItems)
+    dependsOn(downloadExtendedUi, downloadExtendedItems)
     options.encoding = "UTF-8"
     options.release.set(25)
 }
@@ -119,7 +171,7 @@ tasks.jar {
 }
 
 tasks.named<ShadowJar>("shadowJar") {
-    dependsOn(downloadExtendedItems)
+    dependsOn(downloadExtendedUi, downloadExtendedItems)
     archiveBaseName.set("sanctuary")
     archiveClassifier.set("")
 

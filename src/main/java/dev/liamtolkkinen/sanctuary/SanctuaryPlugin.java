@@ -1,5 +1,6 @@
 package dev.liamtolkkinen.sanctuary;
 
+import dev.liamtolkkinen.extendedui.ExtendedUI;
 import dev.liamtolkkinen.sanctuary.anchor.AnchorBreakListener;
 import dev.liamtolkkinen.sanctuary.anchor.AnchorItemRemovalListener;
 import dev.liamtolkkinen.sanctuary.anchor.AnchorItemService;
@@ -26,6 +27,8 @@ import dev.liamtolkkinen.sanctuary.territory.TerritoryBoundaryService;
 import dev.liamtolkkinen.sanctuary.territory.TerritoryBoundaryProximityTask;
 import dev.liamtolkkinen.sanctuary.territory.TerritoryPresenceService;
 import dev.liamtolkkinen.sanctuary.trust.SanctuaryPermissionService;
+import dev.liamtolkkinen.sanctuary.ui.SanctuaryUiListener;
+import dev.liamtolkkinen.sanctuary.ui.SanctuaryUiService;
 import java.util.logging.Level;
 import org.bukkit.plugin.ServicePriority;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -43,6 +46,7 @@ public final class SanctuaryPlugin extends JavaPlugin {
     private static final long DEFAULT_BOUNDARY_UPDATE_PERIOD_TICKS = 10L;
 
     private SanctuaryApi sanctuaryApi;
+    private ExtendedUI extendedUi;
 
     @Override
     public void onEnable() {
@@ -118,11 +122,7 @@ public final class SanctuaryPlugin extends JavaPlugin {
             );
             getServer().getPluginManager().registerEvents(
                 new SanctuaryProtectionListener(
-                    new SanctuaryProtectionService(
-                        repository,
-                        territoryPresenceService,
-                        permissionService
-                    ),
+                    new SanctuaryProtectionService(repository, territoryPresenceService, permissionService),
                     getLogger()
                 ),
                 this
@@ -138,6 +138,24 @@ public final class SanctuaryPlugin extends JavaPlugin {
                 getLogger()
             ).start(this);
 
+            extendedUi = new ExtendedUI(this);
+            SanctuaryUiService uiService = new SanctuaryUiService(
+                this,
+                extendedUi,
+                repository,
+                permissionService,
+                boundaryService
+            );
+            getServer().getPluginManager().registerEvents(
+                new SanctuaryUiListener(
+                    anchorItemService,
+                    repository,
+                    uiService,
+                    getLogger()
+                ),
+                this
+            );
+
             SanctuaryCommand sanctuaryCommand = new SanctuaryCommand(
                 this,
                 anchorItemService,
@@ -145,7 +163,8 @@ public final class SanctuaryPlugin extends JavaPlugin {
                 new DebugBeaconRegistrationService(repository),
                 boundaryService,
                 repository,
-                permissionService
+                permissionService,
+                uiService
             );
             var command = Objects.requireNonNull(
                 getCommand("sanctuary"),
@@ -157,7 +176,7 @@ public final class SanctuaryPlugin extends JavaPlugin {
             validateConfiguration();
 
             getLogger().info("Sanctuary database initialized at " + databasePath.toAbsolutePath());
-            getLogger().info("Sanctuary Beacon lifecycle, territory, awareness, trust, capabilities, and player protections loaded.");
+            getLogger().info("Sanctuary Beacon lifecycle, territory, awareness, trust, capabilities, player protections, and management UI loaded.");
         } catch (SQLException | IOException | IllegalStateException exception) {
             getLogger().log(Level.SEVERE, "Failed to initialize Sanctuary", exception);
             getServer().getPluginManager().disablePlugin(this);
@@ -166,6 +185,10 @@ public final class SanctuaryPlugin extends JavaPlugin {
 
     @Override
     public void onDisable() {
+        if (extendedUi != null) {
+            extendedUi.close();
+            extendedUi = null;
+        }
         getServer().getServicesManager().unregisterAll(this);
         sanctuaryApi = null;
     }

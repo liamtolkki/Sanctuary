@@ -15,6 +15,7 @@ import dev.liamtolkkinen.sanctuary.territory.TerritoryBoundaryService;
 import dev.liamtolkkinen.sanctuary.trust.SanctuaryCapability;
 import dev.liamtolkkinen.sanctuary.trust.SanctuaryPermissionService;
 import dev.liamtolkkinen.sanctuary.trust.SanctuaryTrustEntry;
+import dev.liamtolkkinen.sanctuary.ui.SanctuaryUiService;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.time.Instant;
@@ -47,6 +48,7 @@ public final class SanctuaryCommand implements CommandExecutor, TabCompleter {
     private final TerritoryBoundaryService boundaryService;
     private final SanctuaryRepository repository;
     private final SanctuaryPermissionService permissionService;
+    private final SanctuaryUiService uiService;
 
     public SanctuaryCommand(
         SanctuaryPlugin plugin,
@@ -55,7 +57,8 @@ public final class SanctuaryCommand implements CommandExecutor, TabCompleter {
         DebugBeaconRegistrationService debugBeaconService,
         TerritoryBoundaryService boundaryService,
         SanctuaryRepository repository,
-        SanctuaryPermissionService permissionService
+        SanctuaryPermissionService permissionService,
+        SanctuaryUiService uiService
     ) {
         this.plugin = plugin;
         this.anchorItemService = anchorItemService;
@@ -64,6 +67,7 @@ public final class SanctuaryCommand implements CommandExecutor, TabCompleter {
         this.boundaryService = boundaryService;
         this.repository = repository;
         this.permissionService = permissionService;
+        this.uiService = uiService;
     }
 
     @Override
@@ -130,6 +134,14 @@ public final class SanctuaryCommand implements CommandExecutor, TabCompleter {
 
             if (args.length == 2 && args[1].equalsIgnoreCase("beacons")) {
                 return printRegisteredBeacons(sender);
+            }
+
+            if (args.length == 3 && args[1].equalsIgnoreCase("ui")) {
+                if (!(sender instanceof Player player)) {
+                    sender.sendMessage(ChatColor.RED + "Only a player can open the Sanctuary admin UI.");
+                    return true;
+                }
+                return uiService.openAdminBySelector(player, args[2]);
             }
 
             if (args.length == 4 && args[1].equalsIgnoreCase("permissions")) {
@@ -671,7 +683,11 @@ public final class SanctuaryCommand implements CommandExecutor, TabCompleter {
         }
 
         if (args.length == 2 && args[0].equalsIgnoreCase("admin") && sender.hasPermission("sanctuary.admin")) {
-            return filter(List.of("reload", "beacons", "givebeacon", "debugbeacon", "debugtrust", "permissions"), args[1]);
+            return filter(List.of("reload", "beacons", "ui", "givebeacon", "debugbeacon", "debugtrust", "permissions"), args[1]);
+        }
+
+        if (args.length == 3 && args[0].equalsIgnoreCase("admin") && args[1].equalsIgnoreCase("ui") && sender.hasPermission("sanctuary.admin")) {
+            return filter(uiService.adminSelectorLabels(), args[2]);
         }
 
         if (args.length == 3 && args[0].equalsIgnoreCase("admin") && args[1].equalsIgnoreCase("debugtrust") && sender.hasPermission("sanctuary.admin")) {

@@ -25,10 +25,14 @@ import org.bukkit.Location;
 import org.bukkit.NamespacedKey;
 import org.bukkit.World;
 import org.bukkit.entity.Entity;
+import org.bukkit.entity.EntityType;
+import org.bukkit.entity.Evoker;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Mob;
 import org.bukkit.entity.Player;
+import org.bukkit.entity.Vex;
 import org.bukkit.entity.Warden;
+import org.bukkit.entity.Wither;
 import org.bukkit.entity.Zombie;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -36,6 +40,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 public final class SentryService {
     public static final Duration RESPAWN_COOLDOWN = Duration.ofSeconds(30);
     public static final Duration RECALL_TIMEOUT = Duration.ofSeconds(15);
+    public static final Duration VEX_IDLE_TIMEOUT = Duration.ofSeconds(30);
     public static final double HOME_REACHED_DISTANCE = 1.75;
     public static final double BEACON_PROXIMITY_RADIUS = 12.0;
 
@@ -46,7 +51,10 @@ public final class SentryService {
     private final TerritoryPresenceService presenceService;
     private final Logger logger;
     private final NamespacedKey sentryIdKey;
+    private final NamespacedKey vexParentKey;
     private final Map<UUID, UUID> authorizedTargets = new HashMap<>();
+    private final Map<UUID, UUID> vexParents = new HashMap<>();
+    private final Map<UUID, Instant> vexActivity = new HashMap<>();
     private final Set<UUID> authorizedTeleports = new HashSet<>();
 
     public SentryService(
@@ -64,6 +72,7 @@ public final class SentryService {
         this.presenceService = Objects.requireNonNull(presenceService, "presenceService");
         this.logger = Objects.requireNonNull(logger, "logger");
         this.sentryIdKey = new NamespacedKey(plugin, "sentry_id");
+        this.vexParentKey = new NamespacedKey(plugin, "sentry_vex_parent");
     }
 
     public Optional<SentryDefinition> definition(org.bukkit.inventory.ItemStack item) {
@@ -116,16 +125,18 @@ public final class SentryService {
         return active;
     }
 
-    /** Sanctuary owns target selection. Vanilla combat goals remain so each mob keeps its native attacks. */
+    /** Sanctuary owns target selection. Native attack and movement goals remain available. */
     public void configureManagedAi(Mob mob) {
         Bukkit.getMobGoals().removeAllGoals(mob, GoalType.TARGET);
         mob.setAware(true);
         mob.setTarget(null);
         mob.setAggressive(false);
+        clearWitherTargets(mob);
         if (mob instanceof org.bukkit.entity.Slime slime) slime.setWander(false);
     }
 
     public void unregister(SentryRecord record) throws SQLException {
+        removeVexCompanions(record);
         entity(record).ifPresent(Entity::remove);
         authorizedTargets.remove(record.id());
         repository.clearOverrides(record.id());
@@ -133,6 +144,7 @@ public final class SentryService {
     }
 
     public void markDown(SentryRecord record) throws SQLException {
+        removeVexCompanions(record);
         entity(record).ifPresent(Entity::remove);
         authorizedTargets.remove(record.id());
         Instant now = Instant.now();
@@ -144,11 +156,13 @@ public final class SentryService {
         Instant now = Instant.now();
         SentryState state = disabled ? SentryState.DISABLED : SentryState.ACTIVE;
         Optional<UUID> entityId = record.entityId();
+        if (disabled) removeVexCompanions(record);
         entity(record).ifPresent(entity -> {
             if (entity instanceof Mob mob) {
                 mob.setTarget(null);
                 mob.setAware(!disabled);
                 mob.setAggressive(false);
+                clearWitherTargets(mob);
                 mob.customName(net.kyori.adventure.text.Component.text(
                     definition(record).map(SentryDefinition::displayName).orElse("Sentry") + (disabled ? " [Disabled]" : "")
                 ));
@@ -167,12 +181,14 @@ public final class SentryService {
     public void recall(SentryRecord record) throws SQLException {
         if (record.state() == SentryState.DOWN) return;
         Instant now = Instant.now();
+        removeVexCompanions(record);
         authorizedTargets.remove(record.id());
         entity(record).ifPresent(entity -> {
             if (entity instanceof Mob mob) {
                 mob.setAware(true);
                 mob.setTarget(null);
                 mob.setAggressive(false);
+                clearWitherTargets(mob);
                 moveHome(mob, record);
             }
         });
@@ -190,7 +206,7 @@ public final class SentryService {
     }
 
     public void trigger(Sanctuary sanctuary, SentryTrigger trigger, LivingEntity target) throws SQLException {
-        if (target == null || target.isDead()) return;
+        if (target == null || target.isDead() || isDefenseEntity(target)) return;
         if (target instanceof Player player) {
             SanctuaryRelationship relationship = securityService.relationship(sanctuary, player.getUniqueId());
             if (relationship == SanctuaryRelationship.OWNER || relationship == SanctuaryRelationship.TRUSTED) return;
@@ -209,18 +225,29 @@ public final class SentryService {
             clearTarget(sentry);
             return;
         }
-        var path = mob.getPathfinder().findPath(target);
-        if (path == null || path.getPoints().stream().anyMatch(point ->
-            !TerritoryCalculator.contains(sanctuary.position().orElseThrow(), sanctuary.territoryRadius(), sentry.world(), point.getX(), point.getZ()))) {
-            clearTarget(sentry);
-            return;
-        }
         authorizedTargets.put(sentry.id(), target.getUniqueId());
+        applyAuthorizedTarget(sentry, mob, target, Instant.now());
+    }
+
+    public void maintainAuthorizedTarget(SentryRecord sentry, Mob mob, LivingEntity target, Instant now) {
+        applyAuthorizedTarget(sentry, mob, target, now);
+    }
+
+    private void applyAuthorizedTarget(SentryRecord sentry, Mob mob, LivingEntity target, Instant now) {
         mob.setAware(true);
         mob.setAggressive(true);
-        mob.setTarget(target);
-        if (mob instanceof Warden warden) warden.setAnger(target, 150);
-        mob.getPathfinder().moveTo(path, 1.0);
+        if (mob.getTarget() == null || !mob.getTarget().getUniqueId().equals(target.getUniqueId())) {
+            mob.setTarget(target);
+        }
+        if (mob instanceof Wither wither) {
+            for (Wither.Head head : Wither.Head.values()) wither.setTarget(head, target);
+        }
+        if (mob instanceof Warden warden) {
+            LivingEntity angryAt = warden.getEntityAngryAt();
+            if (angryAt != null && !angryAt.getUniqueId().equals(target.getUniqueId())) warden.clearAnger(angryAt);
+            warden.setAnger(target, 150);
+        }
+        if (mob instanceof Evoker) syncVexCompanions(sentry, mob, target, now);
     }
 
     public Optional<LivingEntity> authorizedTarget(SentryRecord record) {
@@ -230,24 +257,117 @@ public final class SentryService {
         return entity instanceof LivingEntity living && !living.isDead() ? Optional.of(living) : Optional.empty();
     }
 
-    public boolean isManaged(Entity entity) { return sentryId(entity).isPresent(); }
+    public boolean isManaged(Entity entity) {
+        return sentryId(entity).isPresent();
+    }
+
+    public boolean isCompanion(Entity entity) {
+        return vexParentId(entity).isPresent();
+    }
+
+    public boolean isDefenseEntity(Entity entity) {
+        return isManaged(entity) || isCompanion(entity);
+    }
 
     public Optional<SentryRecord> record(Entity entity) throws SQLException {
         Optional<UUID> id = sentryId(entity);
         return id.isPresent() ? repository.findById(id.orElseThrow()) : repository.findByEntity(entity.getUniqueId());
     }
 
+    public Optional<SentryRecord> companionParent(Entity entity) throws SQLException {
+        Optional<UUID> id = vexParentId(entity);
+        return id.isPresent() ? repository.findById(id.orElseThrow()) : Optional.empty();
+    }
+
+    public boolean ensureVexCompanion(Entity entity) throws SQLException {
+        if (!(entity instanceof Vex vex)) return false;
+        Optional<UUID> existingId = vexParentId(vex);
+        if (existingId.isPresent()) {
+            SentryRecord parent = repository.findById(existingId.orElseThrow()).orElse(null);
+            if (parent == null || !isEvoker(parent)) {
+                vex.getPersistentDataContainer().remove(vexParentKey);
+                vexParents.remove(vex.getUniqueId());
+                return false;
+            }
+            vexParents.put(vex.getUniqueId(), parent.id());
+            configureVex(vex, parent);
+            return true;
+        }
+
+        Mob summoner = vex.getSummoner();
+        if (summoner == null) return false;
+        SentryRecord parent = record(summoner).orElse(null);
+        if (parent == null || !isEvoker(parent)) return false;
+
+        vex.getPersistentDataContainer().set(vexParentKey, PersistentDataType.STRING, parent.id().toString());
+        vexParents.put(vex.getUniqueId(), parent.id());
+        vexActivity.putIfAbsent(parent.id(), Instant.now());
+        configureVex(vex, parent);
+        return true;
+    }
+
+    private void configureVex(Vex vex, SentryRecord parent) {
+        vex.setPersistent(true);
+        Bukkit.getMobGoals().removeAllGoals(vex, GoalType.TARGET);
+        vex.setBound(home(parent).clone().add(0, 1.0, 0));
+        vex.setLimitedLifetime(false);
+    }
+
+    public void syncVexCompanions(SentryRecord parent, Mob evoker, LivingEntity target, Instant now) {
+        if (!isEvoker(parent)) return;
+        for (Vex vex : evoker.getWorld().getEntitiesByClass(Vex.class)) {
+            if (vex.getSummoner() == evoker) {
+                try {
+                    ensureVexCompanion(vex);
+                } catch (SQLException exception) {
+                    logger.warning("Failed to register Evoker Vex companion: " + exception.getMessage());
+                }
+            }
+        }
+
+        if (target != null && !target.isDead()) vexActivity.put(parent.id(), now);
+        for (Vex vex : vexCompanions(parent)) {
+            if (target == null || target.isDead()) {
+                vex.setTarget(null);
+                vex.setAggressive(false);
+                vex.setCharging(false);
+            } else {
+                vex.setAware(true);
+                vex.setAggressive(true);
+                vex.setTarget(target);
+            }
+        }
+    }
+
+    public void tickVexCompanions(SentryRecord parent, Mob evoker, LivingEntity target, Instant now) {
+        if (!isEvoker(parent)) return;
+        syncVexCompanions(parent, evoker, target, now);
+        if (target != null && !target.isDead()) return;
+        Instant lastActivity = vexActivity.computeIfAbsent(parent.id(), ignored -> now);
+        if (!now.isBefore(lastActivity.plus(VEX_IDLE_TIMEOUT))) removeVexCompanions(parent);
+    }
+
     public boolean targetAllowed(Mob mob, LivingEntity target) throws SQLException {
         SentryRecord record = record(mob).orElse(null);
-        if (record == null) return true;
-        return target != null && target.getUniqueId().equals(authorizedTargets.get(record.id()));
+        if (record != null) {
+            return target != null && target.getUniqueId().equals(authorizedTargets.get(record.id()));
+        }
+        SentryRecord parent = companionParent(mob).orElse(null);
+        return parent == null || (target != null && target.getUniqueId().equals(authorizedTargets.get(parent.id())));
     }
 
     public boolean mayDamage(Entity attacker, LivingEntity victim) throws SQLException {
         Optional<SentryRecord> record = record(attacker);
-        if (record.isEmpty()) return true;
-        UUID authorized = authorizedTargets.get(record.orElseThrow().id());
-        return authorized != null && authorized.equals(victim.getUniqueId());
+        if (record.isPresent()) {
+            UUID authorized = authorizedTargets.get(record.orElseThrow().id());
+            return authorized != null && authorized.equals(victim.getUniqueId());
+        }
+        Optional<SentryRecord> parent = companionParent(attacker);
+        if (parent.isPresent()) {
+            UUID authorized = authorizedTargets.get(parent.orElseThrow().id());
+            return authorized != null && authorized.equals(victim.getUniqueId());
+        }
+        return true;
     }
 
     public void clearTarget(SentryRecord sentry) {
@@ -255,14 +375,31 @@ public final class SentryService {
         entity(sentry).filter(Mob.class::isInstance).map(Mob.class::cast).ifPresent(mob -> {
             mob.setTarget(null);
             mob.setAggressive(false);
+            clearWitherTargets(mob);
             if (mob instanceof Warden warden && warden.getEntityAngryAt() != null) {
                 warden.clearAnger(warden.getEntityAngryAt());
             }
+            if (mob instanceof Evoker) syncVexCompanions(sentry, mob, null, Instant.now());
             moveHome(mob, sentry);
         });
     }
 
-    public Optional<SentryDefinition> definition(SentryRecord record) { return SentryDefinition.byPersistentId(record.itemId()); }
+    public void idleAtHome(Mob mob, SentryRecord record) {
+        Location home = home(record).clone().add(0, 1.0, 0);
+        if (home.getWorld() == null || mob.getWorld() != home.getWorld()) return;
+        if (mob.getLocation().distanceSquared(home) <= HOME_REACHED_DISTANCE * HOME_REACHED_DISTANCE) {
+            mob.setTarget(null);
+            mob.setAggressive(false);
+            clearWitherTargets(mob);
+            mob.getPathfinder().stopPathfinding();
+            return;
+        }
+        moveHome(mob, record);
+    }
+
+    public Optional<SentryDefinition> definition(SentryRecord record) {
+        return SentryDefinition.byPersistentId(record.itemId());
+    }
 
     public Location home(SentryRecord record) {
         World world = Bukkit.getWorld(record.world());
@@ -270,7 +407,9 @@ public final class SentryService {
             : new Location(world, record.x() + 0.5, record.y(), record.z() + 0.5);
     }
 
-    public Optional<Entity> entity(SentryRecord record) { return record.entityId().map(Bukkit::getEntity).filter(Objects::nonNull); }
+    public Optional<Entity> entity(SentryRecord record) {
+        return record.entityId().map(Bukkit::getEntity).filter(Objects::nonNull);
+    }
 
     public void moveHome(Mob mob, SentryRecord record) {
         Location home = home(record).clone().add(0, 1.0, 0);
@@ -292,24 +431,48 @@ public final class SentryService {
         entity(record).ifPresent(entity -> {
             UUID id = entity.getUniqueId();
             authorizedTeleports.add(id);
-            try { entity.teleport(home(record).clone().add(0, 1.0, 0)); }
-            finally { authorizedTeleports.remove(id); }
+            try {
+                entity.teleport(home(record).clone().add(0, 1.0, 0));
+            } finally {
+                authorizedTeleports.remove(id);
+            }
         });
     }
 
-    public boolean isAuthorizedTeleport(Entity entity) { return authorizedTeleports.contains(entity.getUniqueId()); }
+    public boolean isAuthorizedTeleport(Entity entity) {
+        return authorizedTeleports.contains(entity.getUniqueId());
+    }
+
+    public boolean teleportDestinationAllowed(Entity entity, Location destination) throws SQLException {
+        if (isAuthorizedTeleport(entity)) return true;
+        SentryRecord record = record(entity).orElse(null);
+        if (record == null || entity.getType() != EntityType.ENDERMAN || authorizedTarget(record).isEmpty()) return false;
+        return locationAllowedForCombat(record, destination);
+    }
 
     public boolean pathDestinationAllowed(Entity entity, Location destination) throws SQLException {
         SentryRecord record = record(entity).orElse(null);
-        if (record == null) return true;
-        Sanctuary sanctuary = sanctuaryRepository.findById(record.sanctuaryId()).orElse(null);
-        if (sanctuary == null || sanctuary.position().isEmpty()) return false;
-        if (!TerritoryCalculator.contains(sanctuary.position().orElseThrow(), sanctuary.territoryRadius(), record.world(), destination.getX(), destination.getZ())) return false;
+        if (record == null) {
+            SentryRecord parent = companionParent(entity).orElse(null);
+            if (parent == null) return true;
+            return locationAllowedForCombat(parent, destination);
+        }
 
+        if (authorizedTarget(record).isPresent()) return locationAllowedForCombat(record, destination);
         Location home = home(record).clone().add(0, 1.0, 0);
-        if (home.getWorld() == destination.getWorld() && home.distanceSquared(destination) <= 4.0) return true;
-        LivingEntity target = authorizedTarget(record).orElse(null);
-        return target != null && target.getWorld() == destination.getWorld() && target.getLocation().distanceSquared(destination) <= 9.0;
+        return home.getWorld() == destination.getWorld() && home.distanceSquared(destination) <= 4.0;
+    }
+
+    private boolean locationAllowedForCombat(SentryRecord record, Location destination) throws SQLException {
+        Sanctuary sanctuary = sanctuaryRepository.findById(record.sanctuaryId()).orElse(null);
+        SentryDefinition definition = definition(record).orElse(null);
+        if (sanctuary == null || sanctuary.position().isEmpty() || definition == null) return false;
+        if (destination.getWorld() == null || !destination.getWorld().getName().equals(record.world())) return false;
+        if (!TerritoryCalculator.contains(sanctuary.position().orElseThrow(), sanctuary.territoryRadius(), record.world(), destination.getX(), destination.getZ())) return false;
+        Location home = home(record);
+        double dx = destination.getX() - home.getX();
+        double dz = destination.getZ() - home.getZ();
+        return dx * dx + dz * dz <= definition.targetRadius() * definition.targetRadius();
     }
 
     public boolean canManage(Player player, Sanctuary sanctuary) {
@@ -318,7 +481,7 @@ public final class SentryService {
     }
 
     public boolean validTarget(Sanctuary sanctuary, SentryRecord sentry, SentryDefinition definition, LivingEntity target) {
-        if (target.getWorld() != Bukkit.getWorld(sentry.world()) || sanctuary.position().isEmpty()) return false;
+        if (target.getWorld() != Bukkit.getWorld(sentry.world()) || sanctuary.position().isEmpty() || isDefenseEntity(target)) return false;
         if (target instanceof Player player) {
             try {
                 SanctuaryRelationship relationship = securityService.relationship(sanctuary, player.getUniqueId());
@@ -336,10 +499,62 @@ public final class SentryService {
         return dx * dx + dz * dz <= definition.targetRadius() * definition.targetRadius();
     }
 
+    public boolean shouldSuppressManagedWardenEffect(Player player) throws SQLException {
+        Sanctuary sanctuary = sanctuaryAt(player.getLocation()).orElse(null);
+        if (sanctuary == null) return false;
+        SanctuaryRelationship relationship = securityService.relationship(sanctuary, player.getUniqueId());
+        if (relationship != SanctuaryRelationship.OWNER && relationship != SanctuaryRelationship.TRUSTED) return false;
+        for (SentryRecord sentry : repository.findBySanctuary(sanctuary.id())) {
+            if (sentry.state() != SentryState.ACTIVE) continue;
+            SentryDefinition definition = definition(sentry).orElse(null);
+            if (definition != null && definition.entityType() == EntityType.WARDEN && entity(sentry).isPresent()) return true;
+        }
+        return false;
+    }
+
+    private boolean isEvoker(SentryRecord record) {
+        SentryDefinition definition = definition(record).orElse(null);
+        return definition != null && definition.entityType() == EntityType.EVOKER;
+    }
+
+    private List<Vex> vexCompanions(SentryRecord parent) {
+        return vexParents.entrySet().stream()
+            .filter(entry -> entry.getValue().equals(parent.id()))
+            .map(entry -> Bukkit.getEntity(entry.getKey()))
+            .filter(Vex.class::isInstance)
+            .map(Vex.class::cast)
+            .filter(vex -> !vex.isDead())
+            .toList();
+    }
+
+    private void removeVexCompanions(SentryRecord parent) {
+        for (Vex vex : vexCompanions(parent)) vex.remove();
+        vexParents.entrySet().removeIf(entry -> entry.getValue().equals(parent.id()));
+        vexActivity.remove(parent.id());
+    }
+
+    private void clearWitherTargets(Mob mob) {
+        if (!(mob instanceof Wither wither)) return;
+        for (Wither.Head head : Wither.Head.values()) wither.setTarget(head, null);
+    }
+
     private Optional<UUID> sentryId(Entity entity) {
         String value = entity.getPersistentDataContainer().get(sentryIdKey, PersistentDataType.STRING);
         if (value == null) return Optional.empty();
-        try { return Optional.of(UUID.fromString(value)); }
-        catch (IllegalArgumentException ignored) { return Optional.empty(); }
+        try {
+            return Optional.of(UUID.fromString(value));
+        } catch (IllegalArgumentException ignored) {
+            return Optional.empty();
+        }
+    }
+
+    private Optional<UUID> vexParentId(Entity entity) {
+        String value = entity.getPersistentDataContainer().get(vexParentKey, PersistentDataType.STRING);
+        if (value == null) return Optional.empty();
+        try {
+            return Optional.of(UUID.fromString(value));
+        } catch (IllegalArgumentException ignored) {
+            return Optional.empty();
+        }
     }
 }

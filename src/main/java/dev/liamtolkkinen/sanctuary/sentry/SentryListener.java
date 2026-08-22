@@ -1,14 +1,14 @@
 package dev.liamtolkkinen.sanctuary.sentry;
 
+import com.destroystokyo.paper.event.entity.EndermanEscapeEvent;
+import com.destroystokyo.paper.event.entity.EntityPathfindEvent;
 import dev.liamtolkkinen.extendeditems.ExtendedItems;
 import dev.liamtolkkinen.sanctuary.anchor.AnchorItemService;
 import dev.liamtolkkinen.sanctuary.sanctuary.Sanctuary;
 import dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryRepository;
-import com.destroystokyo.paper.event.entity.EndermanEscapeEvent;
-import com.destroystokyo.paper.event.entity.EntityPathfindEvent;
+import dev.liamtolkkinen.sanctuary.territory.TerritoryCalculator;
 import io.papermc.paper.event.entity.EntityMoveEvent;
 import io.papermc.paper.event.entity.WardenAngerChangeEvent;
-import dev.liamtolkkinen.sanctuary.territory.TerritoryCalculator;
 import java.sql.SQLException;
 import java.util.Optional;
 import java.util.logging.Level;
@@ -17,24 +17,28 @@ import org.bukkit.ChatColor;
 import org.bukkit.Material;
 import org.bukkit.block.Block;
 import org.bukkit.entity.Entity;
+import org.bukkit.entity.EntityType;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Mob;
 import org.bukkit.entity.Player;
+import org.bukkit.entity.Vex;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
+import org.bukkit.event.entity.EntityChangeBlockEvent;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityDeathEvent;
 import org.bukkit.event.entity.EntityExplodeEvent;
+import org.bukkit.event.entity.EntityPotionEffectEvent;
 import org.bukkit.event.entity.EntityTargetLivingEntityEvent;
 import org.bukkit.event.entity.EntityTeleportEvent;
 import org.bukkit.event.entity.EntityTransformEvent;
 import org.bukkit.event.inventory.InventoryOpenEvent;
 import org.bukkit.event.player.PlayerInteractEntityEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
-import org.bukkit.inventory.InventoryHolder;
+import org.bukkit.potion.PotionEffectType;
 import org.bukkit.projectiles.ProjectileSource;
 
 public final class SentryListener implements Listener {
@@ -47,18 +51,19 @@ public final class SentryListener implements Listener {
 
     public SentryListener(SentryService service, SentryRepository repository, SanctuaryRepository sanctuaryRepository,
                           AnchorItemService anchorItemService, SentryUiService uiService, Logger logger) {
-        this.service = service; this.repository = repository; this.sanctuaryRepository = sanctuaryRepository;
-        this.anchorItemService = anchorItemService; this.uiService = uiService; this.logger = logger;
+        this.service = service;
+        this.repository = repository;
+        this.sanctuaryRepository = sanctuaryRepository;
+        this.anchorItemService = anchorItemService;
+        this.uiService = uiService;
+        this.logger = logger;
     }
-
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)
     public void onManagedPathfind(EntityPathfindEvent event) {
-        if (!service.isManaged(event.getEntity())) return;
+        if (!service.isDefenseEntity(event.getEntity())) return;
         try {
-            if (!service.pathDestinationAllowed(event.getEntity(), event.getLoc())) {
-                event.setCancelled(true);
-            }
+            if (!service.pathDestinationAllowed(event.getEntity(), event.getLoc())) event.setCancelled(true);
         } catch (SQLException exception) {
             event.setCancelled(true);
             logger.log(Level.WARNING, "Failed sentry pathfinding validation", exception);
@@ -68,23 +73,35 @@ public final class SentryListener implements Listener {
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)
     public void onManagedTeleport(EntityTeleportEvent event) {
         if (!service.isManaged(event.getEntity())) return;
-        if (!service.isAuthorizedTeleport(event.getEntity())) {
+        try {
+            if (!service.teleportDestinationAllowed(event.getEntity(), event.getTo())) event.setCancelled(true);
+        } catch (SQLException exception) {
             event.setCancelled(true);
+            logger.log(Level.WARNING, "Failed sentry teleport validation", exception);
         }
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)
     public void onManagedEndermanEscape(EndermanEscapeEvent event) {
-        if (service.isManaged(event.getEntity())) {
+        if (!service.isManaged(event.getEntity())) return;
+        try {
+            SentryRecord record = service.record(event.getEntity()).orElse(null);
+            if (record == null) {
+                event.setCancelled(true);
+                return;
+            }
+            if (event.getReason() == EndermanEscapeEvent.Reason.RUNAWAY || service.authorizedTarget(record).isEmpty()) {
+                event.setCancelled(true);
+            }
+        } catch (SQLException exception) {
             event.setCancelled(true);
+            logger.log(Level.WARNING, "Failed sentry Enderman escape validation", exception);
         }
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)
     public void onManagedTransform(EntityTransformEvent event) {
-        if (service.isManaged(event.getEntity())) {
-            event.setCancelled(true);
-        }
+        if (service.isManaged(event.getEntity())) event.setCancelled(true);
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
@@ -115,7 +132,7 @@ public final class SentryListener implements Listener {
     public void onPlace(BlockPlaceEvent event) {
         Optional<SentryDefinition> definition = service.definition(event.getItemInHand());
         if (definition.isEmpty()) return;
-        if (definition.orElseThrow().entityType() == org.bukkit.entity.EntityType.PIGLIN_BRUTE
+        if (definition.orElseThrow().entityType() == EntityType.PIGLIN_BRUTE
             && event.getBlockPlaced().getWorld().getEnvironment() != org.bukkit.World.Environment.NETHER) {
             event.setCancelled(true);
             event.getPlayer().sendMessage(ChatColor.RED + "Piglin Brute sentries can only be placed in the Nether.");
@@ -145,13 +162,20 @@ public final class SentryListener implements Listener {
         try {
             Sanctuary sanctuary = sanctuaryRepository.findById(metadata.orElseThrow().anchorId()).orElse(null);
             if (sanctuary != null) service.trigger(sanctuary, SentryTrigger.BEACON_ATTACKED, event.getPlayer());
-        } catch (SQLException exception) { logger.log(Level.WARNING, "Failed sentry Beacon-attack trigger", exception); }
+        } catch (SQLException exception) {
+            logger.log(Level.WARNING, "Failed sentry Beacon-attack trigger", exception);
+        }
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onBreak(BlockBreakEvent event) {
         try {
-            Optional<SentryRecord> result = repository.findByPost(event.getBlock().getWorld().getName(), event.getBlock().getX(), event.getBlock().getY(), event.getBlock().getZ());
+            Optional<SentryRecord> result = repository.findByPost(
+                event.getBlock().getWorld().getName(),
+                event.getBlock().getX(),
+                event.getBlock().getY(),
+                event.getBlock().getZ()
+            );
             if (result.isEmpty()) {
                 triggerPlayerAction(event.getPlayer(), event.getBlock(), SentryTrigger.BLOCK_BROKEN);
                 return;
@@ -163,29 +187,39 @@ public final class SentryListener implements Listener {
                 event.getPlayer().sendMessage(ChatColor.RED + "Only the Sanctuary owner can pick up this sentry.");
                 return;
             }
-            event.setDropItems(false); event.setExpToDrop(0);
+            event.setDropItems(false);
+            event.setExpToDrop(0);
             service.unregister(sentry);
             SentryDefinition definition = service.definition(sentry).orElseThrow();
             event.getBlock().getWorld().dropItemNaturally(event.getBlock().getLocation(), ExtendedItems.create(definition.itemId()));
             event.getPlayer().sendMessage(ChatColor.YELLOW + "Sentry unregistered. Its individual behavior was cleared.");
-        } catch (SQLException exception) { fail(event.getPlayer(), "Failed to process sentry post break", exception); }
+        } catch (SQLException exception) {
+            fail(event.getPlayer(), "Failed to process sentry post break", exception);
+        }
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onOtherPlace(BlockPlaceEvent event) {
         if (service.definition(event.getItemInHand()).isPresent()) return;
-        try { triggerPlayerAction(event.getPlayer(), event.getBlockPlaced(), SentryTrigger.BLOCK_PLACED); }
-        catch (SQLException exception) { logger.log(Level.WARNING, "Failed sentry block-place trigger", exception); }
+        try {
+            triggerPlayerAction(event.getPlayer(), event.getBlockPlaced(), SentryTrigger.BLOCK_PLACED);
+        } catch (SQLException exception) {
+            logger.log(Level.WARNING, "Failed sentry block-place trigger", exception);
+        }
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onInteract(PlayerInteractEvent event) {
         if (event.getClickedBlock() == null || !event.getAction().isRightClick()) return;
         Material type = event.getClickedBlock().getType();
-        if (!(type.name().contains("BUTTON") || type.name().contains("LEVER") || type.name().contains("DOOR") ||
-              type.name().contains("TRAPDOOR") || type.name().contains("GATE") || type == Material.REPEATER || type == Material.COMPARATOR)) return;
-        try { triggerPlayerAction(event.getPlayer(), event.getClickedBlock(), SentryTrigger.INTERACTION_USED); }
-        catch (SQLException exception) { logger.log(Level.WARNING, "Failed sentry interaction trigger", exception); }
+        if (!(type.name().contains("BUTTON") || type.name().contains("LEVER") || type.name().contains("DOOR")
+            || type.name().contains("TRAPDOOR") || type.name().contains("GATE")
+            || type == Material.REPEATER || type == Material.COMPARATOR)) return;
+        try {
+            triggerPlayerAction(event.getPlayer(), event.getClickedBlock(), SentryTrigger.INTERACTION_USED);
+        } catch (SQLException exception) {
+            logger.log(Level.WARNING, "Failed sentry interaction trigger", exception);
+        }
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
@@ -196,7 +230,9 @@ public final class SentryListener implements Listener {
         try {
             Optional<Sanctuary> sanctuary = service.sanctuaryAt(location);
             if (sanctuary.isPresent()) service.trigger(sanctuary.orElseThrow(), SentryTrigger.CONTAINER_OPENED, player);
-        } catch (SQLException exception) { logger.log(Level.WARNING, "Failed sentry container trigger", exception); }
+        } catch (SQLException exception) {
+            logger.log(Level.WARNING, "Failed sentry container trigger", exception);
+        }
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)
@@ -215,13 +251,20 @@ public final class SentryListener implements Listener {
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)
     public void onTarget(EntityTargetLivingEntityEvent event) {
         try {
-            if (event.getTarget() != null && service.isManaged(event.getTarget())) {
-                event.setCancelled(true); return;
+            if (event.getEntity() instanceof Vex vex) service.ensureVexCompanion(vex);
+            if (event.getTarget() != null && service.isDefenseEntity(event.getTarget())) {
+                event.setCancelled(true);
+                return;
             }
-            if (event.getEntity() instanceof Mob mob && service.isManaged(mob)) {
-                if (!(event.getTarget() instanceof LivingEntity living) || !service.targetAllowed(mob, living)) event.setCancelled(true);
+            if (event.getEntity() instanceof Mob mob && service.isDefenseEntity(mob)) {
+                if (!(event.getTarget() instanceof LivingEntity living) || !service.targetAllowed(mob, living)) {
+                    event.setCancelled(true);
+                }
             }
-        } catch (SQLException exception) { logger.log(Level.WARNING, "Failed sentry target validation", exception); event.setCancelled(true); }
+        } catch (SQLException exception) {
+            logger.log(Level.WARNING, "Failed sentry target validation", exception);
+            event.setCancelled(true);
+        }
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
@@ -229,7 +272,8 @@ public final class SentryListener implements Listener {
         LivingEntity attacker = resolveAttacker(event.getDamager());
         if (attacker == null) return;
         try {
-            if (service.isManaged(attacker) && event.getEntity() instanceof LivingEntity victim
+            if (attacker instanceof Vex vex) service.ensureVexCompanion(vex);
+            if (service.isDefenseEntity(attacker) && event.getEntity() instanceof LivingEntity victim
                 && !service.mayDamage(attacker, victim)) {
                 event.setCancelled(true);
                 return;
@@ -244,14 +288,22 @@ public final class SentryListener implements Listener {
                 if (sanctuary != null) service.trigger(sanctuary, SentryTrigger.SENTRY_ATTACKED, attacker);
                 return;
             }
+            if (service.isCompanion(event.getEntity()) && !(attacker instanceof Player)) {
+                event.setCancelled(true);
+                return;
+            }
             Optional<Sanctuary> sanctuary = service.sanctuaryAt(event.getEntity().getLocation());
             if (sanctuary.isEmpty()) return;
             Sanctuary s = sanctuary.orElseThrow();
-            if (event.getEntity() instanceof Player player && player.getUniqueId().equals(s.ownerId()) && !attacker.getUniqueId().equals(player.getUniqueId())) {
+            if (event.getEntity() instanceof Player player
+                && player.getUniqueId().equals(s.ownerId())
+                && !attacker.getUniqueId().equals(player.getUniqueId())) {
                 service.trigger(s, SentryTrigger.OWNER_ATTACKED, attacker);
             }
             if (attacker instanceof Player) service.trigger(s, SentryTrigger.ENTITY_HURT, attacker);
-        } catch (SQLException exception) { logger.log(Level.WARNING, "Failed sentry damage trigger", exception); }
+        } catch (SQLException exception) {
+            logger.log(Level.WARNING, "Failed sentry damage trigger", exception);
+        }
     }
 
     @EventHandler(priority = EventPriority.HIGHEST)
@@ -259,9 +311,12 @@ public final class SentryListener implements Listener {
         try {
             Optional<SentryRecord> record = service.record(event.getEntity());
             if (record.isEmpty()) return;
-            event.getDrops().clear(); event.setDroppedExp(0);
+            event.getDrops().clear();
+            event.setDroppedExp(0);
             service.markDown(record.orElseThrow());
-        } catch (SQLException exception) { logger.log(Level.SEVERE, "Failed to put sentry on respawn cooldown", exception); }
+        } catch (SQLException exception) {
+            logger.log(Level.SEVERE, "Failed to put sentry on respawn cooldown", exception);
+        }
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)
@@ -277,6 +332,25 @@ public final class SentryListener implements Listener {
         }
     }
 
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)
+    public void onEntityChangeBlock(EntityChangeBlockEvent event) {
+        if (event.getEntity().getType() == EntityType.WITHER && service.isManaged(event.getEntity())) {
+            event.setCancelled(true);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)
+    public void onWardenPotionEffect(EntityPotionEffectEvent event) {
+        if (event.getCause() != EntityPotionEffectEvent.Cause.WARDEN) return;
+        if (!(event.getEntity() instanceof Player player)) return;
+        if (event.getNewEffect() == null || event.getNewEffect().getType() != PotionEffectType.DARKNESS) return;
+        try {
+            if (service.shouldSuppressManagedWardenEffect(player)) event.setCancelled(true);
+        } catch (SQLException exception) {
+            logger.log(Level.WARNING, "Failed sentry Warden Darkness validation", exception);
+        }
+    }
+
     @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = true)
     public void onRightClick(PlayerInteractEntityEvent event) {
         try {
@@ -286,7 +360,9 @@ public final class SentryListener implements Listener {
             if (sanctuary == null || !service.canManage(event.getPlayer(), sanctuary)) return;
             event.setCancelled(true);
             uiService.open(event.getPlayer(), sanctuary, record.orElseThrow());
-        } catch (SQLException exception) { fail(event.getPlayer(), "Failed to open sentry UI", exception); }
+        } catch (SQLException exception) {
+            fail(event.getPlayer(), "Failed to open sentry UI", exception);
+        }
     }
 
     private void triggerPlayerAction(Player player, Block block, SentryTrigger trigger) throws SQLException {
@@ -304,6 +380,7 @@ public final class SentryListener implements Listener {
     }
 
     private void fail(Player player, String message, Exception exception) {
-        logger.log(Level.SEVERE, message, exception); player.sendMessage(ChatColor.RED + "Sanctuary sentry action failed.");
+        logger.log(Level.SEVERE, message, exception);
+        player.sendMessage(ChatColor.RED + "Sanctuary sentry action failed.");
     }
 }

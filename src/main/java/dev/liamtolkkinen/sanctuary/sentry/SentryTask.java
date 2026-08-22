@@ -17,6 +17,7 @@ import org.bukkit.entity.EntityType;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Mob;
 import org.bukkit.entity.Player;
+import org.bukkit.entity.Vex;
 import org.bukkit.plugin.java.JavaPlugin;
 
 public final class SentryTask implements Runnable {
@@ -100,17 +101,13 @@ public final class SentryTask implements Runnable {
         SentryDefinition definition = service.definition(sentry).orElse(null);
         LivingEntity target = service.authorizedTarget(sentry).orElse(null);
         if (target != null && definition != null && service.validTarget(sanctuary, sentry, definition, target)) {
-            // Reassert the Sanctuary-selected target. This keeps brains such as Warden from drifting
-            // toward sounds or other vanilla interests between sentry maintenance ticks.
-            service.authorizeAndEngage(sanctuary, sentry, definition, mob, target);
+            service.maintainAuthorizedTarget(sentry, mob, target, now);
         } else {
             if (target != null) service.clearTarget(sentry);
-            else {
-                mob.setTarget(null);
-                mob.setAggressive(false);
-                service.moveHome(mob, sentry);
-            }
+            service.idleAtHome(mob, sentry);
         }
+
+        service.tickVexCompanions(sentry, mob, service.authorizedTarget(sentry).orElse(null), now);
     }
 
     private void scanTriggers() throws SQLException {
@@ -122,7 +119,8 @@ public final class SentryTask implements Runnable {
             if (world == null) continue;
 
             for (Entity entity : world.getEntities()) {
-                if (!(entity instanceof LivingEntity living) || service.isManaged(entity)) continue;
+                if (entity instanceof Vex vex) service.ensureVexCompanion(vex);
+                if (!(entity instanceof LivingEntity living) || service.isDefenseEntity(entity)) continue;
                 Location location = entity.getLocation();
                 if (!TerritoryCalculator.contains(
                     sanctuary.position().orElseThrow(), sanctuary.territoryRadius(), world.getName(),

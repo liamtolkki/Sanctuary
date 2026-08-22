@@ -90,8 +90,8 @@ DESTROYED
 - JDK 25
 - Gradle Wrapper 9.7.1
 - Paper 26.1.2 target
-- ExtendedUI available as a sibling repository during the current development phase
-- Network access to download the pinned ExtendedItems GitHub Release asset on first build
+- ExtendedUI pinned to stable release `0.1.0` and downloaded from GitHub Releases during the build
+- Network access to download the pinned ExtendedUI and ExtendedItems GitHub Release assets on first build
 
 Build and test:
 
@@ -102,6 +102,7 @@ Build and test:
 The build downloads exactly:
 
 ```text
+ExtendedUI 0.1.0
 ExtendedItems 0.1.0-alpha.2
 ```
 
@@ -112,6 +113,23 @@ v0.1.0-alpha.2/extendeditems-0.1.0-alpha.2.jar
 ```
 
 It is shaded and relocated into the final Sanctuary plugin JAR. ExtendedItems is not installed separately in Paper's `plugins` directory.
+
+
+## Management UI
+
+Right-click your active Sanctuary anchor to open the owner management UI. The menu is rendered through ExtendedUI `0.1.0`.
+
+Owners can manage the territory boundary, trusted players, and individual capabilities without using the command-line debug tools.
+
+An administrator can right-click another player's registered anchor to open the admin/debug view. An administrator can also sneak-right-click their own anchor to force the admin view, or run:
+
+```text
+/sanctuary admin ui <sanctuary>
+```
+
+Debug-ephemeral Sanctuaries include a **My Debug Permissions** screen with per-capability toggles, **Allow All Debug Capabilities**, and **Clear My Debug Trust** for single-player testing.
+
+Commands remain available as administrative and offline-UUID fallbacks.
 
 ## Development deployment
 
@@ -142,6 +160,7 @@ Fully restart Paper after deployment. Do not use `/reload` as the normal develop
 /sanctuary admin permissions <sanctuary> <player>
 /sanctuary admin reload
 /sanctuary admin beacons
+/sanctuary admin ui <sanctuary>
 /sanctuary admin givebeacon <player>
 /sanctuary admin debugbeacon [player]
 /sanctuary admin debugtrust <debug-sanctuary> [player] <capability|all> <allow|deny>
@@ -319,3 +338,8 @@ Implemented:
 - `sanctuary.admin` does not bypass territory protections, so operators can test outsider behavior.
 - `/sanctuary admin debugtrust` grants or revokes capabilities on debug-ephemeral Sanctuaries for solo testing.
 - `/sanctuary admin permissions` can inspect debug Sanctuaries as well as normal Sanctuaries.
+
+
+## Sanctuary naming
+
+Owners can rename a Sanctuary from its management UI. Names are persisted, limited to 32 characters, and are used as the preferred human-readable selector for Sanctuary commands. Duplicate names are allowed; selectors automatically add owner or short-ID disambiguation when necessary.

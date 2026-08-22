@@ -2,6 +2,7 @@ package dev.liamtolkkinen.sanctuary.ui;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import dev.liamtolkkinen.sanctuary.sanctuary.Sanctuary;
 import dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryPosition;
@@ -37,6 +38,17 @@ class SanctuaryUiServiceTest {
             SanctuaryUiService.resolveSelector(sanctuary.id().toString(), values)
                 .filter(value -> value.id().equals(sanctuary.id()))
                 .isPresent()
+        );
+    }
+
+
+    @Test
+    void sanctuaryNameIsTrimmedAndLimitedToThirtyTwoCharacters() {
+        assertEquals("Seaside Keep", SanctuaryUiService.normalizeSanctuaryName("  Seaside Keep  "));
+        assertThrows(IllegalArgumentException.class, () -> SanctuaryUiService.normalizeSanctuaryName("   "));
+        assertThrows(
+            IllegalArgumentException.class,
+            () -> SanctuaryUiService.normalizeSanctuaryName("x".repeat(33))
         );
     }
 

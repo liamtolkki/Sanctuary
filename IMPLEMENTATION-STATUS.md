@@ -6,7 +6,7 @@
 
 - Java 25 Gradle project targeting Paper 26.1.2
 - Paper plugin entry point
-- ExtendedUI sibling composite-build development dependency
+- Pinned ExtendedUI `0.1.0` GitHub Release dependency
 - ExtendedItems `0.1.0-alpha.2` pinned as an exact GitHub Release JAR
 - Shaded/relocated ExtendedUI, ExtendedItems, and InvUI in the final Sanctuary JAR
 - SQLite JDBC embedded in the final Sanctuary JAR
@@ -90,13 +90,22 @@ territory:
 
 Recovery is only available for an `INACTIVE` Sanctuary whose Beacon destruction was not recorded. A successful recovery advances `anchor_generation`.
 
+## Sanctuary management UI completed
+
+- ExtendedUI `0.1.0` consumer integration
+- Owner right-click anchor management menu
+- Admin right-click / sneak-right-click debug menu
+- `/sanctuary admin ui <sanctuary>`
+- Boundary display action
+- Trusted-player list and online-player add screen
+- Per-player capability toggles
+- Debug self-permission controls for solo testing
+
 ## Deliberately not implemented yet
 
 - Sanctuary Conduit obtain/placement lifecycle
 - Anchor tier crafting/upgrades
-- Sanctuary management UI
 - Rename dialog
-- Protection gameplay
 - Advancements
 - Sentry posts
 - Sentry mobs
@@ -192,3 +201,15 @@ Implemented:
 - `/sanctuary admin debugtrust <debug-sanctuary> [player] <capability|all> <allow|deny>` supports solo testing.
 - Anchor blocks are excluded from generic `BREAK` protection and continue through the anchor lifecycle listener.
 - SQL permission lookup failures fail closed and cancel the attempted action.
+
+
+### Sanctuary management UI
+
+Implemented:
+- Owner right-click on an active Sanctuary anchor opens the personal ExtendedUI management screen.
+- Admin right-click and `/sanctuary admin ui <sanctuary>` open the admin/debug view.
+- Trust and capability management is available through ExtendedUI menus.
+- Debug Sanctuaries expose solo-test permission controls in the admin UI.
+- Owners can rename their Sanctuary from the management UI using the ExtendedUI text-input dialog.
+- Sanctuary names are trimmed, must be nonblank, and are limited to 32 characters.
+- Renames persist through the existing `name` column and immediately affect readable Sanctuary selectors.

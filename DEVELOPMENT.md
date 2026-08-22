@@ -2,19 +2,16 @@
 
 ## Repository layout
 
-During current shared-library development, keep ExtendedUI beside Sanctuary:
+Sanctuary consumes stable shared-library releases directly. A sibling ExtendedUI checkout is not required.
+
+ExtendedUI is pinned and downloaded from the exact GitHub Release asset:
 
 ```text
-C:\MinecraftDev\
-├── ExtendedUI\
-├── Sanctuary\
-└── server\
-    └── plugins\
+ExtendedUI 0.1.0
+extendedui-0.1.0.jar
 ```
 
-`settings.gradle.kts` includes the sibling ExtendedUI build when present.
-
-ExtendedItems is different now that the required item catalog has a release. Sanctuary pins and downloads the exact GitHub Release asset:
+ExtendedItems is also pinned and downloaded from its exact GitHub Release asset:
 
 ```text
 ExtendedItems 0.1.0-alpha.2
@@ -100,21 +97,13 @@ plugins/Sanctuary/sanctuary.db
 
 ## GitHub Actions
 
-The workflow checks out Sanctuary and ExtendedUI, sets up Java 25, and runs:
+The workflow checks out Sanctuary, sets up Java 25, downloads the pinned ExtendedUI and ExtendedItems releases through Gradle, and runs:
 
 ```text
 ./gradlew clean build --no-daemon
 ```
 
 The Sanctuary build downloads the exact ExtendedItems `0.1.0-alpha.2` release JAR itself.
-
-If ExtendedUI becomes private, add a repository secret named:
-
-```text
-SHARED_REPOS_TOKEN
-```
-
-with read access to ExtendedUI.
 
 Before CI, verify the wrapper executable bit:
 

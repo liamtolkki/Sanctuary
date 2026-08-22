@@ -7,6 +7,7 @@ import dev.liamtolkkinen.extendedui.ExtendedItemProvider;
 import dev.liamtolkkinen.extendedui.ExtendedMenuBuilder;
 import dev.liamtolkkinen.extendedui.ExtendedMenuContext;
 import dev.liamtolkkinen.extendedui.ExtendedPagedMenu;
+import dev.liamtolkkinen.extendedui.ExtendedTextInputDialog;
 import dev.liamtolkkinen.extendedui.ExtendedUI;
 import dev.liamtolkkinen.extendedui.StandardButtons;
 import dev.liamtolkkinen.sanctuary.SanctuaryPlugin;
@@ -28,6 +29,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.logging.Level;
+import net.kyori.adventure.text.Component;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.Material;
@@ -137,6 +139,19 @@ public final class SanctuaryUiService {
             }
 
             menu.set(4, infoButton(sanctuary, adminMode));
+
+            if (sanctuary.ownerId().equals(context.player().getUniqueId())) {
+                menu.set(18, button(
+                    Material.NAME_TAG,
+                    "<yellow>Rename Sanctuary",
+                    List.of(
+                        "<gray>Current name: <white>" + mini(sanctuary.name()),
+                        "<gray>Click to choose a new name."
+                    ),
+                    click -> showRenameDialog(click.menu(), sanctuary, adminMode)
+                ));
+            }
+
             menu.set(20, button(
                 sanctuary.state() == SanctuaryState.ACTIVE ? Material.ENDER_EYE : Material.GRAY_DYE,
                 "<aqua>Show Boundary",
@@ -430,6 +445,92 @@ public final class SanctuaryUiService {
         }
     }
 
+
+    private void showRenameDialog(
+        ExtendedMenuContext context,
+        Sanctuary sanctuary,
+        boolean adminMode
+    ) {
+        if (!sanctuary.ownerId().equals(context.player().getUniqueId())) {
+            context.player().sendMessage(ChatColor.RED + "Only the Sanctuary owner can rename it.");
+            return;
+        }
+
+        ExtendedTextInputDialog dialog = ExtendedTextInputDialog.builder(
+                Component.text("Rename Sanctuary"),
+                Component.text("Sanctuary name")
+            )
+            .initialValue(sanctuary.name())
+            .maxLength(32)
+            .confirmText(Component.text("Rename"))
+            .cancelText(Component.text("Cancel"))
+            .onConfirm((player, value) -> renameSanctuary(player, sanctuary.id(), value, adminMode))
+            .build();
+
+        context.showDialog(dialog);
+    }
+
+    private void renameSanctuary(
+        Player player,
+        UUID sanctuaryId,
+        String requestedName,
+        boolean adminMode
+    ) {
+        final String name;
+        try {
+            name = normalizeSanctuaryName(requestedName);
+        } catch (IllegalArgumentException exception) {
+            player.sendMessage(ChatColor.RED + exception.getMessage());
+            refreshOrReopen(player, sanctuaryId, adminMode);
+            return;
+        }
+
+        try {
+            Sanctuary current = repository.findById(sanctuaryId).orElse(null);
+            if (current == null) {
+                player.sendMessage(ChatColor.RED + "That Sanctuary no longer exists.");
+                ui.close(player);
+                return;
+            }
+            if (!current.ownerId().equals(player.getUniqueId())) {
+                player.sendMessage(ChatColor.RED + "Only the Sanctuary owner can rename it.");
+                refreshOrReopen(player, sanctuaryId, adminMode);
+                return;
+            }
+
+            Sanctuary renamed = new Sanctuary(
+                current.id(),
+                current.ownerId(),
+                current.type(),
+                name,
+                current.position(),
+                current.tier(),
+                current.anchorGeneration(),
+                current.territoryRadius(),
+                current.state(),
+                current.destroyedAt(),
+                current.destructionReason(),
+                current.debugEphemeral(),
+                current.createdAt(),
+                Instant.now()
+            );
+            repository.save(renamed);
+            player.sendMessage(ChatColor.GREEN + "Sanctuary renamed to " + name + ".");
+            refreshOrReopen(player, sanctuaryId, adminMode);
+        } catch (SQLException | IllegalArgumentException exception) {
+            menuError(player, "Failed to rename Sanctuary", exception);
+            refreshOrReopen(player, sanctuaryId, adminMode);
+        }
+    }
+
+    private void refreshOrReopen(Player player, UUID sanctuaryId, boolean adminMode) {
+        if (ui.hasSession(player)) {
+            ui.refresh(player);
+            return;
+        }
+        ui.open(player, new MainMenu(sanctuaryId, adminMode));
+    }
+
     private void toggleCapability(
         Player player,
         Sanctuary sanctuary,
@@ -557,6 +658,17 @@ public final class SanctuaryUiService {
     private void menuError(Player player, String message, Exception exception) {
         player.sendMessage(ChatColor.RED + "Sanctuary UI could not complete that action.");
         plugin.getLogger().log(Level.SEVERE, message, exception);
+    }
+
+    static String normalizeSanctuaryName(String requestedName) {
+        String name = requestedName == null ? "" : requestedName.trim();
+        if (name.isBlank()) {
+            throw new IllegalArgumentException("Sanctuary name cannot be blank.");
+        }
+        if (name.length() > 32) {
+            throw new IllegalArgumentException("Sanctuary name cannot be longer than 32 characters.");
+        }
+        return name;
     }
 
     public static Optional<Sanctuary> resolveSelector(String selector, List<Sanctuary> candidates) {

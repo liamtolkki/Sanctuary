@@ -25,10 +25,18 @@ public final class DebugBeaconRegistrationService {
     }
 
     public Sanctuary register(double territoryRadius) throws SQLException {
+        return register(territoryRadius, 1);
+    }
+
+    public Sanctuary register(double territoryRadius, int tier) throws SQLException {
         if (!Double.isFinite(territoryRadius) || territoryRadius <= 0.0) {
             throw new IllegalArgumentException(
                 "territoryRadius must be finite and greater than zero"
             );
+        }
+
+        if (tier < 1 || tier > 5) {
+            throw new IllegalArgumentException("tier must be between 1 and 5");
         }
 
         UUID sanctuaryId = UUID.randomUUID();
@@ -41,7 +49,7 @@ public final class DebugBeaconRegistrationService {
             SanctuaryType.BEACON,
             "Debug Sanctuary " + sanctuaryId.toString().substring(0, 8),
             Optional.empty(),
-            1,
+            tier,
             1,
             territoryRadius,
             SanctuaryState.INACTIVE,

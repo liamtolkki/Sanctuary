@@ -40,6 +40,11 @@ public final class MigrationRunner {
             6,
             "security_policy",
             "/db/migration/V006__security_policy.sql"
+        ),
+        new DatabaseMigration(
+            7,
+            "beacon_effect_levels",
+            "/db/migration/V007__beacon_effect_levels.sql"
         )
     );
 

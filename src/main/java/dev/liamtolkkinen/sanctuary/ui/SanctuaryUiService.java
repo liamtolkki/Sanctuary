@@ -11,6 +11,8 @@ import dev.liamtolkkinen.extendedui.ExtendedTextInputDialog;
 import dev.liamtolkkinen.extendedui.ExtendedUI;
 import dev.liamtolkkinen.extendedui.StandardButtons;
 import dev.liamtolkkinen.sanctuary.SanctuaryPlugin;
+import dev.liamtolkkinen.sanctuary.effect.SanctuaryEffect;
+import dev.liamtolkkinen.sanctuary.effect.SanctuaryEffectService;
 import dev.liamtolkkinen.sanctuary.sanctuary.Sanctuary;
 import dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryPosition;
 import dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryRepository;
@@ -49,6 +51,7 @@ public final class SanctuaryUiService {
     private final SanctuaryRepository repository;
     private final SanctuaryPermissionService permissionService;
     private final SanctuarySecurityService securityService;
+    private final SanctuaryEffectService effectService;
     private final TerritoryBoundaryService boundaryService;
 
     public SanctuaryUiService(
@@ -57,6 +60,7 @@ public final class SanctuaryUiService {
         SanctuaryRepository repository,
         SanctuaryPermissionService permissionService,
         SanctuarySecurityService securityService,
+        SanctuaryEffectService effectService,
         TerritoryBoundaryService boundaryService
     ) {
         this.plugin = plugin;
@@ -64,6 +68,7 @@ public final class SanctuaryUiService {
         this.repository = repository;
         this.permissionService = permissionService;
         this.securityService = securityService;
+        this.effectService = effectService;
         this.boundaryService = boundaryService;
     }
 
@@ -607,6 +612,16 @@ public final class SanctuaryUiService {
                 ));
 
                 menu.set(22, button(
+                    Material.BEACON,
+                    "<aqua>Beacon Effects",
+                    List.of(
+                        "<gray>View and select each unlocked effect level.",
+                        "<gray>Effect radii are derived from the maximum radius."
+                    ),
+                    click -> click.menu().open(new EffectMenu(sanctuary.id(), adminMode))
+                ));
+
+                menu.set(24, button(
                     Material.WHITE_DYE,
                     "<white>Boundary Relationship Colors",
                     List.of(
@@ -617,11 +632,144 @@ public final class SanctuaryUiService {
                     ),
                     null
                 ));
+
+                if (adminMode && sanctuary.debugEphemeral()) {
+                    menu.set(31, button(
+                        Material.PLAYER_HEAD,
+                        "<light_purple>My Debug Relationship",
+                        List.of(
+                            "<gray>Switch yourself between Trusted,",
+                            "<gray>Neutral, and Blacklisted for effect testing."
+                        ),
+                        click -> click.menu().open(new DebugRelationshipMenu(sanctuary.id()))
+                    ));
+                }
             } catch (SQLException exception) {
                 menuError(context.player(), "Failed to load Sanctuary security", exception);
             }
             menu.set(27, StandardButtons.back(context.theme()));
             menu.set(35, StandardButtons.close(context.theme()));
+        }
+    }
+
+    private final class EffectMenu extends ExtendedInventoryMenu {
+        private final UUID sanctuaryId;
+        private final boolean adminMode;
+
+        private EffectMenu(UUID sanctuaryId, boolean adminMode) {
+            super(6, "<aqua>Beacon Effects");
+            this.sanctuaryId = sanctuaryId;
+            this.adminMode = adminMode;
+        }
+
+        @Override
+        public void build(ExtendedMenuContext context, ExtendedMenuBuilder menu) {
+            menu.fillBackground();
+            Sanctuary sanctuary = loadForMenu(context.player(), sanctuaryId, adminMode);
+            if (sanctuary == null) {
+                menu.set(22, button(Material.BARRIER, "<red>Sanctuary unavailable", List.of(), null));
+                return;
+            }
+
+            double maximumRadius = plugin.getMaximumTerritoryRadius();
+            menu.set(4, button(
+                Material.BEACON,
+                "<gold>Beacon Tier " + roman(sanctuary.tier()),
+                List.of(
+                    "<gray>Maximum configured radius: <white>" + formatRadius(maximumRadius),
+                    "<gray>Segment delta: <white>" + formatRadius(effectService.segmentDelta(maximumRadius)),
+                    "<gray>Effects stack inward toward the Beacon."
+                ),
+                null
+            ));
+
+            SanctuaryEffect[] positive = {
+                SanctuaryEffect.REGENERATION,
+                SanctuaryEffect.RESISTANCE,
+                SanctuaryEffect.STRENGTH,
+                SanctuaryEffect.HASTE,
+                SanctuaryEffect.SPEED
+            };
+            SanctuaryEffect[] hostile = {
+                SanctuaryEffect.ELYTRA_DISABLED,
+                SanctuaryEffect.MINING_FATIGUE,
+                SanctuaryEffect.WEAKNESS,
+                SanctuaryEffect.BLINDNESS,
+                SanctuaryEffect.WITHER
+            };
+
+            for (int index = 0; index < positive.length; index++) {
+                menu.set(10 + index, effectButton(context.player(), sanctuary, positive[index], maximumRadius));
+                menu.set(28 + index, effectButton(context.player(), sanctuary, hostile[index], maximumRadius));
+            }
+
+            menu.set(18, button(Material.LIME_DYE, "<green>Safe Effects", List.of(
+                "<gray>Owner and trusted players receive these effects."
+            ), null));
+            menu.set(36, button(Material.RED_DYE, "<red>Hostile Effects", List.of(
+                "<gray>Blacklisted players and Lockdown outsiders receive these effects."
+            ), null));
+            menu.set(45, StandardButtons.back(context.theme()));
+            menu.set(53, StandardButtons.close(context.theme()));
+        }
+    }
+
+    private final class DebugRelationshipMenu extends ExtendedInventoryMenu {
+        private final UUID sanctuaryId;
+
+        private DebugRelationshipMenu(UUID sanctuaryId) {
+            super(3, "<light_purple>Debug Relationship");
+            this.sanctuaryId = sanctuaryId;
+        }
+
+        @Override
+        public void build(ExtendedMenuContext context, ExtendedMenuBuilder menu) {
+            menu.fillBackground();
+            Sanctuary sanctuary = loadForMenu(context.player(), sanctuaryId, true);
+            if (sanctuary == null || !sanctuary.debugEphemeral()) {
+                menu.set(13, button(Material.BARRIER, "<red>Debug Sanctuary unavailable", List.of(), null));
+                return;
+            }
+            try {
+                SanctuaryRelationship current = securityService.relationship(
+                    sanctuary,
+                    context.player().getUniqueId()
+                );
+                menu.set(4, button(
+                    Material.PLAYER_HEAD,
+                    "<gold>Current: " + current,
+                    List.of("<gray>Effective threat: <white>" + securityService.threat(
+                        sanctuary,
+                        context.player().getUniqueId()
+                    )),
+                    null
+                ));
+                menu.set(11, debugRelationshipButton(
+                    sanctuary,
+                    SanctuaryRelationship.TRUSTED,
+                    current,
+                    Material.LIME_DYE,
+                    "<green>Trusted"
+                ));
+                menu.set(13, debugRelationshipButton(
+                    sanctuary,
+                    SanctuaryRelationship.NEUTRAL,
+                    current,
+                    Material.WHITE_DYE,
+                    "<white>Neutral / Unconfigured"
+                ));
+                menu.set(15, debugRelationshipButton(
+                    sanctuary,
+                    SanctuaryRelationship.BLACKLISTED,
+                    current,
+                    Material.RED_DYE,
+                    "<red>Blacklisted"
+                ));
+            } catch (SQLException exception) {
+                menuError(context.player(), "Failed to load debug relationship", exception);
+            }
+            menu.set(18, StandardButtons.back(context.theme()));
+            menu.set(26, StandardButtons.close(context.theme()));
         }
     }
 
@@ -731,6 +879,115 @@ public final class SanctuaryUiService {
         }
     }
 
+
+    private ExtendedButton effectButton(
+        Player player,
+        Sanctuary sanctuary,
+        SanctuaryEffect effect,
+        double maximumRadius
+    ) {
+        boolean unlocked = effectService.isUnlocked(sanctuary, effect);
+        int level = 1;
+        if (unlocked) {
+            try {
+                level = effectService.level(sanctuary, effect);
+            } catch (SQLException exception) {
+                menuError(player, "Failed to load Beacon effect level", exception);
+            }
+        }
+
+        List<String> lore = new ArrayList<>();
+        lore.add("<gray>Effect tier: <white>" + roman(effect.tier()));
+        lore.add("<gray>Radius: <white>" + formatRadius(effectService.radiusForTier(maximumRadius, effect.tier())));
+        lore.add("<gray>Maximum level: <white>" + roman(effect.maximumLevel()));
+        if (!unlocked) {
+            lore.add("<red>Locked until Beacon Tier " + roman(effect.tier()) + ".");
+        } else {
+            lore.add("<green>Current level: " + roman(level));
+            if (effect.maximumLevel() > 1) {
+                lore.add("<yellow>Click to select the next level.");
+                lore.add("<dark_gray>Debug/free selection for now. No item is consumed.");
+            } else {
+                lore.add("<dark_gray>This effect has no amplifier upgrades.");
+            }
+        }
+
+        int currentLevel = level;
+        return button(
+            effectMaterial(effect),
+            (effect.target() == SanctuaryEffect.EffectTarget.SAFE ? "<green>" : "<red>")
+                + effectDisplayName(effect),
+            lore,
+            unlocked && effect.maximumLevel() > 1
+                ? click -> cycleEffectLevel(click.player(), sanctuary, effect, currentLevel, click.menu())
+                : null
+        );
+    }
+
+    private ExtendedButton debugRelationshipButton(
+        Sanctuary sanctuary,
+        SanctuaryRelationship relationship,
+        SanctuaryRelationship current,
+        Material material,
+        String name
+    ) {
+        return button(
+            material,
+            name + (current == relationship ? " <yellow>[SELECTED]" : ""),
+            List.of("<gray>Click to make yourself " + relationship.name().toLowerCase(Locale.ROOT) + "."),
+            click -> setDebugRelationship(click.player(), sanctuary, relationship, click.menu())
+        );
+    }
+
+    private void cycleEffectLevel(
+        Player player,
+        Sanctuary sanctuary,
+        SanctuaryEffect effect,
+        int currentLevel,
+        ExtendedMenuContext context
+    ) {
+        int nextLevel = currentLevel >= effect.maximumLevel() ? 1 : currentLevel + 1;
+        try {
+            effectService.setLevel(sanctuary, effect, nextLevel);
+            player.sendMessage(ChatColor.AQUA + effectDisplayName(effect) + " set to " + roman(nextLevel) + ".");
+            context.refresh();
+        } catch (SQLException | IllegalArgumentException | IllegalStateException exception) {
+            player.sendMessage(ChatColor.RED + exception.getMessage());
+        }
+    }
+
+    private void setDebugRelationship(
+        Player player,
+        Sanctuary sanctuary,
+        SanctuaryRelationship relationship,
+        ExtendedMenuContext context
+    ) {
+        try {
+            UUID playerId = player.getUniqueId();
+            if (permissionService.isTrusted(sanctuary, playerId)) {
+                permissionService.untrust(sanctuary, playerId);
+            }
+            if (securityService.isBlacklisted(sanctuary, playerId)) {
+                securityService.unblacklist(sanctuary, playerId);
+            }
+
+            switch (relationship) {
+                case TRUSTED -> {
+                    securityService.prepareForTrust(sanctuary, playerId);
+                    permissionService.trust(sanctuary, playerId, Instant.now());
+                }
+                case BLACKLISTED -> securityService.blacklist(sanctuary, playerId, Instant.now());
+                case NEUTRAL -> {
+                    // Removing both explicit states is the neutral/unconfigured state.
+                }
+                case OWNER -> throw new IllegalArgumentException("Debug users cannot become the synthetic owner.");
+            }
+            player.sendMessage(ChatColor.YELLOW + "Debug relationship set to " + relationship + ".");
+            context.refresh();
+        } catch (SQLException | IllegalArgumentException exception) {
+            player.sendMessage(ChatColor.RED + exception.getMessage());
+        }
+    }
 
     private void showRenameDialog(
         ExtendedMenuContext context,
@@ -1005,6 +1262,51 @@ public final class SanctuaryUiService {
         }
         SanctuaryPosition value = position.orElseThrow();
         return value.world() + " " + value.x() + " " + value.y() + " " + value.z();
+    }
+
+    private static String effectDisplayName(SanctuaryEffect effect) {
+        return switch (effect) {
+            case REGENERATION -> "Regeneration";
+            case RESISTANCE -> "Resistance";
+            case STRENGTH -> "Strength";
+            case HASTE -> "Haste";
+            case SPEED -> "Speed";
+            case ELYTRA_DISABLED -> "Elytra Disabled";
+            case MINING_FATIGUE -> "Mining Fatigue";
+            case WEAKNESS -> "Weakness";
+            case BLINDNESS -> "Blindness";
+            case WITHER -> "Wither";
+        };
+    }
+
+    private static Material effectMaterial(SanctuaryEffect effect) {
+        return switch (effect) {
+            case REGENERATION -> Material.GHAST_TEAR;
+            case RESISTANCE -> Material.IRON_CHESTPLATE;
+            case STRENGTH -> Material.BLAZE_POWDER;
+            case HASTE -> Material.GOLDEN_PICKAXE;
+            case SPEED -> Material.SUGAR;
+            case ELYTRA_DISABLED -> Material.ELYTRA;
+            case MINING_FATIGUE -> Material.IRON_PICKAXE;
+            case WEAKNESS -> Material.FERMENTED_SPIDER_EYE;
+            case BLINDNESS -> Material.INK_SAC;
+            case WITHER -> Material.WITHER_ROSE;
+        };
+    }
+
+    private static String formatRadius(double radius) {
+        return String.format(Locale.ROOT, "%.1f blocks", radius);
+    }
+
+    private static String roman(int value) {
+        return switch (value) {
+            case 1 -> "I";
+            case 2 -> "II";
+            case 3 -> "III";
+            case 4 -> "IV";
+            case 5 -> "V";
+            default -> Integer.toString(value);
+        };
     }
 
     private static String modeDisplayName(SanctuarySecurityMode mode) {

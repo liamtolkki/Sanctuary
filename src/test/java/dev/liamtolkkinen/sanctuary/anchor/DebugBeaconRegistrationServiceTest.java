@@ -36,6 +36,20 @@ class DebugBeaconRegistrationServiceTest {
     }
 
     @Test
+    void debugRegistrationCanCreateMaximumTierBeacon() throws Exception {
+        InMemoryRepository repository = new InMemoryRepository();
+        DebugBeaconRegistrationService service = new DebugBeaconRegistrationService(
+            repository,
+            Clock.fixed(Instant.parse("2026-08-22T06:00:00Z"), ZoneOffset.UTC)
+        );
+
+        Sanctuary sanctuary = service.register(96.0, 5);
+
+        assertEquals(5, sanctuary.tier());
+        assertEquals(96.0, sanctuary.territoryRadius());
+    }
+
+    @Test
     void syntheticOwnerIsDerivedFromAnchorButCannotEqualIt() {
         UUID anchor = UUID.randomUUID();
         UUID owner = DebugBeaconRegistrationService.syntheticOwnerId(anchor);

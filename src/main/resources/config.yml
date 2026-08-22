@@ -23,10 +23,10 @@ territory:
     display-seconds: 10
     maximum-render-distance: 128.0
     particles:
-      owner: GLOW_SQUID_INK
+      owner: SCULK_CHARGE_POP
       trusted: GLOW
       neutral: END_ROD
-      hostile: SOUL
+      hostile: REVERSE_PORTAL
     automatic:
       enabled: true
       minimum-distance: 3.0

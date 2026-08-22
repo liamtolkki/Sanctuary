@@ -14,8 +14,12 @@ import dev.liamtolkkinen.sanctuary.command.SanctuaryCommand;
 import dev.liamtolkkinen.sanctuary.persistence.DatabaseManager;
 import dev.liamtolkkinen.sanctuary.persistence.MigrationRunner;
 import dev.liamtolkkinen.sanctuary.persistence.SqliteSanctuaryRepository;
+import dev.liamtolkkinen.sanctuary.persistence.SqliteSanctuaryEffectRepository;
 import dev.liamtolkkinen.sanctuary.persistence.SqliteSanctuarySecurityRepository;
 import dev.liamtolkkinen.sanctuary.persistence.SqliteSanctuaryTrustRepository;
+import dev.liamtolkkinen.sanctuary.effect.ElytraSuppressionListener;
+import dev.liamtolkkinen.sanctuary.effect.SanctuaryEffectService;
+import dev.liamtolkkinen.sanctuary.effect.SanctuaryEffectTask;
 import dev.liamtolkkinen.sanctuary.protection.SanctuaryProtectionListener;
 import dev.liamtolkkinen.sanctuary.protection.SanctuaryProtectionService;
 import dev.liamtolkkinen.sanctuary.security.SanctuarySecurityService;
@@ -47,10 +51,10 @@ public final class SanctuaryPlugin extends JavaPlugin {
     private static final double DEFAULT_BOUNDARY_MAX_RENDER_DISTANCE = 128.0;
     private static final double DEFAULT_BOUNDARY_MINIMUM_DISTANCE = 3.0;
     private static final double DEFAULT_BOUNDARY_MAXIMUM_DISTANCE = 12.0;
-    private static final String DEFAULT_BOUNDARY_OWNER_PARTICLE = "GLOW_SQUID_INK";
+    private static final String DEFAULT_BOUNDARY_OWNER_PARTICLE = "SCULK_CHARGE_POP";
     private static final String DEFAULT_BOUNDARY_TRUSTED_PARTICLE = "GLOW";
     private static final String DEFAULT_BOUNDARY_NEUTRAL_PARTICLE = "END_ROD";
-    private static final String DEFAULT_BOUNDARY_HOSTILE_PARTICLE = "SOUL";
+    private static final String DEFAULT_BOUNDARY_HOSTILE_PARTICLE = "REVERSE_PORTAL";
     private static final double DEFAULT_BOUNDARY_VERTICAL_SPACING = 1.5;
     private static final long DEFAULT_BOUNDARY_UPDATE_PERIOD_TICKS = 10L;
 
@@ -75,6 +79,8 @@ public final class SanctuaryPlugin extends JavaPlugin {
             var permissionService = new SanctuaryPermissionService(trustRepository);
             var securityRepository = new SqliteSanctuarySecurityRepository(databaseManager);
             var securityService = new SanctuarySecurityService(securityRepository, permissionService);
+            var effectRepository = new SqliteSanctuaryEffectRepository(databaseManager);
+            var effectService = new SanctuaryEffectService(effectRepository, securityService);
             sanctuaryApi = new DefaultSanctuaryApi(repository, getLogger());
 
             getServer().getServicesManager().register(
@@ -158,6 +164,23 @@ public final class SanctuaryPlugin extends JavaPlugin {
                 this::getAutomaticBoundaryUpdatePeriodTicks,
                 getLogger()
             ).start(this);
+            new SanctuaryEffectTask(
+                repository,
+                territoryPresenceService,
+                effectService,
+                this::getMaximumTerritoryRadius,
+                getLogger()
+            ).start(this);
+            getServer().getPluginManager().registerEvents(
+                new ElytraSuppressionListener(
+                    repository,
+                    territoryPresenceService,
+                    effectService,
+                    this::getMaximumTerritoryRadius,
+                    getLogger()
+                ),
+                this
+            );
 
             extendedUi = new ExtendedUI(this);
             SanctuaryUiService uiService = new SanctuaryUiService(
@@ -166,6 +189,7 @@ public final class SanctuaryPlugin extends JavaPlugin {
                 repository,
                 permissionService,
                 securityService,
+                effectService,
                 boundaryService
             );
             getServer().getPluginManager().registerEvents(
@@ -199,7 +223,7 @@ public final class SanctuaryPlugin extends JavaPlugin {
             validateConfiguration();
 
             getLogger().info("Sanctuary database initialized at " + databasePath.toAbsolutePath());
-            getLogger().info("Sanctuary Beacon lifecycle, territory, awareness, trust, capabilities, player protections, and management UI loaded.");
+            getLogger().info("Sanctuary Beacon lifecycle, territory, awareness, trust, security, layered Beacon effects, player protections, and management UI loaded.");
         } catch (SQLException | IOException | IllegalStateException exception) {
             getLogger().log(Level.SEVERE, "Failed to initialize Sanctuary", exception);
             getServer().getPluginManager().disablePlugin(this);

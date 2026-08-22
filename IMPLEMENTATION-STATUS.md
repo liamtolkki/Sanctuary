@@ -65,7 +65,7 @@
 
 ### Debug support
 
-- `/sanctuary admin debugbeacon [player]` creates an already-registered `INACTIVE` debug Sanctuary
+- `/sanctuary admin debugbeacon [player]` creates an already-registered `INACTIVE` Tier V debug Sanctuary at the configured maximum radius
 - Each debug Sanctuary uses a reserved UUID version 15 synthetic owner identity
 - Admins may place a debug Beacon on behalf of its synthetic owner
 - Debug Sanctuaries participate in normal different-owner spacing checks
@@ -247,3 +247,21 @@ Implemented:
 - Automatic boundary rendering now uses an exclusive visibility band: `minimum-distance < point distance < maximum-distance`.
 - The previous `automatic.trigger-distance` value is accepted as a compatibility fallback for `maximum-distance` when the new key is absent.
 - Boundary configuration remains reloadable with `/sanctuary admin reload`.
+
+## Layered Beacon effects
+
+Implemented:
+- Five Beacon effect tiers share the Sanctuary's tier progression.
+- Effect radius thresholds are derived from `territory.maximum-radius / 5` and are not separately configurable.
+- Each effect applies from its own radius inward, so effects stack toward the Beacon core.
+- Safe effect order, Tier I through V: Regeneration II max, Resistance II max, Strength II max, Haste II max, Speed III max.
+- Hostile effect order from outermost Tier V to innermost Tier I: Elytra Disabled I, Mining Fatigue III max, Weakness III max, Blindness I, Wither II max.
+- Newly available effects default to Level I.
+- V007 persists each Sanctuary's independently selected effect level.
+- The management UI exposes Beacon Effects and currently allows free level cycling for unlocked effects. No upgrade item is consumed yet.
+- Owner and trusted players receive safe effects.
+- Neutral players receive no Beacon effects in Normal mode.
+- Blacklisted players receive hostile effects.
+- Neutral players are treated as hostile in Lockdown through the existing threat resolver.
+- Debug Beacons are created at Tier V and the configured maximum radius so every effect tier can be tested.
+- Debug Security UI can set the current admin to Trusted, Neutral/Unconfigured, or Blacklisted for solo effect testing.

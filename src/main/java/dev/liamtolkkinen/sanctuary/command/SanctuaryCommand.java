@@ -547,7 +547,7 @@ public final class SanctuaryCommand implements CommandExecutor, TabCompleter {
     private boolean giveDebugBeacon(CommandSender sender, Player target) {
         Sanctuary sanctuary = null;
         try {
-            sanctuary = debugBeaconService.register(plugin.getInitialTerritoryRadius());
+            sanctuary = debugBeaconService.register(plugin.getMaximumTerritoryRadius(), 5);
             ItemStack item = anchorItemService.createBoundBeacon(sanctuary);
             giveOrDrop(target, item);
             sender.sendMessage(ChatColor.GREEN + "Registered ephemeral debug Beacon " + sanctuary.id()

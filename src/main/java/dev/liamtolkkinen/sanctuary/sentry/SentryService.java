@@ -1,5 +1,6 @@
 package dev.liamtolkkinen.sanctuary.sentry;
 
+import com.destroystokyo.paper.entity.ai.GoalType;
 import dev.liamtolkkinen.extendeditems.ExtendedItems;
 import dev.liamtolkkinen.sanctuary.sanctuary.Sanctuary;
 import dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryRepository;
@@ -11,10 +12,12 @@ import java.sql.SQLException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.logging.Logger;
 import org.bukkit.Bukkit;
@@ -25,6 +28,7 @@ import org.bukkit.entity.Entity;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Mob;
 import org.bukkit.entity.Player;
+import org.bukkit.entity.Warden;
 import org.bukkit.entity.Zombie;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -43,6 +47,7 @@ public final class SentryService {
     private final Logger logger;
     private final NamespacedKey sentryIdKey;
     private final Map<UUID, UUID> authorizedTargets = new HashMap<>();
+    private final Set<UUID> authorizedTeleports = new HashSet<>();
 
     public SentryService(
         JavaPlugin plugin,
@@ -68,12 +73,7 @@ public final class SentryService {
 
     public Optional<Sanctuary> sanctuaryAt(Location location) throws SQLException {
         List<Sanctuary> candidates = sanctuaryRepository.findActiveInWorld(location.getWorld().getName());
-        return presenceService.findCurrentSanctuary(
-            candidates,
-            location.getWorld().getName(),
-            location.getX(),
-            location.getZ()
-        );
+        return presenceService.findCurrentSanctuary(candidates, location.getWorld().getName(), location.getX(), location.getZ());
     }
 
     public SentryRecord register(Sanctuary sanctuary, SentryDefinition definition, Location post) throws SQLException {
@@ -91,30 +91,38 @@ public final class SentryService {
         World world = Bukkit.getWorld(record.world());
         if (world == null || sanctuary.position().isEmpty()) return record;
         Location home = home(record);
-        if (!TerritoryCalculator.contains(sanctuary.position().orElseThrow(), sanctuary.territoryRadius(), record.world(), home.getX(), home.getZ())) {
-            return record;
-        }
-        if (!world.isChunkLoaded(record.x() >> 4, record.z() >> 4)) {
-            return record;
-        }
-        if (world.getBlockAt(record.x(), record.y(), record.z()).getType() != ExtendedItems.create(definition.itemId()).getType()) {
-            return record;
-        }
+        if (!TerritoryCalculator.contains(sanctuary.position().orElseThrow(), sanctuary.territoryRadius(), record.world(), home.getX(), home.getZ())) return record;
+        if (!world.isChunkLoaded(record.x() >> 4, record.z() >> 4)) return record;
+        if (world.getBlockAt(record.x(), record.y(), record.z()).getType() != ExtendedItems.create(definition.itemId()).getType()) return record;
+
         Entity spawned = world.spawnEntity(home.clone().add(0, 1.0, 0), definition.entityType());
         if (!(spawned instanceof Mob mob)) {
             spawned.remove();
             throw new IllegalStateException("Sentry type is not a Mob: " + definition.entityType());
         }
+
         mob.setPersistent(true);
         mob.getPersistentDataContainer().set(sentryIdKey, PersistentDataType.STRING, record.id().toString());
         mob.customName(net.kyori.adventure.text.Component.text(definition.displayName()));
         mob.setCustomNameVisible(false);
         if (definition.baby() && mob instanceof Zombie zombie) zombie.setBaby();
-        mob.setTarget(null);
-        SentryRecord active = new SentryRecord(record.id(), record.sanctuaryId(), record.itemId(), record.world(), record.x(), record.y(), record.z(),
-            Optional.of(mob.getUniqueId()), SentryState.ACTIVE, Optional.empty(), Optional.empty(), record.createdAt(), now);
+        configureManagedAi(mob);
+
+        SentryRecord active = new SentryRecord(
+            record.id(), record.sanctuaryId(), record.itemId(), record.world(), record.x(), record.y(), record.z(),
+            Optional.of(mob.getUniqueId()), SentryState.ACTIVE, Optional.empty(), Optional.empty(), record.createdAt(), now
+        );
         repository.save(active);
         return active;
+    }
+
+    /** Sanctuary owns target selection. Vanilla combat goals remain so each mob keeps its native attacks. */
+    public void configureManagedAi(Mob mob) {
+        Bukkit.getMobGoals().removeAllGoals(mob, GoalType.TARGET);
+        mob.setAware(true);
+        mob.setTarget(null);
+        mob.setAggressive(false);
+        if (mob instanceof org.bukkit.entity.Slime slime) slime.setWander(false);
     }
 
     public void unregister(SentryRecord record) throws SQLException {
@@ -140,11 +148,15 @@ public final class SentryService {
             if (entity instanceof Mob mob) {
                 mob.setTarget(null);
                 mob.setAware(!disabled);
+                mob.setAggressive(false);
                 mob.customName(net.kyori.adventure.text.Component.text(
                     definition(record).map(SentryDefinition::displayName).orElse("Sentry") + (disabled ? " [Disabled]" : "")
                 ));
                 mob.setCustomNameVisible(disabled);
-                if (!disabled) moveHome(mob, record);
+                if (!disabled) {
+                    configureManagedAi(mob);
+                    moveHome(mob, record);
+                }
             }
         });
         authorizedTargets.remove(record.id());
@@ -160,6 +172,7 @@ public final class SentryService {
             if (entity instanceof Mob mob) {
                 mob.setAware(true);
                 mob.setTarget(null);
+                mob.setAggressive(false);
                 moveHome(mob, record);
             }
         });
@@ -187,28 +200,37 @@ public final class SentryService {
             SentryDefinition definition = definition(sentry).orElse(null);
             Mob mob = entity(sentry).filter(Mob.class::isInstance).map(Mob.class::cast).orElse(null);
             if (definition == null || mob == null || !validTarget(sanctuary, sentry, definition, target)) continue;
-            var path = mob.getPathfinder().findPath(target);
-            if (path == null || path.getPoints().stream().anyMatch(point ->
-                !TerritoryCalculator.contains(
-                    sanctuary.position().orElseThrow(),
-                    sanctuary.territoryRadius(),
-                    sentry.world(),
-                    point.getX(),
-                    point.getZ()
-                )
-            )) {
-                continue;
-            }
-            authorizedTargets.put(sentry.id(), target.getUniqueId());
-            mob.setAware(true);
-            mob.setTarget(target);
-            mob.getPathfinder().moveTo(path, 1.0);
+            authorizeAndEngage(sanctuary, sentry, definition, mob, target);
         }
     }
 
-    public boolean isManaged(Entity entity) {
-        return sentryId(entity).isPresent();
+    public void authorizeAndEngage(Sanctuary sanctuary, SentryRecord sentry, SentryDefinition definition, Mob mob, LivingEntity target) {
+        if (!validTarget(sanctuary, sentry, definition, target)) {
+            clearTarget(sentry);
+            return;
+        }
+        var path = mob.getPathfinder().findPath(target);
+        if (path == null || path.getPoints().stream().anyMatch(point ->
+            !TerritoryCalculator.contains(sanctuary.position().orElseThrow(), sanctuary.territoryRadius(), sentry.world(), point.getX(), point.getZ()))) {
+            clearTarget(sentry);
+            return;
+        }
+        authorizedTargets.put(sentry.id(), target.getUniqueId());
+        mob.setAware(true);
+        mob.setAggressive(true);
+        mob.setTarget(target);
+        if (mob instanceof Warden warden) warden.setAnger(target, 150);
+        mob.getPathfinder().moveTo(path, 1.0);
     }
+
+    public Optional<LivingEntity> authorizedTarget(SentryRecord record) {
+        UUID targetId = authorizedTargets.get(record.id());
+        if (targetId == null) return Optional.empty();
+        Entity entity = Bukkit.getEntity(targetId);
+        return entity instanceof LivingEntity living && !living.isDead() ? Optional.of(living) : Optional.empty();
+    }
+
+    public boolean isManaged(Entity entity) { return sentryId(entity).isPresent(); }
 
     public Optional<SentryRecord> record(Entity entity) throws SQLException {
         Optional<UUID> id = sentryId(entity);
@@ -221,17 +243,26 @@ public final class SentryService {
         return target != null && target.getUniqueId().equals(authorizedTargets.get(record.id()));
     }
 
+    public boolean mayDamage(Entity attacker, LivingEntity victim) throws SQLException {
+        Optional<SentryRecord> record = record(attacker);
+        if (record.isEmpty()) return true;
+        UUID authorized = authorizedTargets.get(record.orElseThrow().id());
+        return authorized != null && authorized.equals(victim.getUniqueId());
+    }
+
     public void clearTarget(SentryRecord sentry) {
         authorizedTargets.remove(sentry.id());
         entity(sentry).filter(Mob.class::isInstance).map(Mob.class::cast).ifPresent(mob -> {
             mob.setTarget(null);
+            mob.setAggressive(false);
+            if (mob instanceof Warden warden && warden.getEntityAngryAt() != null) {
+                warden.clearAnger(warden.getEntityAngryAt());
+            }
             moveHome(mob, sentry);
         });
     }
 
-    public Optional<SentryDefinition> definition(SentryRecord record) {
-        return SentryDefinition.byPersistentId(record.itemId());
-    }
+    public Optional<SentryDefinition> definition(SentryRecord record) { return SentryDefinition.byPersistentId(record.itemId()); }
 
     public Location home(SentryRecord record) {
         World world = Bukkit.getWorld(record.world());
@@ -239,9 +270,7 @@ public final class SentryService {
             : new Location(world, record.x() + 0.5, record.y(), record.z() + 0.5);
     }
 
-    public Optional<Entity> entity(SentryRecord record) {
-        return record.entityId().map(Bukkit::getEntity).filter(Objects::nonNull);
-    }
+    public Optional<Entity> entity(SentryRecord record) { return record.entityId().map(Bukkit::getEntity).filter(Objects::nonNull); }
 
     public void moveHome(Mob mob, SentryRecord record) {
         Location home = home(record).clone().add(0, 1.0, 0);
@@ -252,18 +281,35 @@ public final class SentryService {
             var path = mob.getPathfinder().findPath(home);
             if (path == null) return;
             boolean exits = path.getPoints().stream().anyMatch(point ->
-                !TerritoryCalculator.contains(
-                    sanctuary.position().orElseThrow(),
-                    sanctuary.territoryRadius(),
-                    record.world(),
-                    point.getX(),
-                    point.getZ()
-                )
-            );
+                !TerritoryCalculator.contains(sanctuary.position().orElseThrow(), sanctuary.territoryRadius(), record.world(), point.getX(), point.getZ()));
             if (!exits) mob.getPathfinder().moveTo(path, 1.0);
         } catch (SQLException exception) {
             logger.warning("Failed to validate sentry home path: " + exception.getMessage());
         }
+    }
+
+    public void teleportHome(SentryRecord record) {
+        entity(record).ifPresent(entity -> {
+            UUID id = entity.getUniqueId();
+            authorizedTeleports.add(id);
+            try { entity.teleport(home(record).clone().add(0, 1.0, 0)); }
+            finally { authorizedTeleports.remove(id); }
+        });
+    }
+
+    public boolean isAuthorizedTeleport(Entity entity) { return authorizedTeleports.contains(entity.getUniqueId()); }
+
+    public boolean pathDestinationAllowed(Entity entity, Location destination) throws SQLException {
+        SentryRecord record = record(entity).orElse(null);
+        if (record == null) return true;
+        Sanctuary sanctuary = sanctuaryRepository.findById(record.sanctuaryId()).orElse(null);
+        if (sanctuary == null || sanctuary.position().isEmpty()) return false;
+        if (!TerritoryCalculator.contains(sanctuary.position().orElseThrow(), sanctuary.territoryRadius(), record.world(), destination.getX(), destination.getZ())) return false;
+
+        Location home = home(record).clone().add(0, 1.0, 0);
+        if (home.getWorld() == destination.getWorld() && home.distanceSquared(destination) <= 4.0) return true;
+        LivingEntity target = authorizedTarget(record).orElse(null);
+        return target != null && target.getWorld() == destination.getWorld() && target.getLocation().distanceSquared(destination) <= 9.0;
     }
 
     public boolean canManage(Player player, Sanctuary sanctuary) {
@@ -271,18 +317,29 @@ public final class SentryService {
             || (sanctuary.debugEphemeral() && player.hasPermission("sanctuary.admin"));
     }
 
-    private boolean validTarget(Sanctuary sanctuary, SentryRecord sentry, SentryDefinition definition, LivingEntity target) {
+    public boolean validTarget(Sanctuary sanctuary, SentryRecord sentry, SentryDefinition definition, LivingEntity target) {
         if (target.getWorld() != Bukkit.getWorld(sentry.world()) || sanctuary.position().isEmpty()) return false;
+        if (target instanceof Player player) {
+            try {
+                SanctuaryRelationship relationship = securityService.relationship(sanctuary, player.getUniqueId());
+                if (relationship == SanctuaryRelationship.OWNER || relationship == SanctuaryRelationship.TRUSTED) return false;
+            } catch (SQLException exception) {
+                logger.warning("Failed sentry relationship check: " + exception.getMessage());
+                return false;
+            }
+        }
         Location t = target.getLocation();
         if (!TerritoryCalculator.contains(sanctuary.position().orElseThrow(), sanctuary.territoryRadius(), sentry.world(), t.getX(), t.getZ())) return false;
         Location h = home(sentry);
-        double dx = t.getX() - h.getX(); double dz = t.getZ() - h.getZ();
+        double dx = t.getX() - h.getX();
+        double dz = t.getZ() - h.getZ();
         return dx * dx + dz * dz <= definition.targetRadius() * definition.targetRadius();
     }
 
     private Optional<UUID> sentryId(Entity entity) {
         String value = entity.getPersistentDataContainer().get(sentryIdKey, PersistentDataType.STRING);
         if (value == null) return Optional.empty();
-        try { return Optional.of(UUID.fromString(value)); } catch (IllegalArgumentException ignored) { return Optional.empty(); }
+        try { return Optional.of(UUID.fromString(value)); }
+        catch (IllegalArgumentException ignored) { return Optional.empty(); }
     }
 }

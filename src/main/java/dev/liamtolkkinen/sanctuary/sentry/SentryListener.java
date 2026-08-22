@@ -4,6 +4,8 @@ import dev.liamtolkkinen.extendeditems.ExtendedItems;
 import dev.liamtolkkinen.sanctuary.anchor.AnchorItemService;
 import dev.liamtolkkinen.sanctuary.sanctuary.Sanctuary;
 import dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryRepository;
+import com.destroystokyo.paper.event.entity.EndermanEscapeEvent;
+import com.destroystokyo.paper.event.entity.EntityPathfindEvent;
 import io.papermc.paper.event.entity.EntityMoveEvent;
 import io.papermc.paper.event.entity.WardenAngerChangeEvent;
 import dev.liamtolkkinen.sanctuary.territory.TerritoryCalculator;
@@ -17,7 +19,6 @@ import org.bukkit.block.Block;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Mob;
-import org.bukkit.entity.Monster;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -28,6 +29,8 @@ import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityDeathEvent;
 import org.bukkit.event.entity.EntityExplodeEvent;
 import org.bukkit.event.entity.EntityTargetLivingEntityEvent;
+import org.bukkit.event.entity.EntityTeleportEvent;
+import org.bukkit.event.entity.EntityTransformEvent;
 import org.bukkit.event.inventory.InventoryOpenEvent;
 import org.bukkit.event.player.PlayerInteractEntityEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
@@ -48,6 +51,41 @@ public final class SentryListener implements Listener {
         this.anchorItemService = anchorItemService; this.uiService = uiService; this.logger = logger;
     }
 
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)
+    public void onManagedPathfind(EntityPathfindEvent event) {
+        if (!service.isManaged(event.getEntity())) return;
+        try {
+            if (!service.pathDestinationAllowed(event.getEntity(), event.getLoc())) {
+                event.setCancelled(true);
+            }
+        } catch (SQLException exception) {
+            event.setCancelled(true);
+            logger.log(Level.WARNING, "Failed sentry pathfinding validation", exception);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)
+    public void onManagedTeleport(EntityTeleportEvent event) {
+        if (!service.isManaged(event.getEntity())) return;
+        if (!service.isAuthorizedTeleport(event.getEntity())) {
+            event.setCancelled(true);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)
+    public void onManagedEndermanEscape(EndermanEscapeEvent event) {
+        if (service.isManaged(event.getEntity())) {
+            event.setCancelled(true);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)
+    public void onManagedTransform(EntityTransformEvent event) {
+        if (service.isManaged(event.getEntity())) {
+            event.setCancelled(true);
+        }
+    }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onManagedMove(EntityMoveEvent event) {
@@ -77,6 +115,12 @@ public final class SentryListener implements Listener {
     public void onPlace(BlockPlaceEvent event) {
         Optional<SentryDefinition> definition = service.definition(event.getItemInHand());
         if (definition.isEmpty()) return;
+        if (definition.orElseThrow().entityType() == org.bukkit.entity.EntityType.PIGLIN_BRUTE
+            && event.getBlockPlaced().getWorld().getEnvironment() != org.bukkit.World.Environment.NETHER) {
+            event.setCancelled(true);
+            event.getPlayer().sendMessage(ChatColor.RED + "Piglin Brute sentries can only be placed in the Nether.");
+            return;
+        }
         try {
             Optional<Sanctuary> sanctuary = service.sanctuaryAt(event.getBlockPlaced().getLocation());
             if (sanctuary.isEmpty()) {
@@ -185,6 +229,11 @@ public final class SentryListener implements Listener {
         LivingEntity attacker = resolveAttacker(event.getDamager());
         if (attacker == null) return;
         try {
+            if (service.isManaged(attacker) && event.getEntity() instanceof LivingEntity victim
+                && !service.mayDamage(attacker, victim)) {
+                event.setCancelled(true);
+                return;
+            }
             Optional<SentryRecord> victimSentry = service.record(event.getEntity());
             if (victimSentry.isPresent()) {
                 if (!(attacker instanceof Player)) {
@@ -217,7 +266,15 @@ public final class SentryListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)
     public void onExplode(EntityExplodeEvent event) {
-        if (service.isManaged(event.getEntity())) event.blockList().clear();
+        if (service.isManaged(event.getEntity())) {
+            event.blockList().clear();
+            return;
+        }
+        if (event.getEntity() instanceof org.bukkit.entity.Projectile projectile
+            && projectile.getShooter() instanceof Entity shooter
+            && service.isManaged(shooter)) {
+            event.blockList().clear();
+        }
     }
 
     @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = true)

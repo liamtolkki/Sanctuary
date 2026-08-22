@@ -24,7 +24,6 @@ public record SentryDefinition(
         new SentryDefinition(ExtendedItemIds.SENTRY_BABY_ZOMBIE, "sentry_baby_zombie", "Baby Zombie Sentry", EntityType.ZOMBIE, 20.0, true),
         new SentryDefinition(ExtendedItemIds.SENTRY_BLAZE, "sentry_blaze", "Blaze Sentry", EntityType.BLAZE, 28.0, false),
         new SentryDefinition(ExtendedItemIds.SENTRY_WARDEN, "sentry_warden", "Warden Sentry", EntityType.WARDEN, 34.0, false),
-        new SentryDefinition(ExtendedItemIds.SENTRY_CREAKING, "sentry_creaking", "Creaking Sentry", EntityType.CREAKING, 24.0, false),
         new SentryDefinition(ExtendedItemIds.SENTRY_WITHER, "sentry_wither", "Wither Sentry", EntityType.WITHER, 34.0, false),
         new SentryDefinition(ExtendedItemIds.SENTRY_DROWNED, "sentry_drowned", "Drowned Sentry", EntityType.DROWNED, 24.0, false),
         new SentryDefinition(ExtendedItemIds.SENTRY_GUARDIAN, "sentry_guardian", "Guardian Sentry", EntityType.GUARDIAN, 30.0, false),

@@ -313,3 +313,15 @@ For testing, admins can create released ExtendedItems sentry post items with:
 ```
 
 The command accepts short sentry names such as `skeleton`, `enderman`, and `warden`, as well as full `sentry_*` IDs. `all` gives the complete released sentry post catalog. This is admin/debug tooling only and does not define normal gameplay acquisition.
+
+## Sentry AI control update
+
+- Sanctuary now owns sentry target selection. On spawn, vanilla TARGET goals are removed while native combat goals remain so mob-specific attacks still work.
+- Managed pathfinding is restricted to the registered home post or the currently authorized Sanctuary target.
+- Managed sentries may only damage the currently authorized target.
+- Warden anger changes are rejected unless they concern the authorized target, and the authorized target is reasserted by the sentry task.
+- Managed Enderman escape/teleport behavior is suppressed; recall fallback teleport remains Sanctuary-authorized.
+- Wither and managed projectile explosions retain entity damage but cannot destroy blocks.
+- Hostile mob classification now uses Bukkit/Paper Enemy, which includes Slimes and Magma Cubes.
+- Creaking is no longer in the active Sanctuary sentry roster. Its ExtendedItems identity remains untouched.
+- Piglin Brute sentry placement is Nether-only, and managed sentry transformations are cancelled as an additional safety net.

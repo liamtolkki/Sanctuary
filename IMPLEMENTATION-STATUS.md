@@ -213,3 +213,37 @@ Implemented:
 - Owners can rename their Sanctuary from the management UI using the ExtendedUI text-input dialog.
 - Sanctuary names are trimmed, must be nonblank, and are limited to 32 characters.
 - Renames persist through the existing `name` column and immediately affect readable Sanctuary selectors.
+
+## Security policy foundation
+
+Implemented:
+- V006 adds persisted per-Sanctuary security mode and blacklist state.
+- Security modes are `NORMAL` and `LOCKDOWN`.
+- Player relationship is resolved centrally as `OWNER`, `TRUSTED`, `NEUTRAL`, or `BLACKLISTED`.
+- Effective threat is resolved centrally as `SAFE`, `NEUTRAL`, or `HOSTILE`.
+- In Normal mode, only explicitly blacklisted players are hostile.
+- In Lockdown mode, every player except the owner and trusted players is hostile.
+- Lockdown does not rewrite neutral players into blacklist rows. Returning to Normal restores neutral behavior.
+- Trust and blacklist are mutually exclusive through Sanctuary management operations. Trusting a player removes their blacklist entry; blacklisting a trusted player removes trust and capability grants.
+- Management UI now separates Players & Access from Security.
+- Owners/admins can manage trusted and blacklisted online players through the UI.
+- Until Beacon tier gating is implemented, Lockdown is visible but owner-locked; admins can toggle it from the admin UI for testing.
+- Manual and automatic territory boundaries are viewer-specific colors: owner blue, trusted green, neutral white, hostile red.
+- Existing hard player protections are now controlled by `protections.hard` configuration and default disabled.
+- Hard-protection configuration is reloadable with `/sanctuary admin reload`.
+
+Not implemented in this phase:
+- Beacon defense tiers.
+- Weakness, Wither, Blindness, Elytra suppression, or other proximity effects.
+- Tier-gated owner access to Lockdown.
+- Sentry trigger/response behavior.
+
+## Configurable boundary visuals
+
+Implemented:
+- Relationship-specific boundary particles are configurable under `territory.boundary.particles`.
+- Default particles are `GLOW_SQUID_INK` for owners, `GLOW` for trusted players, `END_ROD` for neutral players, and `SOUL` for hostile players.
+- Configured particles must not require additional particle data. Invalid or data-bearing particle types fall back to the relationship default with a warning.
+- Automatic boundary rendering now uses an exclusive visibility band: `minimum-distance < point distance < maximum-distance`.
+- The previous `automatic.trigger-distance` value is accepted as a compatibility fallback for `maximum-distance` when the new key is absent.
+- Boundary configuration remains reloadable with `/sanctuary admin reload`.

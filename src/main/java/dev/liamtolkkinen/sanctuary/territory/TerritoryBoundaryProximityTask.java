@@ -18,7 +18,8 @@ public final class TerritoryBoundaryProximityTask implements Runnable {
     private final SanctuaryRepository repository;
     private final TerritoryBoundaryService boundaryService;
     private final BooleanSupplier enabled;
-    private final DoubleSupplier triggerDistance;
+    private final DoubleSupplier minimumDistance;
+    private final DoubleSupplier maximumDistance;
     private final DoubleSupplier horizontalSpacing;
     private final DoubleSupplier verticalSpacing;
     private final LongSupplier updatePeriodTicks;
@@ -29,7 +30,8 @@ public final class TerritoryBoundaryProximityTask implements Runnable {
         SanctuaryRepository repository,
         TerritoryBoundaryService boundaryService,
         BooleanSupplier enabled,
-        DoubleSupplier triggerDistance,
+        DoubleSupplier minimumDistance,
+        DoubleSupplier maximumDistance,
         DoubleSupplier horizontalSpacing,
         DoubleSupplier verticalSpacing,
         LongSupplier updatePeriodTicks,
@@ -38,7 +40,8 @@ public final class TerritoryBoundaryProximityTask implements Runnable {
         this.repository = Objects.requireNonNull(repository, "repository");
         this.boundaryService = Objects.requireNonNull(boundaryService, "boundaryService");
         this.enabled = Objects.requireNonNull(enabled, "enabled");
-        this.triggerDistance = Objects.requireNonNull(triggerDistance, "triggerDistance");
+        this.minimumDistance = Objects.requireNonNull(minimumDistance, "minimumDistance");
+        this.maximumDistance = Objects.requireNonNull(maximumDistance, "maximumDistance");
         this.horizontalSpacing = Objects.requireNonNull(horizontalSpacing, "horizontalSpacing");
         this.verticalSpacing = Objects.requireNonNull(verticalSpacing, "verticalSpacing");
         this.updatePeriodTicks = Objects.requireNonNull(updatePeriodTicks, "updatePeriodTicks");
@@ -63,7 +66,8 @@ public final class TerritoryBoundaryProximityTask implements Runnable {
         if (!enabled.getAsBoolean()) {
             return;
         }
-        double trigger = triggerDistance.getAsDouble();
+        double minimum = minimumDistance.getAsDouble();
+        double maximum = maximumDistance.getAsDouble();
         try {
             for (Player player : Bukkit.getOnlinePlayers()) {
                 for (Sanctuary sanctuary : repository.findActiveInWorld(player.getWorld().getName())) {
@@ -76,13 +80,14 @@ public final class TerritoryBoundaryProximityTask implements Runnable {
                         player.getLocation().getX(),
                         player.getLocation().getZ()
                     );
-                    if (distance <= trigger) {
+                    if (distance < maximum) {
                         boundaryService.showProximity(
                             player,
                             sanctuary,
                             horizontalSpacing.getAsDouble(),
                             verticalSpacing.getAsDouble(),
-                            trigger
+                            minimum,
+                            maximum
                         );
                     }
                 }

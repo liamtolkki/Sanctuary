@@ -22,8 +22,24 @@ territory:
     particle-spacing: 1.5
     display-seconds: 10
     maximum-render-distance: 128.0
+    particles:
+      owner: GLOW_SQUID_INK
+      trusted: GLOW
+      neutral: END_ROD
+      hostile: SOUL
     automatic:
       enabled: true
-      trigger-distance: 12.0
+      minimum-distance: 3.0
+      maximum-distance: 12.0
       vertical-particle-spacing: 1.5
       update-period-ticks: 10
+
+protections:
+  hard:
+    enabled: false
+    block-place: true
+    block-break: true
+    containers: true
+    interactions: true
+    redstone: true
+    entities: true

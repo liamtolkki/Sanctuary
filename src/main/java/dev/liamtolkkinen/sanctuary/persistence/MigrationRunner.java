@@ -35,6 +35,11 @@ public final class MigrationRunner {
             5,
             "trust_capabilities",
             "/db/migration/V005__trust_capabilities.sql"
+        ),
+        new DatabaseMigration(
+            6,
+            "security_policy",
+            "/db/migration/V006__security_policy.sql"
         )
     );
 

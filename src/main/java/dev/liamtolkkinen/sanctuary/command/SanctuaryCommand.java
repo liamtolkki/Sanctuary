@@ -12,6 +12,7 @@ import dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryRepository;
 import dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryState;
 import dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryType;
 import dev.liamtolkkinen.sanctuary.territory.TerritoryBoundaryService;
+import dev.liamtolkkinen.sanctuary.security.SanctuarySecurityService;
 import dev.liamtolkkinen.sanctuary.trust.SanctuaryCapability;
 import dev.liamtolkkinen.sanctuary.trust.SanctuaryPermissionService;
 import dev.liamtolkkinen.sanctuary.trust.SanctuaryTrustEntry;
@@ -48,6 +49,7 @@ public final class SanctuaryCommand implements CommandExecutor, TabCompleter {
     private final TerritoryBoundaryService boundaryService;
     private final SanctuaryRepository repository;
     private final SanctuaryPermissionService permissionService;
+    private final SanctuarySecurityService securityService;
     private final SanctuaryUiService uiService;
 
     public SanctuaryCommand(
@@ -58,6 +60,7 @@ public final class SanctuaryCommand implements CommandExecutor, TabCompleter {
         TerritoryBoundaryService boundaryService,
         SanctuaryRepository repository,
         SanctuaryPermissionService permissionService,
+        SanctuarySecurityService securityService,
         SanctuaryUiService uiService
     ) {
         this.plugin = plugin;
@@ -67,6 +70,7 @@ public final class SanctuaryCommand implements CommandExecutor, TabCompleter {
         this.boundaryService = boundaryService;
         this.repository = repository;
         this.permissionService = permissionService;
+        this.securityService = securityService;
         this.uiService = uiService;
     }
 
@@ -217,6 +221,7 @@ public final class SanctuaryCommand implements CommandExecutor, TabCompleter {
                 return true;
             }
             if (trusted) {
+                securityService.prepareForTrust(sanctuary, playerId);
                 permissionService.trust(sanctuary, playerId, Instant.now());
                 sender.sendMessage(ChatColor.GREEN + playerLabel(playerId) + " is now trusted by " + sanctuary.name() + ".");
                 sender.sendMessage(ChatColor.GRAY + "No capabilities are granted automatically. Grant them explicitly with /sanctuary capability.");
@@ -322,6 +327,7 @@ public final class SanctuaryCommand implements CommandExecutor, TabCompleter {
             }
 
             if (allow && !permissionService.isTrusted(sanctuary, playerId)) {
+                securityService.prepareForTrust(sanctuary, playerId);
                 permissionService.trust(sanctuary, playerId, Instant.now());
             }
 

@@ -14,9 +14,11 @@ import dev.liamtolkkinen.sanctuary.command.SanctuaryCommand;
 import dev.liamtolkkinen.sanctuary.persistence.DatabaseManager;
 import dev.liamtolkkinen.sanctuary.persistence.MigrationRunner;
 import dev.liamtolkkinen.sanctuary.persistence.SqliteSanctuaryRepository;
+import dev.liamtolkkinen.sanctuary.persistence.SqliteSanctuarySecurityRepository;
 import dev.liamtolkkinen.sanctuary.persistence.SqliteSanctuaryTrustRepository;
 import dev.liamtolkkinen.sanctuary.protection.SanctuaryProtectionListener;
 import dev.liamtolkkinen.sanctuary.protection.SanctuaryProtectionService;
+import dev.liamtolkkinen.sanctuary.security.SanctuarySecurityService;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -27,9 +29,11 @@ import dev.liamtolkkinen.sanctuary.territory.TerritoryBoundaryService;
 import dev.liamtolkkinen.sanctuary.territory.TerritoryBoundaryProximityTask;
 import dev.liamtolkkinen.sanctuary.territory.TerritoryPresenceService;
 import dev.liamtolkkinen.sanctuary.trust.SanctuaryPermissionService;
+import dev.liamtolkkinen.sanctuary.trust.SanctuaryCapability;
 import dev.liamtolkkinen.sanctuary.ui.SanctuaryUiListener;
 import dev.liamtolkkinen.sanctuary.ui.SanctuaryUiService;
 import java.util.logging.Level;
+import org.bukkit.Particle;
 import org.bukkit.plugin.ServicePriority;
 import org.bukkit.plugin.java.JavaPlugin;
 
@@ -41,7 +45,12 @@ public final class SanctuaryPlugin extends JavaPlugin {
     private static final double DEFAULT_BOUNDARY_PARTICLE_SPACING = 1.5;
     private static final int DEFAULT_BOUNDARY_DISPLAY_SECONDS = 10;
     private static final double DEFAULT_BOUNDARY_MAX_RENDER_DISTANCE = 128.0;
-    private static final double DEFAULT_BOUNDARY_TRIGGER_DISTANCE = 12.0;
+    private static final double DEFAULT_BOUNDARY_MINIMUM_DISTANCE = 3.0;
+    private static final double DEFAULT_BOUNDARY_MAXIMUM_DISTANCE = 12.0;
+    private static final String DEFAULT_BOUNDARY_OWNER_PARTICLE = "GLOW_SQUID_INK";
+    private static final String DEFAULT_BOUNDARY_TRUSTED_PARTICLE = "GLOW";
+    private static final String DEFAULT_BOUNDARY_NEUTRAL_PARTICLE = "END_ROD";
+    private static final String DEFAULT_BOUNDARY_HOSTILE_PARTICLE = "SOUL";
     private static final double DEFAULT_BOUNDARY_VERTICAL_SPACING = 1.5;
     private static final long DEFAULT_BOUNDARY_UPDATE_PERIOD_TICKS = 10L;
 
@@ -64,6 +73,8 @@ public final class SanctuaryPlugin extends JavaPlugin {
             var repository = new SqliteSanctuaryRepository(databaseManager);
             var trustRepository = new SqliteSanctuaryTrustRepository(databaseManager);
             var permissionService = new SanctuaryPermissionService(trustRepository);
+            var securityRepository = new SqliteSanctuarySecurityRepository(databaseManager);
+            var securityService = new SanctuarySecurityService(securityRepository, permissionService);
             sanctuaryApi = new DefaultSanctuaryApi(repository, getLogger());
 
             getServer().getServicesManager().register(
@@ -106,7 +117,15 @@ public final class SanctuaryPlugin extends JavaPlugin {
                 ),
                 this
             );
-            TerritoryBoundaryService boundaryService = new TerritoryBoundaryService(this);
+            TerritoryBoundaryService boundaryService = new TerritoryBoundaryService(
+                this,
+                securityService,
+                this::getBoundaryOwnerParticle,
+                this::getBoundaryTrustedParticle,
+                this::getBoundaryNeutralParticle,
+                this::getBoundaryHostileParticle,
+                getLogger()
+            );
 
             TerritoryPresenceService territoryPresenceService = new TerritoryPresenceService();
             getServer().getPluginManager().registerEvents(
@@ -123,6 +142,7 @@ public final class SanctuaryPlugin extends JavaPlugin {
             getServer().getPluginManager().registerEvents(
                 new SanctuaryProtectionListener(
                     new SanctuaryProtectionService(repository, territoryPresenceService, permissionService),
+                    this::isHardProtectionEnabled,
                     getLogger()
                 ),
                 this
@@ -131,7 +151,8 @@ public final class SanctuaryPlugin extends JavaPlugin {
                 repository,
                 boundaryService,
                 this::isAutomaticBoundaryEnabled,
-                this::getAutomaticBoundaryTriggerDistance,
+                this::getAutomaticBoundaryMinimumDistance,
+                this::getAutomaticBoundaryMaximumDistance,
                 this::getBoundaryParticleSpacing,
                 this::getBoundaryVerticalParticleSpacing,
                 this::getAutomaticBoundaryUpdatePeriodTicks,
@@ -144,6 +165,7 @@ public final class SanctuaryPlugin extends JavaPlugin {
                 extendedUi,
                 repository,
                 permissionService,
+                securityService,
                 boundaryService
             );
             getServer().getPluginManager().registerEvents(
@@ -164,6 +186,7 @@ public final class SanctuaryPlugin extends JavaPlugin {
                 boundaryService,
                 repository,
                 permissionService,
+                securityService,
                 uiService
             );
             var command = Objects.requireNonNull(
@@ -236,7 +259,12 @@ public final class SanctuaryPlugin extends JavaPlugin {
         getBoundaryParticleSpacing();
         getBoundaryDisplaySeconds();
         getBoundaryMaximumRenderDistance();
-        getAutomaticBoundaryTriggerDistance();
+        getAutomaticBoundaryMinimumDistance();
+        getAutomaticBoundaryMaximumDistance();
+        getBoundaryOwnerParticle();
+        getBoundaryTrustedParticle();
+        getBoundaryNeutralParticle();
+        getBoundaryHostileParticle();
         getBoundaryVerticalParticleSpacing();
         getAutomaticBoundaryUpdatePeriodTicks();
     }
@@ -335,17 +363,80 @@ public final class SanctuaryPlugin extends JavaPlugin {
         return getConfig().getBoolean("territory.boundary.automatic.enabled", true);
     }
 
-    public double getAutomaticBoundaryTriggerDistance() {
+    public double getAutomaticBoundaryMinimumDistance() {
         double value = getConfig().getDouble(
-            "territory.boundary.automatic.trigger-distance",
-            DEFAULT_BOUNDARY_TRIGGER_DISTANCE
+            "territory.boundary.automatic.minimum-distance",
+            DEFAULT_BOUNDARY_MINIMUM_DISTANCE
         );
-        if (!Double.isFinite(value) || value <= 0.0) {
+        if (!Double.isFinite(value) || value < 0.0) {
             throw new IllegalStateException(
-                "territory.boundary.automatic.trigger-distance must be finite and greater than zero"
+                "territory.boundary.automatic.minimum-distance must be finite and zero or greater"
             );
         }
         return value;
+    }
+
+    public double getAutomaticBoundaryMaximumDistance() {
+        double fallback = getConfig().getDouble(
+            "territory.boundary.automatic.trigger-distance",
+            DEFAULT_BOUNDARY_MAXIMUM_DISTANCE
+        );
+        double value = getConfig().getDouble(
+            "territory.boundary.automatic.maximum-distance",
+            fallback
+        );
+        if (!Double.isFinite(value) || value <= 0.0) {
+            throw new IllegalStateException(
+                "territory.boundary.automatic.maximum-distance must be finite and greater than zero"
+            );
+        }
+        double minimum = getAutomaticBoundaryMinimumDistance();
+        if (value <= minimum) {
+            throw new IllegalStateException(
+                "territory.boundary.automatic.maximum-distance must be greater than minimum-distance"
+            );
+        }
+        return value;
+    }
+
+    public Particle getBoundaryOwnerParticle() {
+        return getBoundaryParticle("owner", DEFAULT_BOUNDARY_OWNER_PARTICLE);
+    }
+
+    public Particle getBoundaryTrustedParticle() {
+        return getBoundaryParticle("trusted", DEFAULT_BOUNDARY_TRUSTED_PARTICLE);
+    }
+
+    public Particle getBoundaryNeutralParticle() {
+        return getBoundaryParticle("neutral", DEFAULT_BOUNDARY_NEUTRAL_PARTICLE);
+    }
+
+    public Particle getBoundaryHostileParticle() {
+        return getBoundaryParticle("hostile", DEFAULT_BOUNDARY_HOSTILE_PARTICLE);
+    }
+
+    private Particle getBoundaryParticle(String relationship, String defaultName) {
+        String key = "territory.boundary.particles." + relationship;
+        String configured = getConfig().getString(key, defaultName);
+        if (configured == null || configured.isBlank()) {
+            configured = defaultName;
+        }
+        try {
+            Particle particle = Particle.valueOf(configured.trim().toUpperCase(java.util.Locale.ROOT));
+            if (particle.getDataType() != Void.class) {
+                getLogger().warning(
+                    "Particle '" + configured + "' for " + key
+                        + " requires extra particle data; using " + defaultName
+                );
+                return Particle.valueOf(defaultName);
+            }
+            return particle;
+        } catch (IllegalArgumentException exception) {
+            getLogger().warning(
+                "Invalid particle '" + configured + "' for " + key + "; using " + defaultName
+            );
+            return Particle.valueOf(defaultName);
+        }
     }
 
     public long getAutomaticBoundaryUpdatePeriodTicks() {
@@ -373,4 +464,24 @@ public final class SanctuaryPlugin extends JavaPlugin {
         }
         return value;
     }
+    public boolean areHardProtectionsEnabled() {
+        return getConfig().getBoolean("protections.hard.enabled", false);
+    }
+
+    public boolean isHardProtectionEnabled(SanctuaryCapability capability) {
+        Objects.requireNonNull(capability, "capability");
+        if (!areHardProtectionsEnabled()) {
+            return false;
+        }
+        String key = switch (capability) {
+            case BUILD -> "block-place";
+            case BREAK -> "block-break";
+            case INTERACT -> "interactions";
+            case CONTAINER -> "containers";
+            case REDSTONE -> "redstone";
+            case ENTITIES -> "entities";
+        };
+        return getConfig().getBoolean("protections.hard." + key, true);
+    }
+
 }

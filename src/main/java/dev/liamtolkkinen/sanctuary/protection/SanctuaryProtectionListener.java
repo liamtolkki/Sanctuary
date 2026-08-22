@@ -10,6 +10,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.function.Predicate;
 import org.bukkit.ChatColor;
 import org.bukkit.Location;
 import org.bukkit.Material;
@@ -34,14 +35,17 @@ public final class SanctuaryProtectionListener implements Listener {
     private static final long WARNING_COOLDOWN_NANOS = 1_000_000_000L;
 
     private final SanctuaryProtectionService protectionService;
+    private final Predicate<SanctuaryCapability> protectionEnabled;
     private final Logger logger;
     private final Map<UUID, EnumMap<SanctuaryCapability, Long>> lastWarning = new HashMap<>();
 
     public SanctuaryProtectionListener(
         SanctuaryProtectionService protectionService,
+        Predicate<SanctuaryCapability> protectionEnabled,
         Logger logger
     ) {
         this.protectionService = protectionService;
+        this.protectionEnabled = protectionEnabled;
         this.logger = logger;
     }
 
@@ -140,6 +144,9 @@ public final class SanctuaryProtectionListener implements Listener {
         Location location,
         Runnable cancel
     ) {
+        if (!protectionEnabled.test(capability)) {
+            return;
+        }
         try {
             Optional<Sanctuary> blocking = protectionService.findBlockingSanctuary(
                 player.getUniqueId(),

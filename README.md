@@ -315,9 +315,15 @@ territory:
     particle-spacing: 1.5
     display-seconds: 10
     maximum-render-distance: 128.0
+    particles:
+      owner: GLOW_SQUID_INK
+      trusted: GLOW
+      neutral: END_ROD
+      hostile: SOUL
     automatic:
       enabled: true
-      trigger-distance: 12.0
+      minimum-distance: 3.0
+      maximum-distance: 12.0
       vertical-particle-spacing: 1.5
       update-period-ticks: 10
 ```
@@ -343,3 +349,60 @@ Implemented:
 ## Sanctuary naming
 
 Owners can rename a Sanctuary from its management UI. Names are persisted, limited to 32 characters, and are used as the preferred human-readable selector for Sanctuary commands. Duplicate names are allowed; selectors automatically add owner or short-ID disambiguation when necessary.
+
+## Security policy
+
+Sanctuary separates relationship/security policy from optional hard claim-style protection.
+
+Relationships are:
+
+```text
+OWNER
+TRUSTED
+NEUTRAL
+BLACKLISTED
+```
+
+Security modes are:
+
+```text
+NORMAL
+LOCKDOWN
+```
+
+In Normal mode, blacklisted players are hostile and neutral players remain neutral. In Lockdown mode, every player who is not the owner or explicitly trusted is treated as hostile. Lockdown is persisted independently from the blacklist, so disabling Lockdown does not alter explicit blacklist entries.
+
+Boundary colors are viewer-specific:
+
+```text
+blue   owner
+green  trusted
+white  neutral
+red    hostile
+```
+
+The owner UI exposes Players & Access and Security screens. Lockdown is intended to become a higher-tier Beacon feature; until tier progression is implemented, admins can toggle it from the admin UI for testing.
+
+### Optional hard protections
+
+Hard claim-style protection is server-configurable and defaults off:
+
+```yaml
+protections:
+  hard:
+    enabled: false
+    block-place: true
+    block-break: true
+    containers: true
+    interactions: true
+    redstone: true
+    entities: true
+```
+
+When `enabled` is `false`, Sanctuary does not physically cancel those ordinary player actions. Existing capability grants remain persisted for servers that choose to enable hard protection. Changes are applied after `/sanctuary admin reload`.
+
+## Boundary particle configuration
+
+Boundary visuals are relationship-specific and reloadable. The configured particle names use Paper `Particle` enum names and must be particle types that do not require extra particle data. Invalid values fall back to the built-in default and log a warning.
+
+Automatic proximity rendering uses a distance band instead of a simple upper bound. A perimeter point is rendered only when `minimum-distance < distance < maximum-distance`, producing a donut-like local patch around the viewer.

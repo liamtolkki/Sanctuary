@@ -30,6 +30,11 @@ public final class MigrationRunner {
             4,
             "territory_radius",
             "/db/migration/V004__territory_radius.sql"
+        ),
+        new DatabaseMigration(
+            5,
+            "trust_capabilities",
+            "/db/migration/V005__trust_capabilities.sql"
         )
     );
 

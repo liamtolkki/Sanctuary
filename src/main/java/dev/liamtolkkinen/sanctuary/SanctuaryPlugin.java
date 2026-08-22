@@ -13,6 +13,7 @@ import dev.liamtolkkinen.sanctuary.command.SanctuaryCommand;
 import dev.liamtolkkinen.sanctuary.persistence.DatabaseManager;
 import dev.liamtolkkinen.sanctuary.persistence.MigrationRunner;
 import dev.liamtolkkinen.sanctuary.persistence.SqliteSanctuaryRepository;
+import dev.liamtolkkinen.sanctuary.persistence.SqliteSanctuaryTrustRepository;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -22,6 +23,7 @@ import dev.liamtolkkinen.sanctuary.territory.TerritoryAwarenessListener;
 import dev.liamtolkkinen.sanctuary.territory.TerritoryBoundaryService;
 import dev.liamtolkkinen.sanctuary.territory.TerritoryBoundaryProximityTask;
 import dev.liamtolkkinen.sanctuary.territory.TerritoryPresenceService;
+import dev.liamtolkkinen.sanctuary.trust.SanctuaryPermissionService;
 import java.util.logging.Level;
 import org.bukkit.plugin.ServicePriority;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -54,6 +56,8 @@ public final class SanctuaryPlugin extends JavaPlugin {
             new MigrationRunner(databaseManager).migrate();
 
             var repository = new SqliteSanctuaryRepository(databaseManager);
+            var trustRepository = new SqliteSanctuaryTrustRepository(databaseManager);
+            var permissionService = new SanctuaryPermissionService(trustRepository);
             sanctuaryApi = new DefaultSanctuaryApi(repository, getLogger());
 
             getServer().getServicesManager().register(
@@ -126,7 +130,8 @@ public final class SanctuaryPlugin extends JavaPlugin {
                 lifecycleService,
                 new DebugBeaconRegistrationService(repository),
                 boundaryService,
-                repository
+                repository,
+                permissionService
             );
             var command = Objects.requireNonNull(
                 getCommand("sanctuary"),
@@ -138,7 +143,7 @@ public final class SanctuaryPlugin extends JavaPlugin {
             validateConfiguration();
 
             getLogger().info("Sanctuary database initialized at " + databasePath.toAbsolutePath());
-            getLogger().info("Sanctuary Beacon lifecycle, territory, spacing, and awareness support loaded.");
+            getLogger().info("Sanctuary Beacon lifecycle, territory, awareness, trust, and capability support loaded.");
         } catch (SQLException | IOException | IllegalStateException exception) {
             getLogger().log(Level.SEVERE, "Failed to initialize Sanctuary", exception);
             getServer().getPluginManager().disablePlugin(this);

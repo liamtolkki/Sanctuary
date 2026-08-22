@@ -30,7 +30,7 @@ class MigrationRunnerTest {
             )
         ) {
             assertTrue(result.next());
-            assertEquals(4, result.getInt(1));
+            assertEquals(5, result.getInt(1));
         }
 
         try (
@@ -38,12 +38,13 @@ class MigrationRunnerTest {
             var statement = connection.prepareStatement("""
                 SELECT COUNT(*)
                 FROM sqlite_master
-                WHERE type = 'table' AND name = 'sanctuaries'
+                WHERE type = 'table'
+                  AND name IN ('sanctuaries', 'sanctuary_trust', 'sanctuary_capabilities')
                 """);
             var result = statement.executeQuery()
         ) {
             assertTrue(result.next());
-            assertEquals(1, result.getInt(1));
+            assertEquals(3, result.getInt(1));
         }
     }
 }

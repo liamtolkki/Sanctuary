@@ -52,7 +52,7 @@
 
 ### Territory and spacing
 
-- Area-to-radius calculation: `radius = sqrt(area / PI)`
+- Radius is the persisted territory primitive; V004 converted legacy area values with `sqrt(area / PI)`
 - Horizontal circle/cylinder containment with unrestricted Y
 - Configurable maximum Sanctuary radius
 - Configurable inter-owner spacing margin
@@ -61,7 +61,7 @@
 - Same-owner overlap allowed
 - Only active Sanctuaries participate in spacing checks
 - Other worlds do not conflict
-- `/sanctuary admin beacons` prints the current derived radius
+- `/sanctuary admin beacons` prints the current persisted radius
 
 ### Debug support
 
@@ -84,7 +84,7 @@ anchors:
     cooldown-seconds: 300
 
 territory:
-  maximum-radius: 64.0
+  maximum-radius: 96.0
   spacing-margin: 16.0
 ```
 
@@ -96,7 +96,6 @@ Recovery is only available for an `INACTIVE` Sanctuary whose Beacon destruction 
 - Anchor tier crafting/upgrades
 - Sanctuary management UI
 - Rename dialog
-- Trust/capabilities
 - Protection gameplay
 - Advancements
 - Sentry posts
@@ -162,3 +161,22 @@ Implemented:
 - Registered Sanctuary anchors retain normal ownership and generation validation.
 - Automatic proximity boundary refresh period is configurable with `territory.boundary.automatic.update-period-ticks`.
 - The update period is reloadable with `/sanctuary admin reload`.
+
+
+## Trust and capabilities
+
+Implemented:
+- V005 normalized `sanctuary_trust` and `sanctuary_capabilities` persistence.
+- UUID-backed trust relationships.
+- Owner implicit access to every capability.
+- Explicit `BUILD`, `BREAK`, `INTERACT`, `CONTAINER`, `REDSTONE`, and `ENTITIES` grants for trusted players.
+- Untrusted players receive no capabilities.
+- Trust removal cascades all capability grants for that player.
+- Sanctuary deletion cascades all trust/capability rows.
+- `/sanctuary trust <sanctuary> <player>`.
+- `/sanctuary trust list <sanctuary>`.
+- `/sanctuary untrust <sanctuary> <player>`.
+- `/sanctuary capability <sanctuary> <player> <capability> <allow|deny>`.
+- `/sanctuary admin permissions <sanctuary> <player>` raw effective permission inspection.
+- Human-readable Sanctuary selector autocomplete for trust commands.
+- Unit and SQLite persistence tests for permission resolution and cascading cleanup.

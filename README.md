@@ -47,7 +47,7 @@ Implemented Beacon lifecycle:
 - Safe owner recovery for unrecorded disappearance, with generation advancement
 - Configurable recovery enablement and cooldown
 - `/sanctuary admin beacons` metadata registry output
-- Area-based territory radius calculation with horizontal cylinder containment
+- Radius-based territory calculation with horizontal cylinder containment
 - Different-owner future-growth spacing validation on first placement and re-placement
 - Same-owner overlap allowed
 - Ephemeral registered debug Beacons with synthetic non-player owners
@@ -134,6 +134,12 @@ Fully restart Paper after deployment. Do not use `/reload` as the normal develop
 ```text
 /sanctuary status
 /sanctuary recover <sanctuary-id>
+/sanctuary boundary <name|all>
+/sanctuary trust <sanctuary> <player>
+/sanctuary trust list <sanctuary>
+/sanctuary untrust <sanctuary> <player>
+/sanctuary capability <sanctuary> <player> <capability> <allow|deny>
+/sanctuary admin permissions <sanctuary> <player>
 /sanctuary admin reload
 /sanctuary admin beacons
 /sanctuary admin givebeacon <player>
@@ -178,15 +184,11 @@ anchors:
     cooldown-seconds: 300
 
 territory:
-  maximum-radius: 64.0
+  maximum-radius: 96.0
   spacing-margin: 16.0
 ```
 
-Current territory radius is derived from stored area:
-
-```text
-radius = sqrt(area / PI)
-```
+Territory radius is persisted directly and is the progression primitive. Existing legacy area values were converted to equivalent radii by migration V004.
 
 Different owners reserve enough room for future growth:
 
@@ -194,7 +196,7 @@ Different owners reserve enough room for future growth:
 minimum anchor distance = 2 * maximum-radius + spacing-margin
 ```
 
-With the default values, different-owner anchors must be at least 144 blocks apart horizontally. Y distance is intentionally ignored. Same-owner overlap is allowed.
+With the default values, different-owner anchors must be at least 208 blocks apart horizontally. Y distance is intentionally ignored. Same-owner overlap is allowed.
 
 ## Public API
 
@@ -217,7 +219,7 @@ SQLite database:
 plugins/Sanctuary/sanctuary.db
 ```
 
-The existing migration framework and `sanctuaries` table remain authoritative. Migration V002 adds anchor generation and destruction audit fields. Migration V003 adds the internal ephemeral-debug marker while preserving existing rows.
+The existing migration framework and `sanctuaries` table remain authoritative. Migration V002 adds anchor generation and destruction audit fields. Migration V003 adds the internal ephemeral-debug marker, V004 adds radius-based territory persistence, and V005 adds normalized trust/capability tables with cascading cleanup.
 
 ## Debug territory testing
 
@@ -230,11 +232,28 @@ Create a pre-registered Beacon owned by a reserved synthetic non-player identity
 
 Admins may place the debug Beacon even though its synthetic owner is not the player. It participates in normal different-owner spacing checks. When broken, it drops nothing and its database row is deleted. If the inactive debug item is destroyed before placement, its row is also cleaned up.
 
+## Trust and capabilities
+
+Sanctuary now persists trust relationships by UUID and evaluates explicit capabilities through one permission service. The owner always has every capability. Trusting another player does not grant gameplay capabilities automatically. Grant only the capabilities that player should receive.
+
+Current capabilities:
+
+```text
+BUILD
+BREAK
+INTERACT
+CONTAINER
+REDSTONE
+ENTITIES
+```
+
+Removing trust deletes all capability grants for that player in that Sanctuary. Deleting a Sanctuary also cascades its trust/capability rows. Debug-ephemeral Sanctuaries do not participate in trust management.
+
 ## Next milestone
 
-The Beacon lifecycle, territory math, spacing, presence tracking, and boundary visualization foundations are now established. Trust/capability and protection work can build on this runtime territory awareness.
+The permission foundation is now established. The next protection phase can route block, interaction, container, redstone, and entity events through the authoritative capability service.
 
-UI, trust, protections, advancements, sentries, companions, and Conduit-specific gameplay remain later work.
+UI, protection unlock/progression, advancements, sentries, companions, and Conduit-specific gameplay remain later work.
 
 See `IMPLEMENTATION-STATUS.md`, `DEVELOPMENT.md`, and `docs/Minecraft-Plugin-Architecture-and-Development-Plan.md` for additional project detail.
 

@@ -131,25 +131,19 @@ Territory settings:
 
 ```yaml
 territory:
-  maximum-radius: 64.0
+  maximum-radius: 96.0
   spacing-margin: 16.0
 ```
 
-The current Sanctuary radius is still derived from each Sanctuary's stored `territory_radius`:
+The current Sanctuary radius is stored directly in `territory_radius`. New Sanctuaries use `anchors.initial-territory-radius`, currently `18.0`.
 
-```text
-radius = sqrt(area / PI)
-```
-
-With the default initial area of `100.0`, `/sanctuary admin beacons` should report a radius of approximately `5.64` blocks.
-
-Spacing does not use the current 5.64-block radius. It reserves future growth using:
+Spacing does not use the current 18-block radius. It reserves future growth using:
 
 ```text
 minimum anchor distance = 2 * maximum-radius + spacing-margin
 ```
 
-The defaults therefore require `144` horizontal blocks between anchors owned by different owners.
+The defaults therefore require `208` horizontal blocks between anchors owned by different owners.
 
 For a faster manual spacing test, temporarily use:
 
@@ -223,3 +217,31 @@ territory:
 ```
 
 The scheduler itself ticks once per server tick and gates the rendering work using the configured period. This keeps the period reloadable through `/sanctuary admin reload`. Minecraft runs at 20 ticks per second under normal server conditions, so `10` ticks is approximately 0.5 seconds, `20` is approximately 1 second, and `2` is approximately 0.1 second.
+
+
+## Runtime validation for trust and capabilities
+
+Trust data is stored by player UUID. The owner always resolves to every capability. A trusted non-owner starts with no capabilities until grants are added explicitly.
+
+Commands:
+
+```text
+/sanctuary trust <sanctuary> <player>
+/sanctuary trust list <sanctuary>
+/sanctuary untrust <sanctuary> <player>
+/sanctuary capability <sanctuary> <player> <capability> <allow|deny>
+/sanctuary admin permissions <sanctuary> <player>
+```
+
+Capabilities:
+
+```text
+BUILD
+BREAK
+INTERACT
+CONTAINER
+REDSTONE
+ENTITIES
+```
+
+For runtime validation, trust a second player, verify `/sanctuary admin permissions` shows all capabilities denied, grant two capabilities, verify only those two show `ALLOWED`, restart Paper, and verify the same result persists. Then untrust the player and verify all capabilities return to `DENIED`. The owner should always show every capability as `ALLOWED` without trust rows.

@@ -180,3 +180,15 @@ Implemented:
 - `/sanctuary admin permissions <sanctuary> <player>` raw effective permission inspection.
 - Human-readable Sanctuary selector autocomplete for trust commands.
 - Unit and SQLite persistence tests for permission resolution and cascading cleanup.
+
+
+## Basic player protections
+
+Implemented:
+- `BUILD`, `BREAK`, `INTERACT`, `CONTAINER`, `REDSTONE`, and `ENTITIES` are enforced by Paper event listeners.
+- Owners retain implicit full access through `SanctuaryPermissionService`.
+- Trusted players only receive explicitly granted capabilities.
+- Debug Sanctuaries enforce protections even for operators.
+- `/sanctuary admin debugtrust <debug-sanctuary> [player] <capability|all> <allow|deny>` supports solo testing.
+- Anchor blocks are excluded from generic `BREAK` protection and continue through the anchor lifecycle listener.
+- SQL permission lookup failures fail closed and cancel the attempted action.

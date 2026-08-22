@@ -144,6 +144,7 @@ Fully restart Paper after deployment. Do not use `/reload` as the normal develop
 /sanctuary admin beacons
 /sanctuary admin givebeacon <player>
 /sanctuary admin debugbeacon [player]
+/sanctuary admin debugtrust <debug-sanctuary> [player] <capability|all> <allow|deny>
 ```
 
 Administrative commands require:
@@ -301,3 +302,20 @@ territory:
       vertical-particle-spacing: 1.5
       update-period-ticks: 10
 ```
+
+## Basic player protections
+
+Implemented:
+
+- Block placement requires `BUILD`.
+- Ordinary block breaking requires `BREAK`.
+- Inventory-bearing block access requires `CONTAINER`.
+- Buttons, levers, repeaters, comparators, and daylight detectors require `REDSTONE`.
+- Other right-click block interactions require `INTERACT`.
+- Entity interaction and player-caused entity damage require `ENTITIES`.
+- Sanctuary anchor blocks remain governed by the dedicated anchor lifecycle rules.
+- Permission lookup uses the active Sanctuary at the action location and the existing trust/capability engine.
+- Protection denial messages are throttled per player/capability to avoid chat spam.
+- `sanctuary.admin` does not bypass territory protections, so operators can test outsider behavior.
+- `/sanctuary admin debugtrust` grants or revokes capabilities on debug-ephemeral Sanctuaries for solo testing.
+- `/sanctuary admin permissions` can inspect debug Sanctuaries as well as normal Sanctuaries.

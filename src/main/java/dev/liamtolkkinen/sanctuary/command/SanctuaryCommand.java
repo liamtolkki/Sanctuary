@@ -76,7 +76,7 @@ public final class SanctuaryCommand implements CommandExecutor, TabCompleter {
         if (args.length == 0 || args[0].equalsIgnoreCase("status")) {
             sender.sendMessage(ChatColor.GOLD + "Sanctuary " + ChatColor.GRAY + plugin.getPluginMeta().getVersion());
             sender.sendMessage(ChatColor.GRAY + "Database: " + ChatColor.GREEN + "ready");
-            sender.sendMessage(ChatColor.GRAY + "Beacon lifecycle, territory, awareness, trust, and capabilities are active.");
+            sender.sendMessage(ChatColor.GRAY + "Beacon lifecycle, territory, awareness, trust, capabilities, and player protections are active.");
             return true;
         }
 
@@ -134,6 +134,23 @@ public final class SanctuaryCommand implements CommandExecutor, TabCompleter {
 
             if (args.length == 4 && args[1].equalsIgnoreCase("permissions")) {
                 return printPermissions(sender, args[2], args[3]);
+            }
+
+            if (args.length == 5 && args[1].equalsIgnoreCase("debugtrust")) {
+                if (!(sender instanceof Player player)) {
+                    sender.sendMessage(ChatColor.RED + "Console must specify a target player: /sanctuary admin debugtrust <sanctuary> <player> <capability|all> <allow|deny>");
+                    return true;
+                }
+                return setDebugTrust(sender, args[2], player.getUniqueId(), args[3], args[4]);
+            }
+
+            if (args.length == 6 && args[1].equalsIgnoreCase("debugtrust")) {
+                UUID playerId = resolvePlayerId(args[3]).orElse(null);
+                if (playerId == null) {
+                    sender.sendMessage(ChatColor.RED + "Player must be online, previously seen by the server, or supplied as a UUID.");
+                    return true;
+                }
+                return setDebugTrust(sender, args[2], playerId, args[4], args[5]);
             }
 
             if (args.length == 2 && args[1].equalsIgnoreCase("debugbeacon")) {
@@ -252,6 +269,76 @@ public final class SanctuaryCommand implements CommandExecutor, TabCompleter {
         return true;
     }
 
+    private boolean setDebugTrust(
+        CommandSender sender,
+        String sanctuarySelector,
+        UUID playerId,
+        String capabilityText,
+        String action
+    ) {
+        try {
+            List<Sanctuary> candidates = repository.findAll().stream()
+                .filter(Sanctuary::debugEphemeral)
+                .filter(value -> value.state() != SanctuaryState.DESTROYED)
+                .toList();
+            Sanctuary sanctuary = resolveSanctuarySelector(sanctuarySelector, candidates).orElse(null);
+            if (sanctuary == null) {
+                sender.sendMessage(ChatColor.RED + "No debug Sanctuary matches '" + sanctuarySelector + "'.");
+                return true;
+            }
+
+            boolean allow;
+            if (action.equalsIgnoreCase("allow")) {
+                allow = true;
+            } else if (action.equalsIgnoreCase("deny")) {
+                allow = false;
+            } else {
+                sender.sendMessage(ChatColor.RED + "Debug trust action must be allow or deny.");
+                return true;
+            }
+
+            List<SanctuaryCapability> capabilities;
+            if (capabilityText.equalsIgnoreCase("all")) {
+                capabilities = List.of(SanctuaryCapability.values());
+            } else {
+                try {
+                    capabilities = List.of(SanctuaryCapability.parse(capabilityText));
+                } catch (IllegalArgumentException exception) {
+                    sender.sendMessage(ChatColor.RED + "Unknown capability. Use: " + capabilityNames() + ", all");
+                    return true;
+                }
+            }
+
+            if (allow && !permissionService.isTrusted(sanctuary, playerId)) {
+                permissionService.trust(sanctuary, playerId, Instant.now());
+            }
+
+            if (!permissionService.isTrusted(sanctuary, playerId)) {
+                sender.sendMessage(ChatColor.YELLOW + playerLabel(playerId) + " is already denied in " + sanctuary.name() + ".");
+                return true;
+            }
+
+            for (SanctuaryCapability capability : capabilities) {
+                permissionService.setCapability(sanctuary, playerId, capability, allow);
+            }
+
+            if (!allow && capabilityText.equalsIgnoreCase("all")) {
+                permissionService.untrust(sanctuary, playerId);
+                sender.sendMessage(ChatColor.GREEN + "Cleared debug trust for " + playerLabel(playerId) + " in " + sanctuary.name() + ".");
+            } else {
+                sender.sendMessage((allow ? ChatColor.GREEN + "Granted " : ChatColor.YELLOW + "Revoked ")
+                    + capabilityText.toUpperCase(Locale.ROOT) + " for " + playerLabel(playerId)
+                    + " in debug Sanctuary " + sanctuary.name() + ".");
+            }
+        } catch (IllegalArgumentException | IllegalStateException exception) {
+            sender.sendMessage(ChatColor.RED + exception.getMessage());
+        } catch (SQLException exception) {
+            sender.sendMessage(ChatColor.RED + "Sanctuary could not update debug trust.");
+            plugin.getLogger().log(Level.SEVERE, "Failed to update debug Sanctuary trust", exception);
+        }
+        return true;
+    }
+
     private boolean printTrustList(CommandSender sender, String sanctuarySelector) {
         try {
             Sanctuary sanctuary = resolveManagedSanctuary(sender, sanctuarySelector, false).orElse(null);
@@ -278,7 +365,8 @@ public final class SanctuaryCommand implements CommandExecutor, TabCompleter {
 
     private boolean printPermissions(CommandSender sender, String sanctuarySelector, String playerSelector) {
         try {
-            Sanctuary sanctuary = resolveManagedSanctuary(sender, sanctuarySelector, true).orElse(null);
+            List<Sanctuary> candidates = repository.findAll();
+            Sanctuary sanctuary = resolveSanctuarySelector(sanctuarySelector, candidates).orElse(null);
             if (sanctuary == null) {
                 sender.sendMessage(ChatColor.RED + "No Sanctuary matches '" + sanctuarySelector + "'.");
                 return true;
@@ -583,12 +671,45 @@ public final class SanctuaryCommand implements CommandExecutor, TabCompleter {
         }
 
         if (args.length == 2 && args[0].equalsIgnoreCase("admin") && sender.hasPermission("sanctuary.admin")) {
-            return filter(List.of("reload", "beacons", "givebeacon", "debugbeacon", "permissions"), args[1]);
+            return filter(List.of("reload", "beacons", "givebeacon", "debugbeacon", "debugtrust", "permissions"), args[1]);
+        }
+
+        if (args.length == 3 && args[0].equalsIgnoreCase("admin") && args[1].equalsIgnoreCase("debugtrust") && sender.hasPermission("sanctuary.admin")) {
+            try {
+                List<Sanctuary> candidates = repository.findAll().stream()
+                    .filter(Sanctuary::debugEphemeral)
+                    .filter(value -> value.state() != SanctuaryState.DESTROYED)
+                    .toList();
+                return filter(candidates.stream().map(value -> sanctuaryLabel(value, candidates)).toList(), args[2]);
+            } catch (SQLException exception) {
+                return List.of();
+            }
+        }
+
+        if (args.length == 4 && args[0].equalsIgnoreCase("admin") && args[1].equalsIgnoreCase("debugtrust") && sender.hasPermission("sanctuary.admin")) {
+            List<String> values = new ArrayList<>(knownPlayerNames());
+            values.addAll(Arrays.stream(SanctuaryCapability.values()).map(value -> value.name().toLowerCase(Locale.ROOT)).toList());
+            values.add("all");
+            return filter(values, args[3]);
+        }
+
+        if (args.length == 5 && args[0].equalsIgnoreCase("admin") && args[1].equalsIgnoreCase("debugtrust") && sender.hasPermission("sanctuary.admin")) {
+            boolean selfForm = args[3].equalsIgnoreCase("all") || Arrays.stream(SanctuaryCapability.values()).anyMatch(value -> value.name().equalsIgnoreCase(args[3]));
+            if (selfForm) {
+                return filter(List.of("allow", "deny"), args[4]);
+            }
+            List<String> values = new ArrayList<>(Arrays.stream(SanctuaryCapability.values()).map(value -> value.name().toLowerCase(Locale.ROOT)).toList());
+            values.add("all");
+            return filter(values, args[4]);
+        }
+
+        if (args.length == 6 && args[0].equalsIgnoreCase("admin") && args[1].equalsIgnoreCase("debugtrust") && sender.hasPermission("sanctuary.admin")) {
+            return filter(List.of("allow", "deny"), args[5]);
         }
 
         if (args.length == 3 && args[0].equalsIgnoreCase("admin") && args[1].equalsIgnoreCase("permissions") && sender.hasPermission("sanctuary.admin")) {
             try {
-                List<Sanctuary> candidates = manageableCandidates(sender, true);
+                List<Sanctuary> candidates = repository.findAll();
                 return filter(candidates.stream().map(value -> sanctuaryLabel(value, candidates)).toList(), args[2]);
             } catch (SQLException exception) {
                 return List.of();

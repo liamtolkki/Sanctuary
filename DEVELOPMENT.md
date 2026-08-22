@@ -245,3 +245,8 @@ ENTITIES
 ```
 
 For runtime validation, trust a second player, verify `/sanctuary admin permissions` shows all capabilities denied, grant two capabilities, verify only those two show `ALLOWED`, restart Paper, and verify the same result persists. Then untrust the player and verify all capabilities return to `DENIED`. The owner should always show every capability as `ALLOWED` without trust rows.
+
+
+## Protection testing
+
+For solo testing, create and place an ephemeral debug Sanctuary, then use `/sanctuary admin debugtrust` to grant the operator specific capabilities. `sanctuary.admin` intentionally does not bypass normal territory protection checks. This lets one operator test denied and allowed behavior without a second account.

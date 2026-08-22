@@ -14,6 +14,8 @@ import dev.liamtolkkinen.sanctuary.persistence.DatabaseManager;
 import dev.liamtolkkinen.sanctuary.persistence.MigrationRunner;
 import dev.liamtolkkinen.sanctuary.persistence.SqliteSanctuaryRepository;
 import dev.liamtolkkinen.sanctuary.persistence.SqliteSanctuaryTrustRepository;
+import dev.liamtolkkinen.sanctuary.protection.SanctuaryProtectionListener;
+import dev.liamtolkkinen.sanctuary.protection.SanctuaryProtectionService;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -102,13 +104,25 @@ public final class SanctuaryPlugin extends JavaPlugin {
             );
             TerritoryBoundaryService boundaryService = new TerritoryBoundaryService(this);
 
+            TerritoryPresenceService territoryPresenceService = new TerritoryPresenceService();
             getServer().getPluginManager().registerEvents(
                 new TerritoryAwarenessListener(
                     repository,
-                    new TerritoryPresenceService(),
+                    territoryPresenceService,
                     this::isTerritoryEntryTitleEnabled,
                     this::isTerritoryExitMessageEnabled,
                     this::isOwnerEntryAlertsEnabled,
+                    getLogger()
+                ),
+                this
+            );
+            getServer().getPluginManager().registerEvents(
+                new SanctuaryProtectionListener(
+                    new SanctuaryProtectionService(
+                        repository,
+                        territoryPresenceService,
+                        permissionService
+                    ),
                     getLogger()
                 ),
                 this
@@ -143,7 +157,7 @@ public final class SanctuaryPlugin extends JavaPlugin {
             validateConfiguration();
 
             getLogger().info("Sanctuary database initialized at " + databasePath.toAbsolutePath());
-            getLogger().info("Sanctuary Beacon lifecycle, territory, awareness, trust, and capability support loaded.");
+            getLogger().info("Sanctuary Beacon lifecycle, territory, awareness, trust, capabilities, and player protections loaded.");
         } catch (SQLException | IOException | IllegalStateException exception) {
             getLogger().log(Level.SEVERE, "Failed to initialize Sanctuary", exception);
             getServer().getPluginManager().disablePlugin(this);

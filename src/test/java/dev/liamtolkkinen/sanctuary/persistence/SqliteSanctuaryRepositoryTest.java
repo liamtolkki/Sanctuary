@@ -43,8 +43,11 @@ class SqliteSanctuaryRepositoryTest {
             "Mountain Keep",
             Optional.of(new SanctuaryPosition("world", 100, 72, -45)),
             1,
+            3,
             144.0,
             SanctuaryState.ACTIVE,
+            Optional.empty(),
+            Optional.empty(),
             created,
             updated
         );
@@ -67,8 +70,11 @@ class SqliteSanctuaryRepositoryTest {
             "Home",
             Optional.of(new SanctuaryPosition("world", 0, 64, 0)),
             1,
+            1,
             100.0,
             SanctuaryState.ACTIVE,
+            Optional.empty(),
+            Optional.empty(),
             created,
             created
         );
@@ -81,8 +87,11 @@ class SqliteSanctuaryRepositoryTest {
             "Home",
             Optional.empty(),
             1,
+            1,
             100.0,
             SanctuaryState.INACTIVE,
+            Optional.empty(),
+            Optional.empty(),
             created,
             created.plusSeconds(30)
         );
@@ -92,7 +101,34 @@ class SqliteSanctuaryRepositoryTest {
     }
 
     @Test
-    void findByOwnerReturnsOnlyThatOwnersSanctuaries() throws Exception {
+    void destroyedStateAndAuditMetadataRoundTrip() throws Exception {
+        UUID id = UUID.randomUUID();
+        UUID ownerId = UUID.randomUUID();
+        Instant created = Instant.parse("2026-08-21T12:00:00Z");
+        Instant destroyedAt = created.plusSeconds(60);
+        Sanctuary destroyed = new Sanctuary(
+            id,
+            ownerId,
+            SanctuaryType.BEACON,
+            "Lost Keep",
+            Optional.empty(),
+            1,
+            2,
+            100.0,
+            SanctuaryState.DESTROYED,
+            Optional.of(destroyedAt),
+            Optional.of("DESPAWN"),
+            created,
+            destroyedAt
+        );
+
+        repository.save(destroyed);
+
+        assertEquals(destroyed, repository.findById(id).orElseThrow());
+    }
+
+    @Test
+    void findByOwnerAndFindAllReturnExpectedSanctuaries() throws Exception {
         UUID owner = UUID.randomUUID();
         UUID otherOwner = UUID.randomUUID();
         Instant now = Instant.parse("2026-08-21T12:00:00Z");
@@ -101,10 +137,12 @@ class SqliteSanctuaryRepositoryTest {
         repository.save(inactive(UUID.randomUUID(), owner, "Village", now.plusSeconds(1)));
         repository.save(inactive(UUID.randomUUID(), otherOwner, "Other", now.plusSeconds(2)));
 
-        var results = repository.findByOwner(owner);
+        var ownerResults = repository.findByOwner(owner);
+        var allResults = repository.findAll();
 
-        assertEquals(2, results.size());
-        assertTrue(results.stream().allMatch(value -> value.ownerId().equals(owner)));
+        assertEquals(2, ownerResults.size());
+        assertTrue(ownerResults.stream().allMatch(value -> value.ownerId().equals(owner)));
+        assertEquals(3, allResults.size());
     }
 
     private static Sanctuary inactive(
@@ -120,8 +158,11 @@ class SqliteSanctuaryRepositoryTest {
             name,
             Optional.empty(),
             1,
+            1,
             100.0,
             SanctuaryState.INACTIVE,
+            Optional.empty(),
+            Optional.empty(),
             created,
             created
         );

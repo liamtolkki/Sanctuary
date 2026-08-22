@@ -12,8 +12,11 @@ public record Sanctuary(
     String name,
     Optional<SanctuaryPosition> position,
     int tier,
+    int anchorGeneration,
     double territoryArea,
     SanctuaryState state,
+    Optional<Instant> destroyedAt,
+    Optional<String> destructionReason,
     Instant createdAt,
     Instant updatedAt
 ) {
@@ -24,6 +27,8 @@ public record Sanctuary(
         Objects.requireNonNull(name, "name");
         position = Objects.requireNonNull(position, "position");
         Objects.requireNonNull(state, "state");
+        destroyedAt = Objects.requireNonNull(destroyedAt, "destroyedAt");
+        destructionReason = Objects.requireNonNull(destructionReason, "destructionReason");
         Objects.requireNonNull(createdAt, "createdAt");
         Objects.requireNonNull(updatedAt, "updatedAt");
 
@@ -33,11 +38,31 @@ public record Sanctuary(
         if (tier < 1) {
             throw new IllegalArgumentException("tier must be at least 1");
         }
+        if (anchorGeneration < 1) {
+            throw new IllegalArgumentException("anchorGeneration must be at least 1");
+        }
         if (!Double.isFinite(territoryArea) || territoryArea <= 0.0) {
             throw new IllegalArgumentException("territoryArea must be finite and greater than zero");
         }
         if (state == SanctuaryState.ACTIVE && position.isEmpty()) {
             throw new IllegalArgumentException("an active Sanctuary must have an anchor position");
+        }
+        if (state == SanctuaryState.DESTROYED) {
+            if (position.isPresent()) {
+                throw new IllegalArgumentException("a destroyed Sanctuary cannot have an anchor position");
+            }
+            if (destroyedAt.isEmpty() || destructionReason.isEmpty()) {
+                throw new IllegalArgumentException(
+                    "a destroyed Sanctuary must record when and why its anchor was destroyed"
+                );
+            }
+            if (destructionReason.orElseThrow().isBlank()) {
+                throw new IllegalArgumentException("destructionReason must not be blank");
+            }
+        } else if (destroyedAt.isPresent() || destructionReason.isPresent()) {
+            throw new IllegalArgumentException(
+                "only a destroyed Sanctuary may contain destruction metadata"
+            );
         }
         if (updatedAt.isBefore(createdAt)) {
             throw new IllegalArgumentException("updatedAt cannot be before createdAt");

@@ -15,6 +15,11 @@ public final class MigrationRunner {
             1,
             "create_sanctuaries",
             "/db/migration/V001__create_sanctuaries.sql"
+        ),
+        new DatabaseMigration(
+            2,
+            "anchor_lifecycle",
+            "/db/migration/V002__anchor_lifecycle.sql"
         )
     );
 

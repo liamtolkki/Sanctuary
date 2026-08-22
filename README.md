@@ -30,28 +30,24 @@ Implemented foundation:
 - Immutable Sanctuary model
 - SQLite repository
 - Read-only public `SanctuaryApi`
-- Basic status/admin commands
-- Automated persistence/model tests
-- Development deployment task
-- GitHub Actions build
+- Development deployment task and GitHub Actions build
 
-Implemented anchor milestone:
+Implemented Beacon lifecycle:
 
 - ExtendedItems `0.1.0-alpha.2` pinned from its GitHub Release
 - Sanctuary Beacon identity through `ExtendedItemIds.SANCTUARY_BEACON`
-- Sanctuary-owned `anchor_id`, `owner_uuid`, and `tier` PDC metadata
-- Unique unbound Beacon creation
-- `/sanctuary admin givebeacon <player>`
-- First-placement listener
-- Ownership assignment on first placement
+- Sanctuary-owned `anchor_id`, `owner_uuid`, `tier`, and `generation` PDC metadata
+- Unique unbound Beacon creation and first-placement ownership assignment
 - Existing anchor UUID used as the Sanctuary UUID
-- Initial Sanctuary naming as `<PlayerName>'s Sanctuary`
-- Active location and owner persisted through the existing repository
-- Bound Beacon metadata written to the placed block
-- Duplicate/malformed/bound placement rejection
-- Unit tests for anchor binding and first-placement persistence logic
-
-The implementation intentionally stops before anchor breaking and re-placement. Bound-anchor placement is rejected until that lifecycle is implemented.
+- Explicit owner/admin breaking with an intentionally generated bound Beacon drop
+- `ACTIVE` to `INACTIVE` transition when the anchor is mined
+- Bound Beacon re-placement/reactivation without recreating the Sanctuary
+- Generation validation that rejects superseded recovered Beacon copies
+- Recorded item destruction transitions the Sanctuary to `DESTROYED`
+- Safe owner recovery for unrecorded disappearance, with generation advancement
+- Configurable recovery enablement and cooldown
+- `/sanctuary admin beacons` metadata registry output
+- Automated model, migration, repository, first-placement, and lifecycle tests
 
 ## Anchor identity contract
 
@@ -68,9 +64,20 @@ Sanctuary owns instance state:
 sanctuary:anchor_id = <UUID>
 sanctuary:owner_uuid = <UUID when bound>
 sanctuary:tier = 1
+sanctuary:generation = <positive integer>
 ```
 
-The anchor UUID is the Sanctuary identity and must remain stable across future breaking, relocation, upgrades, and re-placement.
+The anchor UUID is the Sanctuary identity and remains stable across breaking, relocation, recovery, upgrades, and re-placement. Each successful break emits the next Beacon generation, and recovery advances it again when needed. Older physical copies are permanently stale.
+
+Lifecycle states:
+
+```text
+ACTIVE
+INACTIVE
+DESTROYED
+```
+
+`DESTROYED` is retained as an audit record rather than deleting the row immediately. Normal gameplay recovery is not allowed once destruction was recorded.
 
 ## Build requirements
 
@@ -120,7 +127,9 @@ Fully restart Paper after deployment. Do not use `/reload` as the normal develop
 
 ```text
 /sanctuary status
+/sanctuary recover <sanctuary-id>
 /sanctuary admin reload
+/sanctuary admin beacons
 /sanctuary admin givebeacon <player>
 ```
 
@@ -130,36 +139,37 @@ Administrative commands require:
 sanctuary.admin
 ```
 
-## First-placement behavior
+## Beacon lifecycle behavior
 
 ```text
-Operator gives unbound Sanctuary Beacon
-        ↓
-Beacon already has a stable anchor UUID
-        ↓
-Player places Beacon
-        ↓
-ExtendedItems identity and format validated
-        ↓
-Sanctuary metadata validated
-        ↓
-Owner UUID assigned without changing anchor UUID
-        ↓
-Bound metadata written to placed Beacon block
-        ↓
-Existing SanctuaryRepository persists one ACTIVE Sanctuary
-        ↓
-Location, tier, owner, and default name are retained in SQLite
+Unbound Sanctuary Beacon
+        ↓ first placement
+ACTIVE Sanctuary
+        ↓ owner/admin breaks anchor
+INACTIVE Sanctuary + bound Beacon item
+        ↓ owner re-places matching generation
+ACTIVE Sanctuary at new location
 ```
 
-The initial territory area is configured with:
+If the inactive bound item is explicitly removed by a recorded destructive Paper removal cause, the Sanctuary becomes `DESTROYED` and normal recovery is permanently blocked. Pickup, chunk unload, and item merge are not destruction.
+
+If an inactive Beacon disappears without a recorded destruction, the owner may use:
+
+```text
+/sanctuary recover <sanctuary-id>
+```
+
+Recovery creates a new bound Beacon generation. Any older copy that later reappears is stale and cannot activate the Sanctuary.
+
+Recovery configuration:
 
 ```yaml
 anchors:
   initial-territory-area: 100.0
+  recovery:
+    enabled: true
+    cooldown-seconds: 300
 ```
-
-This value seeds the already-existing required `territory_area` field. Territory radius/containment gameplay is not implemented in this milestone.
 
 ## Public API
 
@@ -182,24 +192,12 @@ SQLite database:
 plugins/Sanctuary/sanctuary.db
 ```
 
-The existing migration framework and `sanctuaries` table remain authoritative. The anchor work does not introduce a second persistence representation.
+The existing migration framework and `sanctuaries` table remain authoritative. Migration V002 adds anchor generation and destruction audit fields without creating a second persistence representation.
 
 ## Next milestone
 
-The next anchor-lifecycle work is:
+The Beacon identity and relocation lifecycle is now established. The next gameplay foundation is territory calculation and placement-spacing validation.
 
-```text
-Anchor breaking
-    ↓
-Sanctuary becomes INACTIVE
-    ↓
-Bound item drops with same anchor UUID
-    ↓
-Re-placement validates owner and UUID
-    ↓
-Same Sanctuary becomes ACTIVE at the new location
-```
-
-Territory calculations, spacing rules, UI, trust, protections, advancements, sentries, companions, and Conduit-specific gameplay remain later work.
+UI, trust, protections, advancements, sentries, companions, and Conduit-specific gameplay remain later work.
 
 See `IMPLEMENTATION-STATUS.md`, `DEVELOPMENT.md`, and `docs/Minecraft-Plugin-Architecture-and-Development-Plan.md` for additional project detail.

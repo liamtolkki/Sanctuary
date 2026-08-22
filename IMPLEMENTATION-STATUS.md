@@ -14,7 +14,7 @@
 - Versioned database migration system
 - Initial `sanctuaries` table and indexes
 - Immutable core Sanctuary model
-- Active/inactive state model
+- Active/inactive/destroyed state model
 - Beacon/Conduit type model
 - SQLite Sanctuary repository
 - Read-only public `SanctuaryApi`
@@ -25,44 +25,46 @@
 - Development deployment task targeting `C:\MinecraftDev\server\plugins`
 - GitHub Actions build pipeline
 
-### Anchor identity and first placement
+### Beacon anchor lifecycle
 
 - `ExtendedItemIds.SANCTUARY_BEACON` consumed from ExtendedItems `0.1.0-alpha.2`
-- `ExtendedItemIds.SANCTUARY_CONDUIT` resolves from the same pinned release for future Conduit lifecycle work
 - Sanctuary-owned PDC keys:
   - `sanctuary:anchor_id`
   - `sanctuary:owner_uuid`
   - `sanctuary:tier`
+  - `sanctuary:generation`
+- Legacy generation-less phase-1 Beacon metadata is treated as generation 1
 - Unbound Beacon creation with a unique stable anchor UUID
-- ExtendedItems validation retained after Sanctuary metadata is added
-- `/sanctuary admin givebeacon <player>`
-- First-placement event handling
-- Ownership assignment on first placement
-- Existing anchor UUID used as Sanctuary UUID
-- Default name `<PlayerName>'s Sanctuary`
-- Existing `SanctuaryRepository` used for persistence
-- `BEACON` type, tier, location, owner, territory seed area, and `ACTIVE` state persisted
-- Bound metadata written to the placed Beacon block
-- Malformed Beacon rejection
-- Already-bound Beacon placement rejection until re-placement exists
-- Duplicate anchor UUID protection
-- Tests for metadata binding invariants and first-placement persistence behavior
+- First-placement ownership assignment and persistence
+- Owner/admin anchor breaking
+- Explicit bound Beacon drop with stable anchor UUID and next generation
+- `ACTIVE` to `INACTIVE` transition on break
+- Owner-only bound Beacon re-placement/reactivation
+- Existing Sanctuary record reused at the new location
+- Generation mismatch rejects superseded Beacon copies
+- Recorded bound-item destruction marks the Sanctuary `DESTROYED`
+- Destruction time and reason retained for audit
+- Owner recovery for `INACTIVE` Sanctuaries when no destruction was recorded
+- Recovery increments generation and invalidates earlier copies
+- Recovery disabled for `ACTIVE` and `DESTROYED` Sanctuaries
+- `/sanctuary admin beacons` prints the complete registered Beacon metadata set
+- Lifecycle, recovery, destruction, migration, and persistence tests
 
 ## Configuration added
 
 ```yaml
 anchors:
   initial-territory-area: 100.0
+  recovery:
+    enabled: true
+    cooldown-seconds: 300
 ```
 
-The existing persistence model requires a positive `territory_area`. This setting provides the initial persisted value without implementing territory-radius gameplay early.
+Recovery is only available for an `INACTIVE` Sanctuary whose Beacon destruction was not recorded. A successful recovery advances `anchor_generation`.
 
 ## Deliberately not implemented yet
 
 - Sanctuary Conduit obtain/placement lifecycle
-- Anchor breaking
-- Bound anchor item drops
-- Anchor re-placement/reactivation
 - Anchor tier crafting/upgrades
 - Territory calculations
 - Inter-owner spacing validation
@@ -95,26 +97,11 @@ Sanctuary owns the stateful instance metadata and gameplay:
 sanctuary:anchor_id
 sanctuary:owner_uuid
 sanctuary:tier
+sanctuary:generation
 ```
 
 ExtendedItems `0.1.0-alpha.2` is downloaded from its exact GitHub Release asset during the build. No fallback or alternate ExtendedItems version is configured.
 
 ## Next implementation milestone
 
-Continue the Beacon anchor lifecycle with breaking and re-placement:
-
-```text
-ACTIVE Sanctuary
-        ↓
-owner breaks anchor
-        ↓
-Sanctuary becomes INACTIVE
-        ↓
-bound Beacon drops with the same anchor UUID
-        ↓
-valid owner re-places bound Beacon
-        ↓
-existing Sanctuary location is updated
-        ↓
-same Sanctuary becomes ACTIVE
-```
+Implement territory calculations and placement-spacing validation on top of the completed Beacon lifecycle.

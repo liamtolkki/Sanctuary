@@ -63,28 +63,34 @@ Build and copy the shaded plugin there with:
 
 Use a full Paper server restart after deploying. Do not use `/reload` as the normal development loop.
 
-## Runtime validation for the anchor milestone
+## Runtime validation for the Beacon lifecycle
 
-After the server starts:
-
-```text
-/sanctuary status
-```
-
-Then, as an operator/admin:
+After the server starts, create and place an unbound Beacon:
 
 ```text
 /sanctuary admin givebeacon <player>
 ```
 
-Validate:
+Then validate the complete lifecycle:
 
-1. The target receives a `Sanctuary Beacon`, not an ordinary Beacon.
-2. The item places normally for its first placement.
-3. Placement reports the newly created Sanctuary name and UUID.
-4. `/sanctuary status` remains healthy.
-5. Restart Paper and verify the Sanctuary still exists in `sanctuary.db`.
-6. Attempting to place an already-bound Beacon is rejected because re-placement is intentionally the next milestone.
+1. First placement creates one `ACTIVE` Sanctuary.
+2. `/sanctuary admin beacons` shows generation 1 and the placed location.
+3. Owner mining changes the Sanctuary to `INACTIVE`, advances the generation, and drops the sole current bound Sanctuary Beacon.
+4. Re-place that Beacon elsewhere and verify the same Sanctuary ID becomes `ACTIVE` at the new location.
+5. Mine it again and leave the bound item on the ground until it despawns. The registry should show `DESTROYED` with a destruction reason.
+6. A `DESTROYED` Sanctuary must reject `/sanctuary recover <id>`.
+7. For recovery testing without waiting, temporarily set `anchors.recovery.cooldown-seconds: 0`, mine a different Beacon, keep or hide the old item, and run `/sanctuary recover <id>`.
+8. The registry should advance the generation. The recovered Beacon should place successfully; the older copy should be rejected as stale.
+9. Restart Paper and verify active, inactive, destroyed, generation, and destruction audit state remain in `sanctuary.db`.
+
+Recovery settings:
+
+```yaml
+anchors:
+  recovery:
+    enabled: true
+    cooldown-seconds: 300
+```
 
 The SQLite database is under:
 

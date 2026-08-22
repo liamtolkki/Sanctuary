@@ -54,11 +54,23 @@ public final class SqliteSanctuaryRepository implements SanctuaryRepository {
         ) {
             statement.setString(1, ownerId.toString());
             try (ResultSet result = statement.executeQuery()) {
-                List<Sanctuary> sanctuaries = new ArrayList<>();
-                while (result.next()) {
-                    sanctuaries.add(readSanctuary(result));
-                }
-                return List.copyOf(sanctuaries);
+                return readAll(result);
+            }
+        }
+    }
+
+    @Override
+    public List<Sanctuary> findAll() throws SQLException {
+        try (
+            Connection connection = databaseManager.openConnection();
+            var statement = connection.prepareStatement("""
+                SELECT *
+                FROM sanctuaries
+                ORDER BY created_at ASC
+                """)
+        ) {
+            try (ResultSet result = statement.executeQuery()) {
+                return readAll(result);
             }
         }
     }
@@ -78,11 +90,14 @@ public final class SqliteSanctuaryRepository implements SanctuaryRepository {
                     y,
                     z,
                     tier,
+                    anchor_generation,
                     territory_area,
                     state,
+                    destroyed_at,
+                    destruction_reason,
                     created_at,
                     updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     owner_uuid = excluded.owner_uuid,
                     type = excluded.type,
@@ -92,8 +107,11 @@ public final class SqliteSanctuaryRepository implements SanctuaryRepository {
                     y = excluded.y,
                     z = excluded.z,
                     tier = excluded.tier,
+                    anchor_generation = excluded.anchor_generation,
                     territory_area = excluded.territory_area,
                     state = excluded.state,
+                    destroyed_at = excluded.destroyed_at,
+                    destruction_reason = excluded.destruction_reason,
                     updated_at = excluded.updated_at
                 """)
         ) {
@@ -114,12 +132,27 @@ public final class SqliteSanctuaryRepository implements SanctuaryRepository {
                 statement.setNull(8, Types.INTEGER);
             }
             statement.setInt(9, sanctuary.tier());
-            statement.setDouble(10, sanctuary.territoryArea());
-            statement.setString(11, sanctuary.state().name());
-            statement.setString(12, sanctuary.createdAt().toString());
-            statement.setString(13, sanctuary.updatedAt().toString());
+            statement.setInt(10, sanctuary.anchorGeneration());
+            statement.setDouble(11, sanctuary.territoryArea());
+            statement.setString(12, sanctuary.state().name());
+            setOptionalInstant(statement, 13, sanctuary.destroyedAt());
+            if (sanctuary.destructionReason().isPresent()) {
+                statement.setString(14, sanctuary.destructionReason().orElseThrow());
+            } else {
+                statement.setNull(14, Types.VARCHAR);
+            }
+            statement.setString(15, sanctuary.createdAt().toString());
+            statement.setString(16, sanctuary.updatedAt().toString());
             statement.executeUpdate();
         }
+    }
+
+    private static List<Sanctuary> readAll(ResultSet result) throws SQLException {
+        List<Sanctuary> sanctuaries = new ArrayList<>();
+        while (result.next()) {
+            sanctuaries.add(readSanctuary(result));
+        }
+        return List.copyOf(sanctuaries);
     }
 
     private static Sanctuary readSanctuary(ResultSet result) throws SQLException {
@@ -137,6 +170,9 @@ public final class SqliteSanctuaryRepository implements SanctuaryRepository {
             ));
         }
 
+        String destroyedAtValue = result.getString("destroyed_at");
+        String destructionReasonValue = result.getString("destruction_reason");
+
         return new Sanctuary(
             UUID.fromString(result.getString("id")),
             UUID.fromString(result.getString("owner_uuid")),
@@ -144,10 +180,27 @@ public final class SqliteSanctuaryRepository implements SanctuaryRepository {
             result.getString("name"),
             position,
             result.getInt("tier"),
+            result.getInt("anchor_generation"),
             result.getDouble("territory_area"),
             SanctuaryState.valueOf(result.getString("state")),
+            destroyedAtValue == null
+                ? Optional.empty()
+                : Optional.of(Instant.parse(destroyedAtValue)),
+            Optional.ofNullable(destructionReasonValue),
             Instant.parse(result.getString("created_at")),
             Instant.parse(result.getString("updated_at"))
         );
+    }
+
+    private static void setOptionalInstant(
+        java.sql.PreparedStatement statement,
+        int index,
+        Optional<Instant> value
+    ) throws SQLException {
+        if (value.isPresent()) {
+            statement.setString(index, value.orElseThrow().toString());
+        } else {
+            statement.setNull(index, Types.VARCHAR);
+        }
     }
 }

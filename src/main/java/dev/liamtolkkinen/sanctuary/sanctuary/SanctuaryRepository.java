@@ -10,5 +10,7 @@ public interface SanctuaryRepository {
 
     List<Sanctuary> findByOwner(UUID ownerId) throws SQLException;
 
+    List<Sanctuary> findAll() throws SQLException;
+
     void save(Sanctuary sanctuary) throws SQLException;
 }

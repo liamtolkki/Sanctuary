@@ -11,13 +11,14 @@ import org.junit.jupiter.api.Test;
 
 class AnchorMetadataTest {
     @Test
-    void bindPreservesAnchorIdentityAndTier() {
+    void bindPreservesAnchorIdentityTierAndGeneration() {
         UUID anchorId = UUID.randomUUID();
         UUID ownerId = UUID.randomUUID();
         AnchorMetadata unbound = new AnchorMetadata(
             anchorId,
             Optional.empty(),
-            1
+            1,
+            3
         );
 
         AnchorMetadata bound = unbound.bind(ownerId);
@@ -27,6 +28,26 @@ class AnchorMetadataTest {
         assertEquals(anchorId, bound.anchorId());
         assertEquals(ownerId, bound.ownerId().orElseThrow());
         assertEquals(1, bound.tier());
+        assertEquals(3, bound.generation());
+    }
+
+    @Test
+    void nextGenerationPreservesIdentityAndAdvancesTokenVersion() {
+        UUID anchorId = UUID.randomUUID();
+        UUID ownerId = UUID.randomUUID();
+        AnchorMetadata current = new AnchorMetadata(
+            anchorId,
+            Optional.of(ownerId),
+            2,
+            4
+        );
+
+        AnchorMetadata next = current.nextGeneration();
+
+        assertEquals(anchorId, next.anchorId());
+        assertEquals(ownerId, next.ownerId().orElseThrow());
+        assertEquals(2, next.tier());
+        assertEquals(5, next.generation());
     }
 
     @Test
@@ -34,6 +55,7 @@ class AnchorMetadataTest {
         AnchorMetadata bound = new AnchorMetadata(
             UUID.randomUUID(),
             Optional.of(UUID.randomUUID()),
+            1,
             1
         );
 
@@ -44,12 +66,22 @@ class AnchorMetadataTest {
     }
 
     @Test
-    void tierMustBeAtLeastOne() {
+    void tierAndGenerationMustBeAtLeastOne() {
         assertThrows(
             IllegalArgumentException.class,
             () -> new AnchorMetadata(
                 UUID.randomUUID(),
                 Optional.empty(),
+                0,
+                1
+            )
+        );
+        assertThrows(
+            IllegalArgumentException.class,
+            () -> new AnchorMetadata(
+                UUID.randomUUID(),
+                Optional.empty(),
+                1,
                 0
             )
         );

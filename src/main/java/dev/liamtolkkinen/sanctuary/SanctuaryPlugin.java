@@ -1,6 +1,9 @@
 package dev.liamtolkkinen.sanctuary;
 
+import dev.liamtolkkinen.sanctuary.anchor.AnchorBreakListener;
+import dev.liamtolkkinen.sanctuary.anchor.AnchorItemRemovalListener;
 import dev.liamtolkkinen.sanctuary.anchor.AnchorItemService;
+import dev.liamtolkkinen.sanctuary.anchor.AnchorLifecycleService;
 import dev.liamtolkkinen.sanctuary.anchor.AnchorPlacementListener;
 import dev.liamtolkkinen.sanctuary.anchor.InitialAnchorPlacementService;
 import dev.liamtolkkinen.sanctuary.api.DefaultSanctuaryApi;
@@ -20,6 +23,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 
 public final class SanctuaryPlugin extends JavaPlugin {
     private static final double DEFAULT_INITIAL_TERRITORY_AREA = 100.0;
+    private static final long DEFAULT_RECOVERY_COOLDOWN_SECONDS = 300L;
 
     private SanctuaryApi sanctuaryApi;
 
@@ -47,20 +51,43 @@ public final class SanctuaryPlugin extends JavaPlugin {
             );
 
             AnchorItemService anchorItemService = new AnchorItemService(this);
-            InitialAnchorPlacementService placementService =
+            InitialAnchorPlacementService initialPlacementService =
                 new InitialAnchorPlacementService(repository);
+            AnchorLifecycleService lifecycleService = new AnchorLifecycleService(repository);
 
             getServer().getPluginManager().registerEvents(
                 new AnchorPlacementListener(
                     anchorItemService,
-                    placementService,
+                    initialPlacementService,
+                    lifecycleService,
                     this::getInitialTerritoryArea,
                     getLogger()
                 ),
                 this
             );
+            getServer().getPluginManager().registerEvents(
+                new AnchorBreakListener(
+                    anchorItemService,
+                    lifecycleService,
+                    getLogger()
+                ),
+                this
+            );
+            getServer().getPluginManager().registerEvents(
+                new AnchorItemRemovalListener(
+                    anchorItemService,
+                    lifecycleService,
+                    getLogger()
+                ),
+                this
+            );
 
-            SanctuaryCommand sanctuaryCommand = new SanctuaryCommand(this, anchorItemService);
+            SanctuaryCommand sanctuaryCommand = new SanctuaryCommand(
+                this,
+                anchorItemService,
+                lifecycleService,
+                repository
+            );
             var command = Objects.requireNonNull(
                 getCommand("sanctuary"),
                 "sanctuary command is missing from plugin.yml"
@@ -68,10 +95,10 @@ public final class SanctuaryPlugin extends JavaPlugin {
             command.setExecutor(sanctuaryCommand);
             command.setTabCompleter(sanctuaryCommand);
 
-            getInitialTerritoryArea();
+            validateConfiguration();
 
             getLogger().info("Sanctuary database initialized at " + databasePath.toAbsolutePath());
-            getLogger().info("Sanctuary anchor identity and first-placement support loaded.");
+            getLogger().info("Sanctuary complete Beacon anchor lifecycle support loaded.");
         } catch (SQLException | IOException | IllegalStateException exception) {
             getLogger().log(Level.SEVERE, "Failed to initialize Sanctuary", exception);
             getServer().getPluginManager().disablePlugin(this);
@@ -93,7 +120,29 @@ public final class SanctuaryPlugin extends JavaPlugin {
 
     public void reloadSanctuaryConfig() {
         reloadConfig();
+        validateConfiguration();
+    }
+
+    public boolean isAnchorRecoveryEnabled() {
+        return getConfig().getBoolean("anchors.recovery.enabled", true);
+    }
+
+    public long getAnchorRecoveryCooldownSeconds() {
+        long value = getConfig().getLong(
+            "anchors.recovery.cooldown-seconds",
+            DEFAULT_RECOVERY_COOLDOWN_SECONDS
+        );
+        if (value < 0L) {
+            throw new IllegalStateException(
+                "anchors.recovery.cooldown-seconds must be zero or greater"
+            );
+        }
+        return value;
+    }
+
+    private void validateConfiguration() {
         getInitialTerritoryArea();
+        getAnchorRecoveryCooldownSeconds();
     }
 
     private double getInitialTerritoryArea() {

@@ -7,3 +7,6 @@ names:
 
 anchors:
   initial-territory-area: 100.0
+  recovery:
+    enabled: true
+    cooldown-seconds: 300

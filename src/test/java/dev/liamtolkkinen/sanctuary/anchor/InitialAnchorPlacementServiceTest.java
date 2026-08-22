@@ -44,6 +44,7 @@ class InitialAnchorPlacementServiceTest {
         AnchorMetadata metadata = new AnchorMetadata(
             anchorId,
             Optional.empty(),
+            1,
             1
         ).bind(ownerId);
         SanctuaryPosition position = new SanctuaryPosition(
@@ -66,6 +67,7 @@ class InitialAnchorPlacementServiceTest {
         assertEquals("Liam's Sanctuary", created.name());
         assertEquals(Optional.of(position), created.position());
         assertEquals(1, created.tier());
+        assertEquals(1, created.anchorGeneration());
         assertEquals(100.0, created.territoryArea());
         assertEquals(SanctuaryState.ACTIVE, created.state());
         assertEquals(1, repository.values.size());
@@ -77,6 +79,7 @@ class InitialAnchorPlacementServiceTest {
         AnchorMetadata metadata = new AnchorMetadata(
             UUID.randomUUID(),
             Optional.empty(),
+            1,
             1
         );
 
@@ -99,6 +102,7 @@ class InitialAnchorPlacementServiceTest {
         AnchorMetadata firstMetadata = new AnchorMetadata(
             anchorId,
             Optional.of(firstOwner),
+            1,
             1
         );
         Sanctuary existing = service.createBeaconSanctuary(
@@ -111,6 +115,7 @@ class InitialAnchorPlacementServiceTest {
         AnchorMetadata secondMetadata = new AnchorMetadata(
             anchorId,
             Optional.of(UUID.randomUUID()),
+            1,
             1
         );
 
@@ -144,6 +149,12 @@ class InitialAnchorPlacementServiceTest {
                 }
             }
             return List.copyOf(result);
+        }
+
+
+        @Override
+        public List<Sanctuary> findAll() {
+            return List.copyOf(values.values());
         }
 
         @Override

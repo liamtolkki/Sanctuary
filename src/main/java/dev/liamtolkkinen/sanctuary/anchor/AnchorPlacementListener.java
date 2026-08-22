@@ -17,18 +17,21 @@ import org.bukkit.inventory.ItemStack;
 
 public final class AnchorPlacementListener implements Listener {
     private final AnchorItemService anchorItemService;
-    private final InitialAnchorPlacementService placementService;
+    private final InitialAnchorPlacementService initialPlacementService;
+    private final AnchorLifecycleService lifecycleService;
     private final DoubleSupplier initialTerritoryArea;
     private final Logger logger;
 
     public AnchorPlacementListener(
         AnchorItemService anchorItemService,
-        InitialAnchorPlacementService placementService,
+        InitialAnchorPlacementService initialPlacementService,
+        AnchorLifecycleService lifecycleService,
         DoubleSupplier initialTerritoryArea,
         Logger logger
     ) {
         this.anchorItemService = anchorItemService;
-        this.placementService = placementService;
+        this.initialPlacementService = initialPlacementService;
+        this.lifecycleService = lifecycleService;
         this.initialTerritoryArea = initialTerritoryArea;
         this.logger = logger;
     }
@@ -49,21 +52,12 @@ public final class AnchorPlacementListener implements Listener {
             return;
         }
 
-        AnchorMetadata metadata = metadataResult.orElseThrow();
-        if (metadata.isBound()) {
-            reject(
-                event,
-                "This Sanctuary Beacon is already bound. Re-placement is not available yet."
-            );
-            return;
-        }
-
         if (!(event.getBlockPlaced().getState() instanceof TileState tileState)) {
             reject(event, "The placed Sanctuary Beacon cannot store anchor metadata.");
             return;
         }
 
-        AnchorMetadata boundMetadata = metadata.bind(event.getPlayer().getUniqueId());
+        AnchorMetadata metadata = metadataResult.orElseThrow();
         SanctuaryPosition position = new SanctuaryPosition(
             event.getBlockPlaced().getWorld().getName(),
             event.getBlockPlaced().getX(),
@@ -72,9 +66,28 @@ public final class AnchorPlacementListener implements Listener {
         );
 
         try {
-            anchorItemService.writeBlockMetadata(tileState, boundMetadata);
+            if (metadata.isBound()) {
+                anchorItemService.writeBlockMetadata(tileState, metadata);
+                Sanctuary sanctuary = lifecycleService.reactivate(
+                    metadata,
+                    event.getPlayer().getUniqueId(),
+                    position
+                );
+                event.getPlayer().sendMessage(
+                    ChatColor.GREEN
+                        + "Reactivated "
+                        + sanctuary.name()
+                        + ChatColor.GRAY
+                        + " ("
+                        + sanctuary.id()
+                        + ")"
+                );
+                return;
+            }
 
-            Sanctuary sanctuary = placementService.createBeaconSanctuary(
+            AnchorMetadata boundMetadata = metadata.bind(event.getPlayer().getUniqueId());
+            anchorItemService.writeBlockMetadata(tileState, boundMetadata);
+            Sanctuary sanctuary = initialPlacementService.createBeaconSanctuary(
                 boundMetadata,
                 event.getPlayer().getName(),
                 position,

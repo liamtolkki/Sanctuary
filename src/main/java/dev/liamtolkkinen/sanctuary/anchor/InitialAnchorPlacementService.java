@@ -60,8 +60,11 @@ public final class InitialAnchorPlacementService {
             ownerName + "'s Sanctuary",
             Optional.of(position),
             metadata.tier(),
+            metadata.generation(),
             territoryArea,
             SanctuaryState.ACTIVE,
+            Optional.empty(),
+            Optional.empty(),
             now,
             now
         );

@@ -30,7 +30,7 @@ class MigrationRunnerTest {
             )
         ) {
             assertTrue(result.next());
-            assertEquals(1, result.getInt(1));
+            assertEquals(2, result.getInt(1));
         }
 
         try (

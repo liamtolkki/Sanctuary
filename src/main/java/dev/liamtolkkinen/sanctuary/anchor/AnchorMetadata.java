@@ -7,7 +7,8 @@ import java.util.UUID;
 public record AnchorMetadata(
     UUID anchorId,
     Optional<UUID> ownerId,
-    int tier
+    int tier,
+    int generation
 ) {
     public AnchorMetadata {
         Objects.requireNonNull(anchorId, "anchorId");
@@ -16,10 +17,20 @@ public record AnchorMetadata(
         if (tier < 1) {
             throw new IllegalArgumentException("tier must be at least 1");
         }
+        if (generation < 1) {
+            throw new IllegalArgumentException("generation must be at least 1");
+        }
     }
 
     public boolean isBound() {
         return ownerId.isPresent();
+    }
+
+    public AnchorMetadata nextGeneration() {
+        if (generation == Integer.MAX_VALUE) {
+            throw new IllegalStateException("anchor generation cannot advance further");
+        }
+        return new AnchorMetadata(anchorId, ownerId, tier, generation + 1);
     }
 
     public AnchorMetadata bind(UUID ownerId) {
@@ -31,7 +42,8 @@ public record AnchorMetadata(
         return new AnchorMetadata(
             anchorId,
             Optional.of(ownerId),
-            tier
+            tier,
+            generation
         );
     }
 }

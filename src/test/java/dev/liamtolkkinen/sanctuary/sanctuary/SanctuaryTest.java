@@ -20,8 +20,11 @@ class SanctuaryTest {
                 "Home",
                 Optional.empty(),
                 1,
+                1,
                 100.0,
                 SanctuaryState.ACTIVE,
+                Optional.empty(),
+                Optional.empty(),
                 now,
                 now
             )
@@ -39,15 +42,42 @@ class SanctuaryTest {
             "Home",
             Optional.empty(),
             1,
+            1,
             100.0,
             SanctuaryState.INACTIVE,
+            Optional.empty(),
+            Optional.empty(),
             now,
             now
         );
     }
 
     @Test
-    void invalidTierAndAreaAreRejected() {
+    void destroyedSanctuaryRequiresDestructionMetadataAndNoPosition() {
+        Instant now = Instant.parse("2026-08-21T00:00:00Z");
+
+        assertThrows(
+            IllegalArgumentException.class,
+            () -> new Sanctuary(
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                SanctuaryType.BEACON,
+                "Home",
+                Optional.empty(),
+                1,
+                1,
+                100.0,
+                SanctuaryState.DESTROYED,
+                Optional.empty(),
+                Optional.empty(),
+                now,
+                now
+            )
+        );
+    }
+
+    @Test
+    void invalidTierGenerationAndAreaAreRejected() {
         Instant now = Instant.parse("2026-08-21T00:00:00Z");
         SanctuaryPosition position = new SanctuaryPosition("world", 1, 64, 2);
 
@@ -60,8 +90,11 @@ class SanctuaryTest {
                 "Home",
                 Optional.of(position),
                 0,
+                1,
                 100.0,
                 SanctuaryState.ACTIVE,
+                Optional.empty(),
+                Optional.empty(),
                 now,
                 now
             )
@@ -76,8 +109,30 @@ class SanctuaryTest {
                 "Home",
                 Optional.of(position),
                 1,
+                0,
+                100.0,
+                SanctuaryState.ACTIVE,
+                Optional.empty(),
+                Optional.empty(),
+                now,
+                now
+            )
+        );
+
+        assertThrows(
+            IllegalArgumentException.class,
+            () -> new Sanctuary(
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                SanctuaryType.BEACON,
+                "Home",
+                Optional.of(position),
+                1,
+                1,
                 0.0,
                 SanctuaryState.ACTIVE,
+                Optional.empty(),
+                Optional.empty(),
                 now,
                 now
             )

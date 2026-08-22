@@ -84,7 +84,7 @@ class AnchorLifecycleServiceTest {
         service.deactivateForBreak(metadata(1), ownerId, originalPosition, false);
         SanctuaryPosition newPosition = new SanctuaryPosition("world_nether", -4, 80, 9);
 
-        Sanctuary active = service.reactivate(metadata(2), ownerId, newPosition);
+        Sanctuary active = service.reactivate(metadata(2), ownerId, newPosition, 64.0, 16.0, false);
 
         assertEquals(anchorId, active.id());
         assertEquals("Home", active.name());
@@ -92,6 +92,42 @@ class AnchorLifecycleServiceTest {
         assertEquals(Optional.of(newPosition), active.position());
         assertEquals(SanctuaryState.ACTIVE, active.state());
         assertEquals(1, repository.values.size());
+    }
+
+
+    @Test
+    void reactivationEnforcesDifferentOwnerSpacing() throws Exception {
+        service.deactivateForBreak(metadata(1), ownerId, originalPosition, false);
+        UUID otherOwner = UUID.randomUUID();
+        UUID otherId = UUID.randomUUID();
+        repository.save(new Sanctuary(
+            otherId,
+            otherOwner,
+            SanctuaryType.BEACON,
+            "Other",
+            Optional.of(new SanctuaryPosition("world", 0, 64, 0)),
+            1,
+            1,
+            100.0,
+            SanctuaryState.ACTIVE,
+            Optional.empty(),
+            Optional.empty(),
+            false,
+            CREATED_AT,
+            CREATED_AT
+        ));
+
+        assertThrows(
+            AnchorPlacementException.class,
+            () -> service.reactivate(
+                metadata(2),
+                ownerId,
+                new SanctuaryPosition("world", 100, 100, 0),
+                64.0,
+                16.0,
+                false
+            )
+        );
     }
 
     @Test
@@ -105,7 +141,10 @@ class AnchorLifecycleServiceTest {
             () -> service.reactivate(
                 metadata(2),
                 ownerId,
-                new SanctuaryPosition("world", 30, 70, 30)
+                new SanctuaryPosition("world", 30, 70, 30),
+                64.0,
+                16.0,
+                false
             )
         );
     }
@@ -188,6 +227,99 @@ class AnchorLifecycleServiceTest {
         );
     }
 
+
+    @Test
+    void ephemeralDebugBeaconIsDeletedWhenBrokenAndDropsNoPersistentRecord() throws Exception {
+        repository.values.clear();
+        UUID debugOwner = DebugBeaconRegistrationService.syntheticOwnerId(anchorId);
+        Sanctuary debug = new Sanctuary(
+            anchorId,
+            debugOwner,
+            SanctuaryType.BEACON,
+            "Debug Sanctuary",
+            Optional.of(originalPosition),
+            1,
+            1,
+            100.0,
+            SanctuaryState.ACTIVE,
+            Optional.empty(),
+            Optional.empty(),
+            true,
+            CREATED_AT,
+            CREATED_AT
+        );
+        repository.save(debug);
+        AnchorMetadata debugMetadata = new AnchorMetadata(
+            anchorId,
+            Optional.of(debugOwner),
+            1,
+            1
+        );
+
+        AnchorBreakResult result = service.breakAnchor(
+            debugMetadata,
+            UUID.randomUUID(),
+            originalPosition,
+            true
+        );
+
+        assertTrue(result.deleted());
+        assertTrue(repository.findById(anchorId).isEmpty());
+    }
+
+    @Test
+    void adminMayPlaceEphemeralDebugBeaconForSyntheticOwner() throws Exception {
+        repository.values.clear();
+        UUID debugOwner = DebugBeaconRegistrationService.syntheticOwnerId(anchorId);
+        Sanctuary debug = new Sanctuary(
+            anchorId,
+            debugOwner,
+            SanctuaryType.BEACON,
+            "Debug Sanctuary",
+            Optional.empty(),
+            1,
+            1,
+            100.0,
+            SanctuaryState.INACTIVE,
+            Optional.empty(),
+            Optional.empty(),
+            true,
+            CREATED_AT,
+            CREATED_AT
+        );
+        repository.save(debug);
+        AnchorMetadata debugMetadata = new AnchorMetadata(
+            anchorId,
+            Optional.of(debugOwner),
+            1,
+            1
+        );
+        SanctuaryPosition position = new SanctuaryPosition("world", 50, 64, 50);
+
+        assertThrows(
+            AnchorPlacementException.class,
+            () -> service.reactivate(
+                debugMetadata,
+                UUID.randomUUID(),
+                position,
+                64.0,
+                16.0,
+                false
+            )
+        );
+
+        Sanctuary active = service.reactivate(
+            debugMetadata,
+            UUID.randomUUID(),
+            position,
+            64.0,
+            16.0,
+            true
+        );
+        assertEquals(SanctuaryState.ACTIVE, active.state());
+        assertTrue(active.debugEphemeral());
+    }
+
     private Sanctuary activeSanctuary(int generation) {
         return new Sanctuary(
             anchorId,
@@ -201,6 +333,7 @@ class AnchorLifecycleServiceTest {
             SanctuaryState.ACTIVE,
             Optional.empty(),
             Optional.empty(),
+            false,
             CREATED_AT,
             CREATED_AT
         );
@@ -228,6 +361,20 @@ class AnchorLifecycleServiceTest {
         @Override
         public List<Sanctuary> findAll() {
             return List.copyOf(values.values());
+        }
+
+        @Override
+        public List<Sanctuary> findActiveInWorld(String world) {
+            return values.values().stream()
+                .filter(value -> value.state() == SanctuaryState.ACTIVE)
+                .filter(value -> value.position().isPresent())
+                .filter(value -> value.position().orElseThrow().world().equals(world))
+                .toList();
+        }
+
+        @Override
+        public void delete(UUID id) {
+            values.remove(id);
         }
 
         @Override

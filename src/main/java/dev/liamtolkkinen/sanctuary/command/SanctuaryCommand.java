@@ -5,10 +5,13 @@ import dev.liamtolkkinen.sanctuary.anchor.AnchorItemService;
 import dev.liamtolkkinen.sanctuary.anchor.AnchorLifecycleService;
 import dev.liamtolkkinen.sanctuary.anchor.AnchorRecoveryException;
 import dev.liamtolkkinen.sanctuary.anchor.AnchorRecoveryResult;
+import dev.liamtolkkinen.sanctuary.anchor.DebugBeaconRegistrationService;
 import dev.liamtolkkinen.sanctuary.sanctuary.Sanctuary;
 import dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryPosition;
 import dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryRepository;
+import dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryState;
 import dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryType;
+import dev.liamtolkkinen.sanctuary.territory.TerritoryCalculator;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -33,17 +36,20 @@ public final class SanctuaryCommand implements CommandExecutor, TabCompleter {
     private final SanctuaryPlugin plugin;
     private final AnchorItemService anchorItemService;
     private final AnchorLifecycleService lifecycleService;
+    private final DebugBeaconRegistrationService debugBeaconService;
     private final SanctuaryRepository repository;
 
     public SanctuaryCommand(
         SanctuaryPlugin plugin,
         AnchorItemService anchorItemService,
         AnchorLifecycleService lifecycleService,
+        DebugBeaconRegistrationService debugBeaconService,
         SanctuaryRepository repository
     ) {
         this.plugin = plugin;
         this.anchorItemService = anchorItemService;
         this.lifecycleService = lifecycleService;
+        this.debugBeaconService = debugBeaconService;
         this.repository = repository;
     }
 
@@ -63,7 +69,7 @@ public final class SanctuaryCommand implements CommandExecutor, TabCompleter {
             );
             sender.sendMessage(ChatColor.GRAY + "Database: " + ChatColor.GREEN + "ready");
             sender.sendMessage(
-                ChatColor.GRAY + "Complete Beacon anchor lifecycle support is active."
+                ChatColor.GRAY + "Beacon lifecycle, territory, and spacing validation are active."
             );
             return true;
         }
@@ -98,6 +104,26 @@ public final class SanctuaryCommand implements CommandExecutor, TabCompleter {
                 return printRegisteredBeacons(sender);
             }
 
+            if (args.length == 2 && args[1].equalsIgnoreCase("debugbeacon")) {
+                if (!(sender instanceof Player player)) {
+                    sender.sendMessage(
+                        ChatColor.RED + "Console must specify a target player: "
+                            + "/sanctuary admin debugbeacon <player>"
+                    );
+                    return true;
+                }
+                return giveDebugBeacon(sender, player);
+            }
+
+            if (args.length == 3 && args[1].equalsIgnoreCase("debugbeacon")) {
+                Player target = Bukkit.getPlayerExact(args[2]);
+                if (target == null) {
+                    sender.sendMessage(ChatColor.RED + "That player is not online.");
+                    return true;
+                }
+                return giveDebugBeacon(sender, target);
+            }
+
             if (args.length == 3 && args[1].equalsIgnoreCase("givebeacon")) {
                 Player target = Bukkit.getPlayerExact(args[2]);
                 if (target == null) {
@@ -120,7 +146,7 @@ public final class SanctuaryCommand implements CommandExecutor, TabCompleter {
         sender.sendMessage(
             ChatColor.YELLOW
                 + "Usage: /sanctuary [status|recover <sanctuary-id>|admin reload|"
-                + "admin beacons|admin givebeacon <player>]"
+                + "admin beacons|admin givebeacon <player>|admin debugbeacon [player]]"
         );
         return true;
     }
@@ -172,6 +198,53 @@ public final class SanctuaryCommand implements CommandExecutor, TabCompleter {
         return true;
     }
 
+    private boolean giveDebugBeacon(CommandSender sender, Player target) {
+        Sanctuary sanctuary = null;
+        try {
+            sanctuary = debugBeaconService.register(plugin.getInitialTerritoryArea());
+            ItemStack item = anchorItemService.createBoundBeacon(sanctuary);
+            giveOrDrop(target, item);
+
+            sender.sendMessage(
+                ChatColor.GREEN
+                    + "Registered ephemeral debug Beacon "
+                    + sanctuary.id()
+                    + " with synthetic owner "
+                    + sanctuary.ownerId()
+                    + " and gave it to "
+                    + target.getName()
+                    + "."
+            );
+            sender.sendMessage(
+                ChatColor.YELLOW
+                    + "Breaking this debug Beacon deletes its Sanctuary record and drops nothing."
+            );
+            if (!target.equals(sender)) {
+                target.sendMessage(
+                    ChatColor.GOLD
+                        + "You received an ephemeral debug Sanctuary Beacon. "
+                        + "It represents another owner and is deleted when broken."
+                );
+            }
+            return true;
+        } catch (SQLException exception) {
+            sender.sendMessage(ChatColor.RED + "Sanctuary could not register a debug Beacon.");
+            plugin.getLogger().log(Level.SEVERE, "Failed to register debug Sanctuary Beacon", exception);
+            return true;
+        } catch (RuntimeException exception) {
+            if (sanctuary != null) {
+                try {
+                    debugBeaconService.remove(sanctuary.id());
+                } catch (SQLException cleanupException) {
+                    exception.addSuppressed(cleanupException);
+                }
+            }
+            sender.sendMessage(ChatColor.RED + "Sanctuary could not create the debug Beacon item.");
+            plugin.getLogger().log(Level.SEVERE, "Failed to create debug Sanctuary Beacon", exception);
+            return true;
+        }
+    }
+
     private boolean printRegisteredBeacons(CommandSender sender) {
         try {
             List<Sanctuary> beacons = repository.findAll().stream()
@@ -196,6 +269,7 @@ public final class SanctuaryCommand implements CommandExecutor, TabCompleter {
                         + ChatColor.GRAY
                         + " ["
                         + sanctuary.state()
+                        + (sanctuary.debugEphemeral() ? ", DEBUG-EPHEMERAL" : "")
                         + "]"
                 );
                 sender.sendMessage(
@@ -213,6 +287,12 @@ public final class SanctuaryCommand implements CommandExecutor, TabCompleter {
                         + sanctuary.anchorGeneration()
                         + " territoryArea="
                         + sanctuary.territoryArea()
+                        + " radius="
+                        + String.format(
+                            Locale.ROOT,
+                            "%.2f",
+                            TerritoryCalculator.radiusForArea(sanctuary.territoryArea())
+                        )
                 );
                 sender.sendMessage(
                     ChatColor.GRAY
@@ -282,7 +362,7 @@ public final class SanctuaryCommand implements CommandExecutor, TabCompleter {
             try {
                 return filter(
                     repository.findByOwner(player.getUniqueId()).stream()
-                        .filter(value -> value.type() == SanctuaryType.BEACON)
+                        .filter(SanctuaryCommand::isRecoverableAutocompleteCandidate)
                         .map(value -> value.id().toString())
                         .toList(),
                     args[1]
@@ -297,13 +377,14 @@ public final class SanctuaryCommand implements CommandExecutor, TabCompleter {
                 && args[0].equalsIgnoreCase("admin")
                 && sender.hasPermission("sanctuary.admin")
         ) {
-            return filter(List.of("reload", "beacons", "givebeacon"), args[1]);
+            return filter(List.of("reload", "beacons", "givebeacon", "debugbeacon"), args[1]);
         }
 
         if (
             args.length == 3
                 && args[0].equalsIgnoreCase("admin")
-                && args[1].equalsIgnoreCase("givebeacon")
+                && (args[1].equalsIgnoreCase("givebeacon")
+                    || args[1].equalsIgnoreCase("debugbeacon"))
                 && sender.hasPermission("sanctuary.admin")
         ) {
             return filter(
@@ -316,6 +397,13 @@ public final class SanctuaryCommand implements CommandExecutor, TabCompleter {
         }
 
         return List.of();
+    }
+
+
+    static boolean isRecoverableAutocompleteCandidate(Sanctuary sanctuary) {
+        return sanctuary.type() == SanctuaryType.BEACON
+            && sanctuary.state() == SanctuaryState.INACTIVE
+            && !sanctuary.debugEphemeral();
     }
 
     private static List<String> filter(List<String> values, String prefix) {

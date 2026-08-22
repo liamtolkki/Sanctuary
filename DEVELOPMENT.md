@@ -124,3 +124,65 @@ git ls-files -s gradlew
 ```
 
 The mode should be `100755`.
+
+## Runtime validation for territory and spacing
+
+Territory settings:
+
+```yaml
+territory:
+  maximum-radius: 64.0
+  spacing-margin: 16.0
+```
+
+The current Sanctuary radius is still derived from each Sanctuary's stored `territory_area`:
+
+```text
+radius = sqrt(area / PI)
+```
+
+With the default initial area of `100.0`, `/sanctuary admin beacons` should report a radius of approximately `5.64` blocks.
+
+Spacing does not use the current 5.64-block radius. It reserves future growth using:
+
+```text
+minimum anchor distance = 2 * maximum-radius + spacing-margin
+```
+
+The defaults therefore require `144` horizontal blocks between anchors owned by different owners.
+
+For a faster manual spacing test, temporarily use:
+
+```yaml
+territory:
+  maximum-radius: 10.0
+  spacing-margin: 5.0
+```
+
+The resulting minimum different-owner anchor distance is `25` blocks. Reload with:
+
+```text
+/sanctuary admin reload
+```
+
+Then test:
+
+1. Run `/sanctuary admin debugbeacon` and place it in an open area.
+2. Run `/sanctuary admin beacons` and verify it appears as `DEBUG-EPHEMERAL`, has a synthetic owner, and reports the expected derived territory radius.
+3. Obtain a normal Beacon with `/sanctuary admin givebeacon <player>`.
+4. Try to place the normal Beacon 24 blocks horizontally from the debug Beacon. Placement must be rejected.
+5. Place it exactly 25 blocks horizontally away. Placement must succeed.
+6. Vertical separation does not change the result. A Beacon with less than 25 blocks of horizontal separation is still rejected even at a very different Y coordinate.
+7. Give yourself another normal Beacon and place it adjacent to your existing normal Sanctuary. Same-owner overlap must be accepted.
+8. Break the debug Beacon. It must drop no Beacon item.
+9. Run `/sanctuary admin beacons` again. The debug Sanctuary must be gone from the registry.
+
+Restore the intended production values after testing.
+
+## Runtime validation for recover autocomplete
+
+1. Have one normal `INACTIVE` Sanctuary and one `DESTROYED` Sanctuary owned by your player.
+2. Type `/sanctuary recover ` and request tab completion.
+3. The `INACTIVE` Sanctuary ID should be listed.
+4. The `DESTROYED` Sanctuary ID must not be listed.
+5. Active and ephemeral debug Sanctuaries must not be listed either.

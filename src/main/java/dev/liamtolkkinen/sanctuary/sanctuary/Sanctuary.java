@@ -17,6 +17,7 @@ public record Sanctuary(
     SanctuaryState state,
     Optional<Instant> destroyedAt,
     Optional<String> destructionReason,
+    boolean debugEphemeral,
     Instant createdAt,
     Instant updatedAt
 ) {

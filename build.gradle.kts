@@ -81,6 +81,7 @@ dependencies {
     implementation(files(extendedItemsJar))
 
     compileOnly("io.papermc.paper:paper-api:26.1.2.build.+")
+    testImplementation("io.papermc.paper:paper-api:26.1.2.build.+")
 
     implementation("org.xerial:sqlite-jdbc:3.53.2.1") {
         exclude(group = "org.slf4j")

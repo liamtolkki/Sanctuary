@@ -12,5 +12,9 @@ public interface SanctuaryRepository {
 
     List<Sanctuary> findAll() throws SQLException;
 
+    List<Sanctuary> findActiveInWorld(String world) throws SQLException;
+
+    void delete(UUID id) throws SQLException;
+
     void save(Sanctuary sanctuary) throws SQLException;
 }

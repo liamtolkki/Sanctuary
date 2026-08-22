@@ -47,7 +47,13 @@ Implemented Beacon lifecycle:
 - Safe owner recovery for unrecorded disappearance, with generation advancement
 - Configurable recovery enablement and cooldown
 - `/sanctuary admin beacons` metadata registry output
-- Automated model, migration, repository, first-placement, and lifecycle tests
+- Area-based territory radius calculation with horizontal cylinder containment
+- Different-owner future-growth spacing validation on first placement and re-placement
+- Same-owner overlap allowed
+- Ephemeral registered debug Beacons with synthetic non-player owners
+- Debug Beacon deletion on break with no item drop
+- Recover autocomplete limited to recoverable `INACTIVE` Sanctuaries
+- Automated model, migration, repository, territory, spacing, debug, first-placement, and lifecycle tests
 
 ## Anchor identity contract
 
@@ -131,6 +137,7 @@ Fully restart Paper after deployment. Do not use `/reload` as the normal develop
 /sanctuary admin reload
 /sanctuary admin beacons
 /sanctuary admin givebeacon <player>
+/sanctuary admin debugbeacon [player]
 ```
 
 Administrative commands require:
@@ -161,7 +168,7 @@ If an inactive Beacon disappears without a recorded destruction, the owner may u
 
 Recovery creates a new bound Beacon generation. Any older copy that later reappears is stale and cannot activate the Sanctuary.
 
-Recovery configuration:
+Recovery and territory configuration:
 
 ```yaml
 anchors:
@@ -169,7 +176,25 @@ anchors:
   recovery:
     enabled: true
     cooldown-seconds: 300
+
+territory:
+  maximum-radius: 64.0
+  spacing-margin: 16.0
 ```
+
+Current territory radius is derived from stored area:
+
+```text
+radius = sqrt(area / PI)
+```
+
+Different owners reserve enough room for future growth:
+
+```text
+minimum anchor distance = 2 * maximum-radius + spacing-margin
+```
+
+With the default values, different-owner anchors must be at least 144 blocks apart horizontally. Y distance is intentionally ignored. Same-owner overlap is allowed.
 
 ## Public API
 
@@ -192,11 +217,22 @@ SQLite database:
 plugins/Sanctuary/sanctuary.db
 ```
 
-The existing migration framework and `sanctuaries` table remain authoritative. Migration V002 adds anchor generation and destruction audit fields without creating a second persistence representation.
+The existing migration framework and `sanctuaries` table remain authoritative. Migration V002 adds anchor generation and destruction audit fields. Migration V003 adds the internal ephemeral-debug marker while preserving existing rows.
+
+## Debug territory testing
+
+Create a pre-registered Beacon owned by a reserved synthetic non-player identity:
+
+```text
+/sanctuary admin debugbeacon
+/sanctuary admin debugbeacon <player>
+```
+
+Admins may place the debug Beacon even though its synthetic owner is not the player. It participates in normal different-owner spacing checks. When broken, it drops nothing and its database row is deleted. If the inactive debug item is destroyed before placement, its row is also cleaned up.
 
 ## Next milestone
 
-The Beacon identity and relocation lifecycle is now established. The next gameplay foundation is territory calculation and placement-spacing validation.
+The Beacon lifecycle, territory math, and anchor spacing foundation are now established. Entry/exit tracking and boundary visualization are natural next territory-facing steps.
 
 UI, trust, protections, advancements, sentries, companions, and Conduit-specific gameplay remain later work.
 

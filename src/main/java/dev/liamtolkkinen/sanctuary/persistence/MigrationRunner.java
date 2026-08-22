@@ -20,6 +20,11 @@ public final class MigrationRunner {
             2,
             "anchor_lifecycle",
             "/db/migration/V002__anchor_lifecycle.sql"
+        ),
+        new DatabaseMigration(
+            3,
+            "territory_debug_beacons",
+            "/db/migration/V003__territory_debug_beacons.sql"
         )
     );
 

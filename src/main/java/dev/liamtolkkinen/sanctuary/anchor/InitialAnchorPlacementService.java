@@ -5,6 +5,7 @@ import dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryPosition;
 import dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryRepository;
 import dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryState;
 import dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryType;
+import dev.liamtolkkinen.sanctuary.territory.PlacementSpacingService;
 import java.sql.SQLException;
 import java.time.Clock;
 import java.time.Instant;
@@ -13,17 +14,27 @@ import java.util.Optional;
 
 public final class InitialAnchorPlacementService {
     private final SanctuaryRepository repository;
+    private final PlacementSpacingService spacingService;
     private final Clock clock;
 
     public InitialAnchorPlacementService(SanctuaryRepository repository) {
-        this(repository, Clock.systemUTC());
+        this(repository, new PlacementSpacingService(repository), Clock.systemUTC());
     }
 
     InitialAnchorPlacementService(
         SanctuaryRepository repository,
         Clock clock
     ) {
+        this(repository, new PlacementSpacingService(repository), clock);
+    }
+
+    InitialAnchorPlacementService(
+        SanctuaryRepository repository,
+        PlacementSpacingService spacingService,
+        Clock clock
+    ) {
         this.repository = Objects.requireNonNull(repository, "repository");
+        this.spacingService = Objects.requireNonNull(spacingService, "spacingService");
         this.clock = Objects.requireNonNull(clock, "clock");
     }
 
@@ -31,7 +42,9 @@ public final class InitialAnchorPlacementService {
         AnchorMetadata metadata,
         String ownerName,
         SanctuaryPosition position,
-        double territoryArea
+        double territoryArea,
+        double maximumRadius,
+        double spacingMargin
     ) throws SQLException, AnchorPlacementException {
         Objects.requireNonNull(metadata, "metadata");
         Objects.requireNonNull(ownerName, "ownerName");
@@ -52,6 +65,14 @@ public final class InitialAnchorPlacementService {
             );
         }
 
+        spacingService.validatePlacement(
+            metadata.anchorId(),
+            metadata.ownerId().orElseThrow(),
+            position,
+            maximumRadius,
+            spacingMargin
+        );
+
         Instant now = clock.instant();
         Sanctuary sanctuary = new Sanctuary(
             metadata.anchorId(),
@@ -65,6 +86,7 @@ public final class InitialAnchorPlacementService {
             SanctuaryState.ACTIVE,
             Optional.empty(),
             Optional.empty(),
+            false,
             now,
             now
         );

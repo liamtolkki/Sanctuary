@@ -58,7 +58,9 @@ class InitialAnchorPlacementServiceTest {
             metadata,
             "Liam",
             position,
-            100.0
+            100.0,
+            64.0,
+            16.0
         );
 
         assertEquals(anchorId, created.id());
@@ -89,7 +91,9 @@ class InitialAnchorPlacementServiceTest {
                 metadata,
                 "Liam",
                 new SanctuaryPosition("world", 0, 64, 0),
-                100.0
+                100.0,
+                64.0,
+                16.0
             )
         );
         assertEquals(0, repository.values.size());
@@ -109,7 +113,9 @@ class InitialAnchorPlacementServiceTest {
             firstMetadata,
             "First",
             new SanctuaryPosition("world", 1, 64, 1),
-            100.0
+            100.0,
+            64.0,
+            16.0
         );
 
         AnchorMetadata secondMetadata = new AnchorMetadata(
@@ -125,11 +131,97 @@ class InitialAnchorPlacementServiceTest {
                 secondMetadata,
                 "Second",
                 new SanctuaryPosition("world", 2, 64, 2),
-                100.0
+                100.0,
+                64.0,
+                16.0
             )
         );
         assertEquals(1, repository.values.size());
         assertEquals(existing, repository.findById(anchorId).orElseThrow());
+    }
+
+
+    @Test
+    void firstPlacementRejectsDifferentOwnerInsideReservedSpacing() throws Exception {
+        UUID existingId = UUID.randomUUID();
+        UUID existingOwner = UUID.randomUUID();
+        Instant now = Instant.parse("2026-08-22T03:00:00Z");
+        repository.save(new Sanctuary(
+            existingId,
+            existingOwner,
+            SanctuaryType.BEACON,
+            "Existing",
+            Optional.of(new SanctuaryPosition("world", 0, 64, 0)),
+            1,
+            1,
+            100.0,
+            SanctuaryState.ACTIVE,
+            Optional.empty(),
+            Optional.empty(),
+            false,
+            now,
+            now
+        ));
+
+        AnchorMetadata metadata = new AnchorMetadata(
+            UUID.randomUUID(),
+            Optional.of(UUID.randomUUID()),
+            1,
+            1
+        );
+
+        assertThrows(
+            AnchorPlacementException.class,
+            () -> service.createBeaconSanctuary(
+                metadata,
+                "Second",
+                new SanctuaryPosition("world", 100, 70, 0),
+                100.0,
+                64.0,
+                16.0
+            )
+        );
+        assertEquals(1, repository.values.size());
+    }
+
+    @Test
+    void firstPlacementAllowsSameOwnerOverlap() throws Exception {
+        UUID owner = UUID.randomUUID();
+        Instant now = Instant.parse("2026-08-22T03:00:00Z");
+        repository.save(new Sanctuary(
+            UUID.randomUUID(),
+            owner,
+            SanctuaryType.BEACON,
+            "Existing",
+            Optional.of(new SanctuaryPosition("world", 0, 64, 0)),
+            1,
+            1,
+            100.0,
+            SanctuaryState.ACTIVE,
+            Optional.empty(),
+            Optional.empty(),
+            false,
+            now,
+            now
+        ));
+
+        AnchorMetadata metadata = new AnchorMetadata(
+            UUID.randomUUID(),
+            Optional.of(owner),
+            1,
+            1
+        );
+
+        Sanctuary created = service.createBeaconSanctuary(
+            metadata,
+            "SameOwner",
+            new SanctuaryPosition("world", 1, 64, 1),
+            100.0,
+            64.0,
+            16.0
+        );
+        assertEquals(SanctuaryState.ACTIVE, created.state());
+        assertEquals(2, repository.values.size());
     }
 
     private static final class InMemoryRepository implements SanctuaryRepository {
@@ -155,6 +247,20 @@ class InitialAnchorPlacementServiceTest {
         @Override
         public List<Sanctuary> findAll() {
             return List.copyOf(values.values());
+        }
+
+        @Override
+        public List<Sanctuary> findActiveInWorld(String world) {
+            return values.values().stream()
+                .filter(value -> value.state() == SanctuaryState.ACTIVE)
+                .filter(value -> value.position().isPresent())
+                .filter(value -> value.position().orElseThrow().world().equals(world))
+                .toList();
+        }
+
+        @Override
+        public void delete(UUID id) {
+            values.remove(id);
         }
 
         @Override

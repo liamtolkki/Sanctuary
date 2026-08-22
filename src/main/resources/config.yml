@@ -10,3 +10,7 @@ anchors:
   recovery:
     enabled: true
     cooldown-seconds: 300
+
+territory:
+  maximum-radius: 96.0
+  spacing-margin: 16.0

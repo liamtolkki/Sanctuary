@@ -50,9 +50,10 @@ public final class AnchorBreakListener implements Listener {
         );
 
         try {
-            AnchorMetadata droppedMetadata = metadata.nextGeneration();
-            ItemStack boundBeacon = anchorItemService.createBoundBeacon(droppedMetadata);
-            Sanctuary sanctuary = lifecycleService.deactivateForBreak(
+            // Create the normal replacement before persistence changes so an item-creation
+            // failure cannot leave a regular Sanctuary inactive without its Beacon.
+            ItemStack boundBeacon = anchorItemService.createBoundBeacon(metadata.nextGeneration());
+            AnchorBreakResult result = lifecycleService.breakAnchor(
                 metadata,
                 event.getPlayer().getUniqueId(),
                 position,
@@ -60,6 +61,16 @@ public final class AnchorBreakListener implements Listener {
             );
 
             event.setDropItems(false);
+            Sanctuary sanctuary = result.sanctuary();
+            if (result.deleted()) {
+                event.getPlayer().sendMessage(
+                    ChatColor.YELLOW
+                        + sanctuary.name()
+                        + " was an ephemeral debug Sanctuary and has been deleted."
+                );
+                return;
+            }
+
             Location dropLocation = event.getBlock().getLocation().add(0.5, 0.5, 0.5);
             event.getBlock().getWorld().dropItemNaturally(dropLocation, boundBeacon);
 

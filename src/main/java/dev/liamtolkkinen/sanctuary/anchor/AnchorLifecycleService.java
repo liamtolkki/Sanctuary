@@ -4,6 +4,7 @@ import dev.liamtolkkinen.sanctuary.sanctuary.Sanctuary;
 import dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryPosition;
 import dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryRepository;
 import dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryState;
+import dev.liamtolkkinen.sanctuary.territory.PlacementSpacingService;
 import java.sql.SQLException;
 import java.time.Clock;
 import java.time.Duration;
@@ -14,18 +15,28 @@ import java.util.UUID;
 
 public final class AnchorLifecycleService {
     private final SanctuaryRepository repository;
+    private final PlacementSpacingService spacingService;
     private final Clock clock;
 
     public AnchorLifecycleService(SanctuaryRepository repository) {
-        this(repository, Clock.systemUTC());
+        this(repository, new PlacementSpacingService(repository), Clock.systemUTC());
     }
 
     AnchorLifecycleService(SanctuaryRepository repository, Clock clock) {
+        this(repository, new PlacementSpacingService(repository), clock);
+    }
+
+    AnchorLifecycleService(
+        SanctuaryRepository repository,
+        PlacementSpacingService spacingService,
+        Clock clock
+    ) {
         this.repository = Objects.requireNonNull(repository, "repository");
+        this.spacingService = Objects.requireNonNull(spacingService, "spacingService");
         this.clock = Objects.requireNonNull(clock, "clock");
     }
 
-    public Sanctuary deactivateForBreak(
+    public AnchorBreakResult breakAnchor(
         AnchorMetadata metadata,
         UUID breakerId,
         SanctuaryPosition currentPosition,
@@ -48,6 +59,11 @@ public final class AnchorLifecycleService {
             throw new AnchorPlacementException("Only the Sanctuary owner may break this Beacon");
         }
 
+        if (sanctuary.debugEphemeral()) {
+            repository.delete(sanctuary.id());
+            return new AnchorBreakResult(sanctuary, true);
+        }
+
         if (sanctuary.anchorGeneration() == Integer.MAX_VALUE) {
             throw new AnchorPlacementException("This Sanctuary cannot advance to another Beacon generation");
         }
@@ -63,20 +79,44 @@ public final class AnchorLifecycleService {
             now
         );
         repository.save(inactive);
-        return inactive;
+        return new AnchorBreakResult(inactive, false);
+    }
+
+    public Sanctuary deactivateForBreak(
+        AnchorMetadata metadata,
+        UUID breakerId,
+        SanctuaryPosition currentPosition,
+        boolean adminOverride
+    ) throws SQLException, AnchorPlacementException {
+        Sanctuary sanctuary = requireMatchingSanctuary(metadata);
+        if (sanctuary.debugEphemeral()) {
+            throw new AnchorPlacementException(
+                "Ephemeral debug Sanctuaries must use the delete-on-break lifecycle"
+            );
+        }
+        return breakAnchor(
+            metadata,
+            breakerId,
+            currentPosition,
+            adminOverride
+        ).sanctuary();
     }
 
     public Sanctuary reactivate(
         AnchorMetadata metadata,
         UUID placerId,
-        SanctuaryPosition newPosition
+        SanctuaryPosition newPosition,
+        double maximumRadius,
+        double spacingMargin,
+        boolean adminOverride
     ) throws SQLException, AnchorPlacementException {
         Objects.requireNonNull(metadata, "metadata");
         Objects.requireNonNull(placerId, "placerId");
         Objects.requireNonNull(newPosition, "newPosition");
 
         Sanctuary sanctuary = requireMatchingSanctuary(metadata);
-        if (!sanctuary.ownerId().equals(placerId)) {
+        boolean allowedDebugPlacement = sanctuary.debugEphemeral() && adminOverride;
+        if (!sanctuary.ownerId().equals(placerId) && !allowedDebugPlacement) {
             throw new AnchorPlacementException("Only the Sanctuary owner may place this bound Beacon");
         }
         if (sanctuary.state() == SanctuaryState.DESTROYED) {
@@ -85,6 +125,14 @@ public final class AnchorLifecycleService {
         if (sanctuary.state() != SanctuaryState.INACTIVE) {
             throw new AnchorPlacementException("This Sanctuary is already active");
         }
+
+        spacingService.validatePlacement(
+            sanctuary.id(),
+            sanctuary.ownerId(),
+            newPosition,
+            maximumRadius,
+            spacingMargin
+        );
 
         Instant now = clock.instant();
         Sanctuary active = copy(
@@ -123,6 +171,11 @@ public final class AnchorLifecycleService {
             return Optional.empty();
         }
 
+        if (sanctuary.debugEphemeral()) {
+            repository.delete(sanctuary.id());
+            return Optional.empty();
+        }
+
         Instant now = clock.instant();
         Sanctuary destroyed = copy(
             sanctuary,
@@ -152,6 +205,9 @@ public final class AnchorLifecycleService {
         Sanctuary sanctuary = repository.findById(sanctuaryId)
             .orElseThrow(() -> new AnchorRecoveryException("No Sanctuary exists with that ID"));
 
+        if (sanctuary.debugEphemeral()) {
+            throw new AnchorRecoveryException("Ephemeral debug Sanctuaries cannot be recovered");
+        }
         if (!sanctuary.ownerId().equals(ownerId)) {
             throw new AnchorRecoveryException("You do not own that Sanctuary");
         }
@@ -256,6 +312,7 @@ public final class AnchorLifecycleService {
             state,
             destroyedAt,
             destructionReason,
+            sanctuary.debugEphemeral(),
             sanctuary.createdAt(),
             updatedAt
         );

@@ -20,6 +20,8 @@ public final class AnchorPlacementListener implements Listener {
     private final InitialAnchorPlacementService initialPlacementService;
     private final AnchorLifecycleService lifecycleService;
     private final DoubleSupplier initialTerritoryArea;
+    private final DoubleSupplier maximumTerritoryRadius;
+    private final DoubleSupplier spacingMargin;
     private final Logger logger;
 
     public AnchorPlacementListener(
@@ -27,12 +29,16 @@ public final class AnchorPlacementListener implements Listener {
         InitialAnchorPlacementService initialPlacementService,
         AnchorLifecycleService lifecycleService,
         DoubleSupplier initialTerritoryArea,
+        DoubleSupplier maximumTerritoryRadius,
+        DoubleSupplier spacingMargin,
         Logger logger
     ) {
         this.anchorItemService = anchorItemService;
         this.initialPlacementService = initialPlacementService;
         this.lifecycleService = lifecycleService;
         this.initialTerritoryArea = initialTerritoryArea;
+        this.maximumTerritoryRadius = maximumTerritoryRadius;
+        this.spacingMargin = spacingMargin;
         this.logger = logger;
     }
 
@@ -71,7 +77,10 @@ public final class AnchorPlacementListener implements Listener {
                 Sanctuary sanctuary = lifecycleService.reactivate(
                     metadata,
                     event.getPlayer().getUniqueId(),
-                    position
+                    position,
+                    maximumTerritoryRadius.getAsDouble(),
+                    spacingMargin.getAsDouble(),
+                    event.getPlayer().hasPermission("sanctuary.admin")
                 );
                 event.getPlayer().sendMessage(
                     ChatColor.GREEN
@@ -82,6 +91,12 @@ public final class AnchorPlacementListener implements Listener {
                         + sanctuary.id()
                         + ")"
                 );
+                if (sanctuary.debugEphemeral()) {
+                    event.getPlayer().sendMessage(
+                        ChatColor.YELLOW
+                            + "This is an ephemeral debug Sanctuary. Breaking it deletes it permanently."
+                    );
+                }
                 return;
             }
 
@@ -91,7 +106,9 @@ public final class AnchorPlacementListener implements Listener {
                 boundMetadata,
                 event.getPlayer().getName(),
                 position,
-                initialTerritoryArea.getAsDouble()
+                initialTerritoryArea.getAsDouble(),
+                maximumTerritoryRadius.getAsDouble(),
+                spacingMargin.getAsDouble()
             );
 
             event.getPlayer().sendMessage(

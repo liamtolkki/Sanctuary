@@ -25,6 +25,7 @@ class SanctuaryTest {
                 SanctuaryState.ACTIVE,
                 Optional.empty(),
                 Optional.empty(),
+                false,
                 now,
                 now
             )
@@ -47,6 +48,7 @@ class SanctuaryTest {
             SanctuaryState.INACTIVE,
             Optional.empty(),
             Optional.empty(),
+            false,
             now,
             now
         );
@@ -70,6 +72,7 @@ class SanctuaryTest {
                 SanctuaryState.DESTROYED,
                 Optional.empty(),
                 Optional.empty(),
+                false,
                 now,
                 now
             )
@@ -95,6 +98,7 @@ class SanctuaryTest {
                 SanctuaryState.ACTIVE,
                 Optional.empty(),
                 Optional.empty(),
+                false,
                 now,
                 now
             )
@@ -114,6 +118,7 @@ class SanctuaryTest {
                 SanctuaryState.ACTIVE,
                 Optional.empty(),
                 Optional.empty(),
+                false,
                 now,
                 now
             )
@@ -133,6 +138,7 @@ class SanctuaryTest {
                 SanctuaryState.ACTIVE,
                 Optional.empty(),
                 Optional.empty(),
+                false,
                 now,
                 now
             )

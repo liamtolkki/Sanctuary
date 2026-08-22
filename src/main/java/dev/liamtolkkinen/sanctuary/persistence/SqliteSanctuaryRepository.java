@@ -75,6 +75,36 @@ public final class SqliteSanctuaryRepository implements SanctuaryRepository {
         }
     }
 
+
+    @Override
+    public List<Sanctuary> findActiveInWorld(String world) throws SQLException {
+        try (
+            Connection connection = databaseManager.openConnection();
+            var statement = connection.prepareStatement("""
+                SELECT *
+                FROM sanctuaries
+                WHERE world = ? AND state = 'ACTIVE'
+                ORDER BY created_at ASC
+                """)
+        ) {
+            statement.setString(1, world);
+            try (ResultSet result = statement.executeQuery()) {
+                return readAll(result);
+            }
+        }
+    }
+
+    @Override
+    public void delete(UUID id) throws SQLException {
+        try (
+            Connection connection = databaseManager.openConnection();
+            var statement = connection.prepareStatement("DELETE FROM sanctuaries WHERE id = ?")
+        ) {
+            statement.setString(1, id.toString());
+            statement.executeUpdate();
+        }
+    }
+
     @Override
     public void save(Sanctuary sanctuary) throws SQLException {
         try (
@@ -95,9 +125,10 @@ public final class SqliteSanctuaryRepository implements SanctuaryRepository {
                     state,
                     destroyed_at,
                     destruction_reason,
+                    debug_ephemeral,
                     created_at,
                     updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     owner_uuid = excluded.owner_uuid,
                     type = excluded.type,
@@ -112,6 +143,7 @@ public final class SqliteSanctuaryRepository implements SanctuaryRepository {
                     state = excluded.state,
                     destroyed_at = excluded.destroyed_at,
                     destruction_reason = excluded.destruction_reason,
+                    debug_ephemeral = excluded.debug_ephemeral,
                     updated_at = excluded.updated_at
                 """)
         ) {
@@ -141,8 +173,9 @@ public final class SqliteSanctuaryRepository implements SanctuaryRepository {
             } else {
                 statement.setNull(14, Types.VARCHAR);
             }
-            statement.setString(15, sanctuary.createdAt().toString());
-            statement.setString(16, sanctuary.updatedAt().toString());
+            statement.setInt(15, sanctuary.debugEphemeral() ? 1 : 0);
+            statement.setString(16, sanctuary.createdAt().toString());
+            statement.setString(17, sanctuary.updatedAt().toString());
             statement.executeUpdate();
         }
     }
@@ -187,6 +220,7 @@ public final class SqliteSanctuaryRepository implements SanctuaryRepository {
                 ? Optional.empty()
                 : Optional.of(Instant.parse(destroyedAtValue)),
             Optional.ofNullable(destructionReasonValue),
+            result.getInt("debug_ephemeral") != 0,
             Instant.parse(result.getString("created_at")),
             Instant.parse(result.getString("updated_at"))
         );

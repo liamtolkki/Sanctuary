@@ -48,6 +48,7 @@ class SqliteSanctuaryRepositoryTest {
             SanctuaryState.ACTIVE,
             Optional.empty(),
             Optional.empty(),
+            false,
             created,
             updated
         );
@@ -75,6 +76,7 @@ class SqliteSanctuaryRepositoryTest {
             SanctuaryState.ACTIVE,
             Optional.empty(),
             Optional.empty(),
+            false,
             created,
             created
         );
@@ -92,6 +94,7 @@ class SqliteSanctuaryRepositoryTest {
             SanctuaryState.INACTIVE,
             Optional.empty(),
             Optional.empty(),
+            false,
             created,
             created.plusSeconds(30)
         );
@@ -118,6 +121,7 @@ class SqliteSanctuaryRepositoryTest {
             SanctuaryState.DESTROYED,
             Optional.of(destroyedAt),
             Optional.of("DESPAWN"),
+            false,
             created,
             destroyedAt
         );
@@ -145,6 +149,61 @@ class SqliteSanctuaryRepositoryTest {
         assertEquals(3, allResults.size());
     }
 
+
+    @Test
+    void debugEphemeralFlagRoundTripsAndDeleteRemovesRecord() throws Exception {
+        UUID id = UUID.randomUUID();
+        UUID ownerId = UUID.randomUUID();
+        Instant now = Instant.parse("2026-08-21T12:00:00Z");
+        Sanctuary debug = new Sanctuary(
+            id,
+            ownerId,
+            SanctuaryType.BEACON,
+            "Debug Sanctuary",
+            Optional.empty(),
+            1,
+            1,
+            100.0,
+            SanctuaryState.INACTIVE,
+            Optional.empty(),
+            Optional.empty(),
+            true,
+            now,
+            now
+        );
+
+        repository.save(debug);
+        assertTrue(repository.findById(id).orElseThrow().debugEphemeral());
+
+        repository.delete(id);
+        assertTrue(repository.findById(id).isEmpty());
+    }
+
+    @Test
+    void findActiveInWorldOnlyReturnsActiveRowsFromRequestedWorld() throws Exception {
+        UUID owner = UUID.randomUUID();
+        Instant now = Instant.parse("2026-08-21T12:00:00Z");
+        Sanctuary activeWorld = new Sanctuary(
+            UUID.randomUUID(), owner, SanctuaryType.BEACON, "A",
+            Optional.of(new SanctuaryPosition("world", 0, 64, 0)),
+            1, 1, 100.0, SanctuaryState.ACTIVE, Optional.empty(), Optional.empty(),
+            false, now, now
+        );
+        Sanctuary activeNether = new Sanctuary(
+            UUID.randomUUID(), owner, SanctuaryType.BEACON, "B",
+            Optional.of(new SanctuaryPosition("world_nether", 0, 64, 0)),
+            1, 1, 100.0, SanctuaryState.ACTIVE, Optional.empty(), Optional.empty(),
+            false, now, now
+        );
+        repository.save(activeWorld);
+        repository.save(activeNether);
+        repository.save(inactive(UUID.randomUUID(), owner, "Inactive", now.plusSeconds(1)));
+
+        var results = repository.findActiveInWorld("world");
+        assertEquals(1, results.size());
+        assertEquals(activeWorld.id(), results.getFirst().id());
+    }
+
     private static Sanctuary inactive(
         UUID id,
         UUID owner,
@@ -163,6 +222,7 @@ class SqliteSanctuaryRepositoryTest {
             SanctuaryState.INACTIVE,
             Optional.empty(),
             Optional.empty(),
+            false,
             created,
             created
         );

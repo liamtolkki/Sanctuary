@@ -50,6 +50,30 @@
 - `/sanctuary admin beacons` prints the complete registered Beacon metadata set
 - Lifecycle, recovery, destruction, migration, and persistence tests
 
+### Territory and spacing
+
+- Area-to-radius calculation: `radius = sqrt(area / PI)`
+- Horizontal circle/cylinder containment with unrestricted Y
+- Configurable maximum Sanctuary radius
+- Configurable inter-owner spacing margin
+- Future-growth spacing: `2 * maximum radius + margin`
+- Different-owner spacing enforced on first placement and relocation
+- Same-owner overlap allowed
+- Only active Sanctuaries participate in spacing checks
+- Other worlds do not conflict
+- `/sanctuary admin beacons` prints the current derived radius
+
+### Debug support
+
+- `/sanctuary admin debugbeacon [player]` creates an already-registered `INACTIVE` debug Sanctuary
+- Each debug Sanctuary uses a reserved UUID version 15 synthetic owner identity
+- Admins may place a debug Beacon on behalf of its synthetic owner
+- Debug Sanctuaries participate in normal different-owner spacing checks
+- Breaking a debug Beacon drops nothing and deletes its database row
+- Destruction of the inactive debug item also deletes its database row
+- Debug Sanctuaries are marked `debug_ephemeral` by migration V003
+- Recover tab completion now only lists normal `INACTIVE` Beacons
+
 ## Configuration added
 
 ```yaml
@@ -58,6 +82,10 @@ anchors:
   recovery:
     enabled: true
     cooldown-seconds: 300
+
+territory:
+  maximum-radius: 64.0
+  spacing-margin: 16.0
 ```
 
 Recovery is only available for an `INACTIVE` Sanctuary whose Beacon destruction was not recorded. A successful recovery advances `anchor_generation`.
@@ -66,8 +94,6 @@ Recovery is only available for an `INACTIVE` Sanctuary whose Beacon destruction 
 
 - Sanctuary Conduit obtain/placement lifecycle
 - Anchor tier crafting/upgrades
-- Territory calculations
-- Inter-owner spacing validation
 - Entry/exit detection
 - Entry titles
 - Boundary visualization
@@ -104,4 +130,4 @@ ExtendedItems `0.1.0-alpha.2` is downloaded from its exact GitHub Release asset 
 
 ## Next implementation milestone
 
-Implement territory calculations and placement-spacing validation on top of the completed Beacon lifecycle.
+Build player entry/exit tracking and local boundary visualization on top of the completed territory and spacing foundation.

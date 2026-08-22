@@ -7,12 +7,12 @@ author: Liam Tolkkinen
 commands:
   sanctuary:
     description: Sanctuary commands.
-    usage: /sanctuary [status|recover <sanctuary-id>|admin reload|admin beacons|admin givebeacon <player>]
+    usage: /sanctuary [status|recover <sanctuary-id>|admin reload|admin beacons|admin givebeacon <player>|admin debugbeacon [player]]
     permission: sanctuary.use
 permissions:
   sanctuary.use:
     description: Allows normal Sanctuary commands.
     default: true
   sanctuary.admin:
-    description: Allows Sanctuary administration commands.
+    description: Allows Sanctuary administration and debug commands.
     default: op

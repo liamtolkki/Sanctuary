@@ -1,0 +1,6 @@
+database:
+  filename: sanctuary.db
+
+names:
+  minimum-length: 1
+  maximum-length: 32

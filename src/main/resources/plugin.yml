@@ -1,0 +1,18 @@
+name: Sanctuary
+version: '${version}'
+main: dev.liamtolkkinen.sanctuary.SanctuaryPlugin
+api-version: '1.21.11'
+description: Player-owned protected territories anchored by Sanctuary Beacons and Conduits.
+author: Liam Tolkkinen
+commands:
+  sanctuary:
+    description: Sanctuary commands.
+    usage: /sanctuary [status|admin reload]
+    permission: sanctuary.use
+permissions:
+  sanctuary.use:
+    description: Allows normal Sanctuary commands.
+    default: true
+  sanctuary.admin:
+    description: Allows Sanctuary administration commands.
+    default: op

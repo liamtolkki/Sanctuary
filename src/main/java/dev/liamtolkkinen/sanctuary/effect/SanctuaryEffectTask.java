@@ -10,6 +10,8 @@ import java.util.Objects;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.function.DoubleSupplier;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -72,13 +74,27 @@ public final class SanctuaryEffectTask implements Runnable {
         double deltaZ = player.getLocation().getZ() - (position.z() + 0.5);
         double horizontalDistance = Math.hypot(deltaX, deltaZ);
 
-        for (SanctuaryEffectService.ActiveSanctuaryEffect active : effectService.activeEffects(
+        List<SanctuaryEffectService.ActiveSanctuaryEffect> activeEffects = effectService.activeEffects(
             sanctuary,
             player.getUniqueId(),
             horizontalDistance,
             maximumRadiusSupplier.getAsDouble()
-        )) {
+        );
+
+        boolean elytraSuppressed = false;
+        for (SanctuaryEffectService.ActiveSanctuaryEffect active : activeEffects) {
+            if (active.effect() == SanctuaryEffect.ELYTRA_DISABLED) {
+                elytraSuppressed = true;
+            }
             apply(player, active);
+        }
+
+        if (elytraSuppressed) {
+            player.sendActionBar(
+                Component.text("Sanctuary defenses active", NamedTextColor.RED)
+                    .append(Component.text(" | ", NamedTextColor.DARK_GRAY))
+                    .append(Component.text("Elytra Disabled", NamedTextColor.GOLD))
+            );
         }
     }
 

@@ -1,6 +1,9 @@
 package dev.liamtolkkinen.sanctuary.territory;
 
 import dev.liamtolkkinen.sanctuary.sanctuary.Sanctuary;
+import dev.liamtolkkinen.sanctuary.security.SanctuaryRelationship;
+import dev.liamtolkkinen.sanctuary.security.SanctuarySecurityMode;
+import dev.liamtolkkinen.sanctuary.security.SanctuarySecurityService;
 import dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryRepository;
 import java.sql.SQLException;
 import java.util.HashMap;
@@ -10,6 +13,8 @@ import java.util.UUID;
 import java.util.function.BooleanSupplier;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.Location;
@@ -25,6 +30,7 @@ import org.bukkit.event.player.PlayerTeleportEvent;
 public final class TerritoryAwarenessListener implements Listener {
     private final SanctuaryRepository repository;
     private final TerritoryPresenceService presenceService;
+    private final SanctuarySecurityService securityService;
     private final BooleanSupplier entryTitleEnabled;
     private final BooleanSupplier exitMessageEnabled;
     private final BooleanSupplier ownerEntryAlertsEnabled;
@@ -34,6 +40,7 @@ public final class TerritoryAwarenessListener implements Listener {
     public TerritoryAwarenessListener(
         SanctuaryRepository repository,
         TerritoryPresenceService presenceService,
+        SanctuarySecurityService securityService,
         BooleanSupplier entryTitleEnabled,
         BooleanSupplier exitMessageEnabled,
         BooleanSupplier ownerEntryAlertsEnabled,
@@ -41,6 +48,7 @@ public final class TerritoryAwarenessListener implements Listener {
     ) {
         this.repository = repository;
         this.presenceService = presenceService;
+        this.securityService = securityService;
         this.entryTitleEnabled = entryTitleEnabled;
         this.exitMessageEnabled = exitMessageEnabled;
         this.ownerEntryAlertsEnabled = ownerEntryAlertsEnabled;
@@ -109,14 +117,30 @@ public final class TerritoryAwarenessListener implements Listener {
         }
     }
 
-    private void handleEnter(Player player, Sanctuary sanctuary) {
+    private void handleEnter(Player player, Sanctuary sanctuary) throws SQLException {
+        SanctuaryRelationship relationship = securityService.relationship(sanctuary, player.getUniqueId());
+        SanctuarySecurityMode mode = securityService.mode(sanctuary);
+
         if (entryTitleEnabled.getAsBoolean()) {
             player.sendTitle(
                 ChatColor.GOLD + sanctuary.name(),
-                ChatColor.GRAY + "Sanctuary",
+                entrySubtitle(relationship, mode),
                 10,
-                40,
+                50,
                 10
+            );
+        }
+
+        if (relationship == SanctuaryRelationship.BLACKLISTED) {
+            player.sendActionBar(
+                Component.text("Restricted Sanctuary - you are blacklisted.", NamedTextColor.RED)
+            );
+        } else if (relationship == SanctuaryRelationship.NEUTRAL && mode == SanctuarySecurityMode.LOCKDOWN) {
+            player.sendActionBar(
+                Component.text(
+                    "LOCKDOWN - you do not have permission to enter this Sanctuary.",
+                    NamedTextColor.RED
+                )
             );
         }
 
@@ -147,6 +171,20 @@ public final class TerritoryAwarenessListener implements Listener {
                 );
             }
         }
+    }
+
+    static String entrySubtitle(
+        SanctuaryRelationship relationship,
+        SanctuarySecurityMode mode
+    ) {
+        return switch (relationship) {
+            case OWNER -> ChatColor.AQUA + "Your Sanctuary";
+            case TRUSTED -> ChatColor.GREEN + "Trusted Territory";
+            case BLACKLISTED -> ChatColor.RED + "Restricted - Blacklisted";
+            case NEUTRAL -> mode == SanctuarySecurityMode.LOCKDOWN
+                ? ChatColor.RED + "LOCKDOWN - Unauthorized"
+                : ChatColor.WHITE + "Neutral Territory";
+        };
     }
 
     private void handleExit(Player player, Sanctuary sanctuary) {

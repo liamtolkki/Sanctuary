@@ -10,6 +10,8 @@ import java.util.Objects;
 import java.util.function.DoubleSupplier;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -46,6 +48,11 @@ public final class ElytraSuppressionListener implements Listener {
         try {
             if (isElytraSuppressed(player)) {
                 event.setCancelled(true);
+                player.sendActionBar(
+                    Component.text("Sanctuary defenses active", NamedTextColor.RED)
+                        .append(Component.text(" | ", NamedTextColor.DARK_GRAY))
+                        .append(Component.text("Elytra Disabled", NamedTextColor.GOLD))
+                );
             }
         } catch (SQLException exception) {
             logger.log(

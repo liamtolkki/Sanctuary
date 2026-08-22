@@ -138,6 +138,7 @@ public final class SanctuaryPlugin extends JavaPlugin {
                 new TerritoryAwarenessListener(
                     repository,
                     territoryPresenceService,
+                    securityService,
                     this::isTerritoryEntryTitleEnabled,
                     this::isTerritoryExitMessageEnabled,
                     this::isOwnerEntryAlertsEnabled,

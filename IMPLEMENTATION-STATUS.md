@@ -265,3 +265,16 @@ Implemented:
 - Neutral players are treated as hostile in Lockdown through the existing threat resolver.
 - Debug Beacons are created at Tier V and the configured maximum radius so every effect tier can be tested.
 - Debug Security UI can set the current admin to Trusted, Neutral/Unconfigured, or Blacklisted for solo effect testing.
+
+## Relationship-aware territory entry feedback
+
+- Territory entry titles now describe the entering player's effective relationship:
+  - owner: `Your Sanctuary`
+  - trusted: `Trusted Territory`
+  - neutral: `Neutral Territory`
+  - blacklisted: `Restricted - Blacklisted`
+  - neutral during Lockdown: `LOCKDOWN - Unauthorized`
+- Blacklisted players receive an action-bar warning that they are blacklisted.
+- Neutral players entering a Sanctuary in Lockdown receive an action-bar warning that they do not have permission to enter.
+- Elytra suppression now displays `Sanctuary defenses active | Elytra Disabled` in the action bar while suppression is active and immediately when a blocked glide attempt occurs.
+- Elytra suppression remains event-driven with the periodic effect task retained as a safety net.

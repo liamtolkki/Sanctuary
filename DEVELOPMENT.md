@@ -206,3 +206,20 @@ Boundary particles are viewer-scoped with `Player.spawnParticle`, so manual and 
 Automatic proximity rendering draws only cylinder-surface points within the configured trigger distance. For each horizontal boundary point at distance `d` from the viewer, the vertical half-height is `sqrt(triggerDistance^2 - d^2)`. This produces a local curved patch that grows as the viewer approaches and disappears outside the trigger distance.
 
 `/sanctuary boundary <name>` uses human-readable name selectors. `/sanctuary boundary all` renders all eligible active boundaries whose boundary edge is within `territory.boundary.maximum-render-distance` of the viewer.
+
+## Orphan anchor cleanup
+
+A placed Sanctuary Beacon can outlive its SQLite record after manual database repair, rollback, or other exceptional state loss. `AnchorBreakListener` checks the anchor UUID before entering the normal break lifecycle. If the UUID is not registered, the block is treated as an orphan: the break is allowed, normal drops are suppressed, the player receives a warning, and the server log records the orphan anchor ID and location. Registered Sanctuaries continue through normal ownership, generation, and lifecycle validation.
+
+## Automatic boundary refresh period
+
+Automatic proximity rendering is controlled by:
+
+```yaml
+territory:
+  boundary:
+    automatic:
+      update-period-ticks: 10
+```
+
+The scheduler itself ticks once per server tick and gates the rendering work using the configured period. This keeps the period reloadable through `/sanctuary admin reload`. Minecraft runs at 20 ticks per second under normal server conditions, so `10` ticks is approximately 0.5 seconds, `20` is approximately 1 second, and `2` is approximately 0.1 second.

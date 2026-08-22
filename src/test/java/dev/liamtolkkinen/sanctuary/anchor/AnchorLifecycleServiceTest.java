@@ -47,6 +47,15 @@ class AnchorLifecycleServiceTest {
     }
 
     @Test
+    void registrationLookupDetectsMissingDatabaseRecord() throws Exception {
+        assertTrue(service.hasRegisteredSanctuary(anchorId));
+
+        repository.delete(anchorId);
+
+        assertFalse(service.hasRegisteredSanctuary(anchorId));
+    }
+
+    @Test
     void breakingDeactivatesWithoutChangingIdentity() throws Exception {
         Sanctuary inactive = service.deactivateForBreak(
             metadata(1),

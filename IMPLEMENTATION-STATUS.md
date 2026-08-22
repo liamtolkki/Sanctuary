@@ -94,10 +94,6 @@ Recovery is only available for an `INACTIVE` Sanctuary whose Beacon destruction 
 
 - Sanctuary Conduit obtain/placement lifecycle
 - Anchor tier crafting/upgrades
-- Entry/exit detection
-- Entry titles
-- Boundary visualization
-- Entry alerts
 - Sanctuary management UI
 - Rename dialog
 - Trust/capabilities
@@ -157,3 +153,12 @@ Implemented:
 - Automatic local proximity boundary visualization uses distance-limited vertical blob geometry.
 - Human-readable boundary selectors prefer Sanctuary display names and owner names before short ID suffixes.
 - `/sanctuary boundary all` respects the configured maximum render distance.
+
+## Orphan cleanup and boundary refresh configuration
+
+Implemented:
+- Placed Sanctuary anchors whose UUID is missing from the database can be broken and cleaned up.
+- Orphan cleanup suppresses item drops and warns the breaking player.
+- Registered Sanctuary anchors retain normal ownership and generation validation.
+- Automatic proximity boundary refresh period is configurable with `territory.boundary.automatic.update-period-ticks`.
+- The update period is reloadable with `/sanctuary admin reload`.

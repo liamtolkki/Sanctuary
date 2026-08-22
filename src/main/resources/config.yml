@@ -26,3 +26,4 @@ territory:
       enabled: true
       trigger-distance: 12.0
       vertical-particle-spacing: 1.5
+      update-period-ticks: 10

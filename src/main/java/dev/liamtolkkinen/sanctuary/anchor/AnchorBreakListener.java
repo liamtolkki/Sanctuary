@@ -50,6 +50,28 @@ public final class AnchorBreakListener implements Listener {
         );
 
         try {
+            if (!lifecycleService.hasRegisteredSanctuary(metadata.anchorId())) {
+                event.setDropItems(false);
+                event.getPlayer().sendMessage(
+                    ChatColor.RED
+                        + "Warning: this Sanctuary Beacon has no matching database record. "
+                        + "The orphaned Beacon was destroyed and dropped nothing."
+                );
+                logger.warning(
+                    "Destroyed orphaned Sanctuary Beacon "
+                        + metadata.anchorId()
+                        + " at "
+                        + position.world()
+                        + " "
+                        + position.x()
+                        + ","
+                        + position.y()
+                        + ","
+                        + position.z()
+                );
+                return;
+            }
+
             // Create the normal replacement before persistence changes so an item-creation
             // failure cannot leave a regular Sanctuary inactive without its Beacon.
             ItemStack boundBeacon = anchorItemService.createBoundBeacon(metadata.nextGeneration());

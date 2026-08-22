@@ -6,6 +6,7 @@ import java.sql.SQLException;
 import java.util.Objects;
 import java.util.function.BooleanSupplier;
 import java.util.function.DoubleSupplier;
+import java.util.function.LongSupplier;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import org.bukkit.Bukkit;
@@ -20,7 +21,9 @@ public final class TerritoryBoundaryProximityTask implements Runnable {
     private final DoubleSupplier triggerDistance;
     private final DoubleSupplier horizontalSpacing;
     private final DoubleSupplier verticalSpacing;
+    private final LongSupplier updatePeriodTicks;
     private final Logger logger;
+    private long ticksUntilNextUpdate;
 
     public TerritoryBoundaryProximityTask(
         SanctuaryRepository repository,
@@ -29,6 +32,7 @@ public final class TerritoryBoundaryProximityTask implements Runnable {
         DoubleSupplier triggerDistance,
         DoubleSupplier horizontalSpacing,
         DoubleSupplier verticalSpacing,
+        LongSupplier updatePeriodTicks,
         Logger logger
     ) {
         this.repository = Objects.requireNonNull(repository, "repository");
@@ -37,16 +41,25 @@ public final class TerritoryBoundaryProximityTask implements Runnable {
         this.triggerDistance = Objects.requireNonNull(triggerDistance, "triggerDistance");
         this.horizontalSpacing = Objects.requireNonNull(horizontalSpacing, "horizontalSpacing");
         this.verticalSpacing = Objects.requireNonNull(verticalSpacing, "verticalSpacing");
+        this.updatePeriodTicks = Objects.requireNonNull(updatePeriodTicks, "updatePeriodTicks");
         this.logger = Objects.requireNonNull(logger, "logger");
     }
 
     public BukkitTask start(JavaPlugin plugin) {
         Objects.requireNonNull(plugin, "plugin");
-        return Bukkit.getScheduler().runTaskTimer(plugin, this, 0L, 10L);
+        return Bukkit.getScheduler().runTaskTimer(plugin, this, 0L, 1L);
     }
 
     @Override
     public void run() {
+        if (ticksUntilNextUpdate > 0L) {
+            ticksUntilNextUpdate--;
+            return;
+        }
+
+        long updatePeriod = updatePeriodTicks.getAsLong();
+        ticksUntilNextUpdate = Math.max(1L, updatePeriod) - 1L;
+
         if (!enabled.getAsBoolean()) {
             return;
         }

@@ -258,6 +258,10 @@ Boundary visualization:
 
 Owners may display their own active Sanctuary boundary. Players with `sanctuary.admin` may display any active Sanctuary boundary. The boundary is drawn with `END_ROD` particles around the horizontal territory circle.
 
+Automatic boundary rendering refreshes according to `territory.boundary.automatic.update-period-ticks`. The default `10` ticks is approximately 0.5 seconds. The value is read dynamically, so `/sanctuary admin reload` applies changes without restarting Paper.
+
+If a placed block contains valid Sanctuary anchor metadata but its anchor UUID no longer exists in SQLite, breaking it performs orphan cleanup: the block is allowed to break, no Beacon item drops, and the breaking player receives a warning. This does not bypass ownership or stale-generation checks for Sanctuaries that still have a registered database row.
+
 Awareness and boundary configuration:
 
 ```yaml
@@ -276,4 +280,5 @@ territory:
       enabled: true
       trigger-distance: 12.0
       vertical-particle-spacing: 1.5
+      update-period-ticks: 10
 ```

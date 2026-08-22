@@ -36,6 +36,7 @@ public final class SanctuaryPlugin extends JavaPlugin {
     private static final double DEFAULT_BOUNDARY_MAX_RENDER_DISTANCE = 128.0;
     private static final double DEFAULT_BOUNDARY_TRIGGER_DISTANCE = 12.0;
     private static final double DEFAULT_BOUNDARY_VERTICAL_SPACING = 1.5;
+    private static final long DEFAULT_BOUNDARY_UPDATE_PERIOD_TICKS = 10L;
 
     private SanctuaryApi sanctuaryApi;
 
@@ -115,6 +116,7 @@ public final class SanctuaryPlugin extends JavaPlugin {
                 this::getAutomaticBoundaryTriggerDistance,
                 this::getBoundaryParticleSpacing,
                 this::getBoundaryVerticalParticleSpacing,
+                this::getAutomaticBoundaryUpdatePeriodTicks,
                 getLogger()
             ).start(this);
 
@@ -194,6 +196,7 @@ public final class SanctuaryPlugin extends JavaPlugin {
         getBoundaryMaximumRenderDistance();
         getAutomaticBoundaryTriggerDistance();
         getBoundaryVerticalParticleSpacing();
+        getAutomaticBoundaryUpdatePeriodTicks();
     }
 
     public boolean isTerritoryEntryTitleEnabled() {
@@ -298,6 +301,19 @@ public final class SanctuaryPlugin extends JavaPlugin {
         if (!Double.isFinite(value) || value <= 0.0) {
             throw new IllegalStateException(
                 "territory.boundary.automatic.trigger-distance must be finite and greater than zero"
+            );
+        }
+        return value;
+    }
+
+    public long getAutomaticBoundaryUpdatePeriodTicks() {
+        long value = getConfig().getLong(
+            "territory.boundary.automatic.update-period-ticks",
+            DEFAULT_BOUNDARY_UPDATE_PERIOD_TICKS
+        );
+        if (value < 1L) {
+            throw new IllegalStateException(
+                "territory.boundary.automatic.update-period-ticks must be at least 1"
             );
         }
         return value;

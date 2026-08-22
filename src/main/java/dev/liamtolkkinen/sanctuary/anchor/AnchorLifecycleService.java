@@ -36,6 +36,11 @@ public final class AnchorLifecycleService {
         this.clock = Objects.requireNonNull(clock, "clock");
     }
 
+    public boolean hasRegisteredSanctuary(UUID anchorId) throws SQLException {
+        Objects.requireNonNull(anchorId, "anchorId");
+        return repository.findById(anchorId).isPresent();
+    }
+
     public AnchorBreakResult breakAnchor(
         AnchorMetadata metadata,
         UUID breakerId,

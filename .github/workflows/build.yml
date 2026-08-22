@@ -38,3 +38,13 @@ jobs:
           name: sanctuary-${{ github.sha }}
           path: build/libs/sanctuary-*.jar
           if-no-files-found: error
+
+      - name: Package source
+        run: zip -r Sanctuary-sentry-ai-fix.zip . -x '.git/*' '.gradle/*' 'build/*' 'Sanctuary-sentry-ai-fix.zip'
+
+      - name: Upload source archive
+        uses: actions/upload-artifact@v6
+        with:
+          name: sanctuary-source-${{ github.sha }}
+          path: Sanctuary-sentry-ai-fix.zip
+          if-no-files-found: error

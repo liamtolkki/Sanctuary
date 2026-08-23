@@ -39,11 +39,11 @@ public final class SentryTask implements Runnable {
         EntityType.WOLF, EntityType.IRON_GOLEM, EntityType.LLAMA, EntityType.POLAR_BEAR
     );
 
-    private static final double CREEPER_MAX_HEALTH = 40.0;
+    private static final double CREEPER_MAX_HEALTH = 30.0;
     private static final double CREEPER_MOVEMENT_SPEED = 0.38;
     private static final double CREEPER_IGNITION_RANGE = 3.5;
     private static final int CREEPER_FUSE_TICKS = 12;
-    private static final int CREEPER_EXPLOSION_RADIUS = 4;
+    private static final int CREEPER_EXPLOSION_RADIUS = 3;
 
     private static final double WARDEN_MELEE_RANGE = 3.0;
     private static final double WARDEN_SONIC_MIN_HORIZONTAL_RANGE = 15.0;
@@ -227,9 +227,6 @@ public final class SentryTask implements Runnable {
         warden.setAware(true);
         warden.setAggressive(true);
 
-        // Sanctuary owns target selection for the managed Warden. Keeping the target out of the
-        // vanilla Warden Brain prevents vibrations and the vanilla Sonic Boom behavior from
-        // redirecting or entering the stuck charge state observed under external targeting.
         warden.setTarget(null);
         LivingEntity angryAt = warden.getEntityAngryAt();
         if (angryAt != null) warden.clearAnger(angryAt);

@@ -1,6 +1,8 @@
 package dev.liamtolkkinen.sanctuary.crafting;
 
+import dev.liamtolkkinen.extendeditems.ExtendedItemIds;
 import dev.liamtolkkinen.extendeditems.ExtendedItems;
+import dev.liamtolkkinen.sanctuary.anchor.AnchorItemService;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -22,12 +24,14 @@ import org.bukkit.plugin.java.JavaPlugin;
 
 public final class SanctuaryRecipeService implements Listener {
     private final JavaPlugin plugin;
+    private final AnchorItemService anchorItemService;
     private final SanctuaryRecipeValidator validator = new SanctuaryRecipeValidator();
     private final Map<NamespacedKey, SanctuaryRecipeCatalog.RecipeDefinition> recipesByKey =
         new LinkedHashMap<>();
 
     public SanctuaryRecipeService(JavaPlugin plugin) {
         this.plugin = Objects.requireNonNull(plugin, "plugin");
+        this.anchorItemService = new AnchorItemService(plugin);
     }
 
     public void registerAll() {
@@ -39,6 +43,10 @@ public final class SanctuaryRecipeService implements Listener {
             registerShaped(definition);
         }
         plugin.getServer().getPluginManager().registerEvents(this, plugin);
+        plugin.getServer().getPluginManager().registerEvents(
+            new SanctuaryItemUsageGuard(plugin),
+            plugin
+        );
         SanctuaryProgressionDebugCommand.register(plugin);
     }
 
@@ -52,7 +60,7 @@ public final class SanctuaryRecipeService implements Listener {
             event.getInventory().setResult(null);
             return;
         }
-        event.getInventory().setResult(ExtendedItems.create(definition.result()));
+        event.getInventory().setResult(createResult(definition));
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
@@ -66,7 +74,17 @@ public final class SanctuaryRecipeService implements Listener {
             event.setCurrentItem(null);
             return;
         }
-        event.setCurrentItem(ExtendedItems.create(definition.result()));
+
+        if (definition.result().equals(ExtendedItemIds.SANCTUARY_BEACON)
+            && event.isShiftClick()) {
+            event.setCancelled(true);
+            event.getWhoClicked().sendMessage(
+                "Craft Sanctuary Beacons one at a time so each Beacon receives a unique anchor identity."
+            );
+            return;
+        }
+
+        event.setCurrentItem(createResult(definition));
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
@@ -84,12 +102,12 @@ public final class SanctuaryRecipeService implements Listener {
             event.setCancelled(true);
             return;
         }
-        event.setResult(ExtendedItems.create(definition.result()));
+        event.setResult(createResult(definition));
     }
 
     private void registerShaped(SanctuaryRecipeCatalog.ShapedRecipeDefinition definition) {
         NamespacedKey key = new NamespacedKey(plugin, definition.key());
-        ShapedRecipe recipe = new ShapedRecipe(key, ExtendedItems.create(definition.result()));
+        ShapedRecipe recipe = new ShapedRecipe(key, createResult(definition));
         recipe.shape(definition.shape().toArray(String[]::new));
         for (var entry : definition.ingredients().entrySet()) {
             recipe.setIngredient(entry.getKey(), registrationChoice(entry.getValue()));
@@ -101,7 +119,7 @@ public final class SanctuaryRecipeService implements Listener {
         NamespacedKey key = new NamespacedKey(plugin, definition.key());
         ShapelessRecipe recipe = new ShapelessRecipe(
             key,
-            ExtendedItems.create(definition.result())
+            createResult(definition)
         );
         for (var ingredient : definition.ingredients()) {
             recipe.addIngredient(registrationChoice(ingredient));
@@ -116,6 +134,13 @@ public final class SanctuaryRecipeService implements Listener {
         return new RecipeChoice.ExactChoice(
             ExtendedItems.create(ingredient.extendedItem())
         );
+    }
+
+    ItemStack createResult(SanctuaryRecipeCatalog.RecipeDefinition definition) {
+        if (definition.result().equals(ExtendedItemIds.SANCTUARY_BEACON)) {
+            return anchorItemService.createUnboundBeacon();
+        }
+        return ExtendedItems.create(definition.result());
     }
 
     private void replaceRecipe(

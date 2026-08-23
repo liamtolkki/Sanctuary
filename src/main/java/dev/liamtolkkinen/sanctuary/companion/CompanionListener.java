@@ -21,7 +21,6 @@ import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Mob;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Projectile;
-import org.bukkit.entity.Vex;
 import org.bukkit.entity.Warden;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -155,10 +154,6 @@ public final class CompanionListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)
     public void onTarget(EntityTargetLivingEntityEvent event) {
-        if (event.getEntity() instanceof Vex vex) {
-            service.ensureEvokerVex(vex);
-        }
-
         if (event.getTarget() != null
             && (service.isManaged(event.getTarget()) || service.isCompanionVex(event.getTarget()))
             && service.isSanctuaryDefenseEntity(event.getEntity())) {
@@ -180,10 +175,6 @@ public final class CompanionListener implements Listener {
         LivingEntity attacker = resolveAttacker(event.getDamager());
         if (attacker == null) {
             return;
-        }
-
-        if (attacker instanceof Vex vex) {
-            service.ensureEvokerVex(vex);
         }
 
         if ((service.isManaged(attacker) || service.isCompanionVex(attacker))

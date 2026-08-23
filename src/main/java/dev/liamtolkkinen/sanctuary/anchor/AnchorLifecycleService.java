@@ -157,8 +157,7 @@ public final class AnchorLifecycleService {
         }
 
         if (sanctuary.debugEphemeral()) {
-            repository.delete(sanctuary.id());
-            return Optional.empty();
+            return Optional.of(destroyEphemeralSanctuary(sanctuary, reason));
         }
 
         Instant now = clock.instant();
@@ -262,8 +261,11 @@ public final class AnchorLifecycleService {
         Sanctuary sanctuary
     ) throws SQLException, AnchorPlacementException {
         if (sanctuary.debugEphemeral()) {
-            repository.delete(sanctuary.id());
-            return new AnchorBreakResult(sanctuary, true);
+            Sanctuary destroyed = destroyEphemeralSanctuary(
+                sanctuary,
+                "DEBUG_BEACON_REMOVED"
+            );
+            return new AnchorBreakResult(destroyed, true);
         }
 
         if (sanctuary.anchorGeneration() == Integer.MAX_VALUE) {
@@ -282,6 +284,24 @@ public final class AnchorLifecycleService {
         );
         repository.save(inactive);
         return new AnchorBreakResult(inactive, false);
+    }
+
+    private Sanctuary destroyEphemeralSanctuary(
+        Sanctuary sanctuary,
+        String reason
+    ) throws SQLException {
+        Instant now = clock.instant();
+        Sanctuary destroyed = copy(
+            sanctuary,
+            Optional.empty(),
+            sanctuary.anchorGeneration(),
+            SanctuaryState.DESTROYED,
+            Optional.of(now),
+            Optional.of(reason),
+            now
+        );
+        repository.save(destroyed);
+        return destroyed;
     }
 
     private Sanctuary requireMatchingSanctuary(

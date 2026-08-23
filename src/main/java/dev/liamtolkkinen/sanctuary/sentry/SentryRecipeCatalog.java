@@ -15,6 +15,33 @@ public final class SentryRecipeCatalog {
         PIGLIN_BRUTE_TROPHY_HEAD
     }
 
+    public record UnlockIngredient(
+        Material material,
+        SpecialIngredient special
+    ) {
+        public UnlockIngredient {
+            if ((material == null) == (special == null)) {
+                throw new IllegalArgumentException(
+                    "Exactly one unlock material or special ingredient must be set"
+                );
+            }
+        }
+
+        public static UnlockIngredient material(Material material) {
+            return new UnlockIngredient(
+                Objects.requireNonNull(material, "material"),
+                null
+            );
+        }
+
+        public static UnlockIngredient special(SpecialIngredient special) {
+            return new UnlockIngredient(
+                null,
+                Objects.requireNonNull(special, "special")
+            );
+        }
+    }
+
     public record Ingredient(
         Material material,
         SpecialIngredient special,
@@ -51,6 +78,7 @@ public final class SentryRecipeCatalog {
     public record CompanionRecipe(
         String key,
         ExtendedItemId result,
+        UnlockIngredient unlockIngredient,
         List<Ingredient> ingredients
     ) {
         public CompanionRecipe {
@@ -58,6 +86,7 @@ public final class SentryRecipeCatalog {
                 throw new IllegalArgumentException("Recipe key must not be blank");
             }
             Objects.requireNonNull(result, "result");
+            Objects.requireNonNull(unlockIngredient, "unlockIngredient");
             ingredients = List.copyOf(Objects.requireNonNull(ingredients, "ingredients"));
 
             int slots = ingredients.stream().mapToInt(Ingredient::count).sum();
@@ -93,12 +122,14 @@ public final class SentryRecipeCatalog {
         companion(
             "companion_iron_golem",
             ExtendedItemIds.COMPANION_IRON_GOLEM,
+            UnlockIngredient.material(Material.CARVED_PUMPKIN),
             Ingredient.material(Material.IRON_BLOCK, 7),
             Ingredient.material(Material.CARVED_PUMPKIN, 1)
         ),
         companion(
             "companion_pillager",
             ExtendedItemIds.COMPANION_PILLAGER,
+            UnlockIngredient.special(SpecialIngredient.OMINOUS_BOTTLE_V),
             Ingredient.special(SpecialIngredient.OMINOUS_BOTTLE_V),
             Ingredient.material(Material.EMERALD_BLOCK, 4),
             Ingredient.material(Material.CROSSBOW, 4)
@@ -106,6 +137,7 @@ public final class SentryRecipeCatalog {
         companion(
             "companion_skeleton",
             ExtendedItemIds.COMPANION_SKELETON,
+            UnlockIngredient.material(Material.SKELETON_SKULL),
             Ingredient.material(Material.SKELETON_SKULL, 3),
             Ingredient.material(Material.BONE_BLOCK, 3),
             Ingredient.material(Material.ARROW, 3)
@@ -113,6 +145,7 @@ public final class SentryRecipeCatalog {
         companion(
             "companion_piglin_brute",
             ExtendedItemIds.COMPANION_PIGLIN_BRUTE,
+            UnlockIngredient.special(SpecialIngredient.PIGLIN_BRUTE_TROPHY_HEAD),
             Ingredient.special(SpecialIngredient.PIGLIN_BRUTE_TROPHY_HEAD),
             Ingredient.material(Material.GOLD_BLOCK, 4),
             Ingredient.material(Material.NETHERITE_SCRAP, 4)
@@ -120,12 +153,14 @@ public final class SentryRecipeCatalog {
         companion(
             "companion_evoker",
             ExtendedItemIds.COMPANION_EVOKER,
+            UnlockIngredient.material(Material.TOTEM_OF_UNDYING),
             Ingredient.material(Material.TOTEM_OF_UNDYING, 8),
             Ingredient.special(SpecialIngredient.OMINOUS_BOTTLE_V)
         ),
         companion(
             "companion_baby_zombie",
             ExtendedItemIds.COMPANION_BABY_ZOMBIE,
+            UnlockIngredient.special(SpecialIngredient.ZOMBIE_TROPHY_HEAD),
             Ingredient.special(SpecialIngredient.ZOMBIE_TROPHY_HEAD),
             Ingredient.material(Material.NETHERITE_HELMET, 1),
             Ingredient.material(Material.NETHERITE_CHESTPLATE, 1),
@@ -137,6 +172,7 @@ public final class SentryRecipeCatalog {
         companion(
             "companion_blaze",
             ExtendedItemIds.COMPANION_BLAZE,
+            UnlockIngredient.material(Material.GHAST_TEAR),
             Ingredient.material(Material.BLAZE_ROD, 4),
             Ingredient.material(Material.MAGMA_CREAM, 4),
             Ingredient.material(Material.GHAST_TEAR, 1)
@@ -144,6 +180,7 @@ public final class SentryRecipeCatalog {
         companion(
             "companion_creeper",
             ExtendedItemIds.COMPANION_CREEPER,
+            UnlockIngredient.special(SpecialIngredient.CREEPER_TROPHY_HEAD),
             Ingredient.special(SpecialIngredient.CREEPER_TROPHY_HEAD),
             Ingredient.material(Material.TNT, 4),
             Ingredient.material(Material.GUNPOWDER, 4)
@@ -151,6 +188,7 @@ public final class SentryRecipeCatalog {
         companion(
             "companion_wither",
             ExtendedItemIds.COMPANION_WITHER,
+            UnlockIngredient.material(Material.NETHER_STAR),
             Ingredient.material(Material.WITHER_SKELETON_SKULL, 4),
             Ingredient.material(Material.WITHER_ROSE, 4),
             Ingredient.material(Material.NETHER_STAR, 1)
@@ -158,6 +196,7 @@ public final class SentryRecipeCatalog {
         companion(
             "companion_drowned",
             ExtendedItemIds.COMPANION_DROWNED,
+            UnlockIngredient.material(Material.TRIDENT),
             Ingredient.material(Material.TRIDENT, 2),
             Ingredient.special(SpecialIngredient.ZOMBIE_TROPHY_HEAD),
             Ingredient.material(Material.ROTTEN_FLESH, 6)
@@ -165,12 +204,14 @@ public final class SentryRecipeCatalog {
         companion(
             "companion_guardian",
             ExtendedItemIds.COMPANION_GUARDIAN,
+            UnlockIngredient.material(Material.HEART_OF_THE_SEA),
             Ingredient.material(Material.HEART_OF_THE_SEA, 1),
             Ingredient.material(Material.SPONGE, 8)
         ),
         companion(
             "companion_elder_guardian",
             ExtendedItemIds.COMPANION_ELDER_GUARDIAN,
+            UnlockIngredient.material(Material.CONDUIT),
             Ingredient.material(Material.CONDUIT, 1),
             Ingredient.material(Material.SPONGE, 8)
         )
@@ -277,9 +318,15 @@ public final class SentryRecipeCatalog {
     private static CompanionRecipe companion(
         String key,
         ExtendedItemId result,
+        UnlockIngredient unlockIngredient,
         Ingredient... ingredients
     ) {
-        return new CompanionRecipe(key, result, List.of(ingredients));
+        return new CompanionRecipe(
+            key,
+            result,
+            unlockIngredient,
+            List.of(ingredients)
+        );
     }
 
     private static SentryConversion conversion(

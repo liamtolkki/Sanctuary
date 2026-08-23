@@ -9,6 +9,10 @@ commands:
     description: Sanctuary commands.
     usage: /sanctuary [status|boundary <name|all>|recover <id>|trust|untrust|capability|admin]
     permission: sanctuary.use
+  sanctuarydebugcompanions:
+    description: Gives all Sanctuary Companion Eggs for testing.
+    usage: /sanctuarydebugcompanions [player]
+    permission: sanctuary.admin
 permissions:
   sanctuary.use:
     description: Allows normal Sanctuary commands.

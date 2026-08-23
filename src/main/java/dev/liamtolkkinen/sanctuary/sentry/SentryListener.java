@@ -25,6 +25,7 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockBreakEvent;
+import org.bukkit.event.block.BlockDamageEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.entity.EntityChangeBlockEvent;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
@@ -153,7 +154,7 @@ public final class SentryListener implements Listener {
     }
 
     @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = false)
-    public void onBeaconAttack(BlockBreakEvent event) {
+    public void onBeaconAttack(BlockDamageEvent event) {
         if (!(event.getBlock().getState() instanceof org.bukkit.block.TileState tileState)) return;
         var metadata = anchorItemService.readBlockMetadata(tileState);
         if (metadata.isEmpty()) return;

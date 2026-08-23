@@ -37,7 +37,7 @@ public final class SentryTask implements Runnable {
     );
 
     private static final double WARDEN_MELEE_RANGE = 3.0;
-    private static final double WARDEN_SONIC_HORIZONTAL_RANGE = 15.0;
+    private static final double WARDEN_SONIC_MIN_HORIZONTAL_RANGE = 15.0;
     private static final double WARDEN_SONIC_VERTICAL_RANGE = 20.0;
     private static final double WARDEN_SONIC_DAMAGE = 10.0;
     private static final double WARDEN_SONIC_HORIZONTAL_KNOCKBACK = 2.5;
@@ -164,12 +164,12 @@ public final class SentryTask implements Runnable {
         double horizontalDistanceSquared = horizontalDx * horizontalDx + horizontalDz * horizontalDz;
         double verticalDistance = Math.abs(target.getY() - warden.getY());
         double distanceSquared = warden.getLocation().distanceSquared(target.getLocation());
+        double sonicMinimumSquared = WARDEN_SONIC_MIN_HORIZONTAL_RANGE * WARDEN_SONIC_MIN_HORIZONTAL_RANGE;
 
         Instant chargeStarted = wardenSonicChargeStarted.get(sentry.id());
         if (chargeStarted != null) {
-            boolean stillInSonicRange = horizontalDistanceSquared <= WARDEN_SONIC_HORIZONTAL_RANGE * WARDEN_SONIC_HORIZONTAL_RANGE
-                && verticalDistance <= WARDEN_SONIC_VERTICAL_RANGE
-                && distanceSquared > WARDEN_MELEE_RANGE * WARDEN_MELEE_RANGE;
+            boolean stillInSonicRange = horizontalDistanceSquared > sonicMinimumSquared
+                && verticalDistance <= WARDEN_SONIC_VERTICAL_RANGE;
             if (!stillInSonicRange) {
                 wardenSonicChargeStarted.remove(sentry.id());
             } else {
@@ -195,10 +195,15 @@ public final class SentryTask implements Runnable {
             return;
         }
 
+        if (horizontalDistanceSquared <= sonicMinimumSquared) {
+            var path = warden.getPathfinder().findPath(target);
+            if (path != null) warden.getPathfinder().moveTo(path, 1.2);
+            return;
+        }
+
         Instant sonicCooldown = wardenSonicCooldownUntil.get(sentry.id());
         boolean sonicReady = sonicCooldown == null || !now.isBefore(sonicCooldown);
-        boolean inSonicRange = horizontalDistanceSquared <= WARDEN_SONIC_HORIZONTAL_RANGE * WARDEN_SONIC_HORIZONTAL_RANGE
-            && verticalDistance <= WARDEN_SONIC_VERTICAL_RANGE;
+        boolean inSonicRange = verticalDistance <= WARDEN_SONIC_VERTICAL_RANGE;
         if (sonicReady && inSonicRange) {
             warden.getPathfinder().stopPathfinding();
             warden.lookAt(target);

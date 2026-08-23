@@ -27,7 +27,7 @@ public final class SanctuaryAdvancementCatalog {
     private static final Map<ExtendedItemId,String> MASTER_ARTIFACT_CRITERIA = Map.ofEntries(
         Map.entry(ExtendedItemIds.WATCHERS_EYE,"watchers_eye"), Map.entry(ExtendedItemIds.WARD_STONE,"ward_stone"), Map.entry(ExtendedItemIds.BLAST_WARD,"blast_ward"), Map.entry(ExtendedItemIds.GUARDIAN_TOKEN,"guardian_token"), Map.entry(ExtendedItemIds.PURIFICATION_RELIC,"purification_relic"), Map.entry(ExtendedItemIds.TERRITORY_KEYSTONE,"territory_keystone"), Map.entry(ExtendedItemIds.SEAL_OF_KEEPING,"seal_of_keeping"), Map.entry(ExtendedItemIds.SENTINEL_SEAL,"sentinel_seal"), Map.entry(ExtendedItemIds.SANCTUARY_CORE,"sanctuary_core"), Map.entry(ExtendedItemIds.CONSECRATED_KEYSTONE,"consecrated_keystone"));
     private static final List<Definition> DEFINITIONS = List.of(
-        d(FIRST_FRAGMENT,null,Material.AMETHYST_SHARD,"A Spark of Consecration","Discover a Consecrated Shard Fragment.",Frame.TASK,true),
+        d(FIRST_FRAGMENT,null,Material.SMALL_AMETHYST_BUD,"A Spark of Consecration","Discover a Consecrated Shard Fragment.",Frame.TASK,true),
         d(FIRST_SHARD,FIRST_FRAGMENT,Material.AMETHYST_SHARD,"Made Whole","Combine four fragments into a Consecrated Shard.",Frame.TASK,true),
         d(DIVINE_ALTAR,FIRST_SHARD,Material.LECTERN,"An Audience with the Divine","Craft a Divine Altar.",Frame.GOAL,true),
         d(SANCTUARY_BEACON,FIRST_SHARD,Material.BEACON,"Light the Sanctuary","Craft or place your first Sanctuary Beacon.",Frame.GOAL,true),

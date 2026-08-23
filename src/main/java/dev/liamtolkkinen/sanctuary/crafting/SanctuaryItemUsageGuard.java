@@ -4,7 +4,6 @@ import dev.liamtolkkinen.extendeditems.ExtendedItemId;
 import dev.liamtolkkinen.extendeditems.ExtendedItemIds;
 import dev.liamtolkkinen.extendeditems.ExtendedItems;
 import java.util.Objects;
-import java.util.Optional;
 import org.bukkit.Keyed;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -76,7 +75,11 @@ final class SanctuaryItemUsageGuard implements Listener {
             return false;
         }
 
-        for (ItemStack item : matrix) {
+        return containsExtendedItem(matrix);
+    }
+
+    static boolean containsExtendedItem(ItemStack[] items) {
+        for (ItemStack item : items) {
             if (ExtendedItems.getId(item).isPresent()) {
                 return true;
             }

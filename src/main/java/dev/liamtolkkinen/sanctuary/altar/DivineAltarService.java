@@ -10,6 +10,8 @@ import dev.liamtolkkinen.extendedui.ExtendedMenuBuilder;
 import dev.liamtolkkinen.extendedui.ExtendedMenuContext;
 import dev.liamtolkkinen.extendedui.ExtendedUI;
 import dev.liamtolkkinen.extendedui.StandardButtons;
+import dev.liamtolkkinen.sanctuary.advancement.SanctuaryAdvancementService;
+import dev.liamtolkkinen.sanctuary.anchor.AnchorItemService;
 import dev.liamtolkkinen.sanctuary.crafting.SanctuaryRecipeCatalog;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -36,6 +38,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.event.block.Action;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockBurnEvent;
 import org.bukkit.event.block.BlockExplodeEvent;
@@ -47,6 +50,7 @@ import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.world.ChunkLoadEvent;
 import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.PlayerInventory;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitTask;
@@ -76,6 +80,8 @@ public final class DivineAltarService implements Listener, AutoCloseable {
     private final JavaPlugin plugin;
     private final ExtendedUI ui;
     private final NamespacedKey altarKey;
+    private final AnchorItemService anchorItemService;
+    private final SanctuaryAdvancementService advancementService;
     private final Set<BlockPosition> loadedAltars = ConcurrentHashMap.newKeySet();
     private BukkitTask particleTask;
 
@@ -83,6 +89,8 @@ public final class DivineAltarService implements Listener, AutoCloseable {
         this.plugin = Objects.requireNonNull(plugin, "plugin");
         this.ui = Objects.requireNonNull(ui, "ui");
         this.altarKey = new NamespacedKey(plugin, "divine_altar");
+        this.anchorItemService = new AnchorItemService(plugin);
+        this.advancementService = new SanctuaryAdvancementService(plugin);
     }
 
     public void start() {
@@ -126,7 +134,9 @@ public final class DivineAltarService implements Listener, AutoCloseable {
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onInteract(PlayerInteractEvent event) {
-        if (event.getHand() != EquipmentSlot.HAND || event.getClickedBlock() == null) {
+        if (event.getAction() != Action.RIGHT_CLICK_BLOCK
+            || event.getHand() != EquipmentSlot.HAND
+            || event.getClickedBlock() == null) {
             return;
         }
         if (!isAltar(event.getClickedBlock())) {
@@ -248,10 +258,25 @@ public final class DivineAltarService implements Listener, AutoCloseable {
                 loadedAltars.remove(position);
                 continue;
             }
-            Location center = block.getLocation().add(0.5, 1.05, 0.5);
-            world.spawnParticle(Particle.FIREFLY, center, 2, 0.55, 0.35, 0.55, 0.01);
+
+            Location base = block.getLocation().add(0.5, 0.0, 0.5);
+            Location upper = base.clone().add(0.0, 1.05, 0.0);
+            world.spawnParticle(Particle.FIREFLY, upper, 2, 0.55, 0.35, 0.55, 0.01);
+
+            double angle = (world.getGameTime() % 80L) * (Math.PI * 2.0 / 80.0);
+            double radius = 0.62;
+            for (int i = 0; i < 2; i++) {
+                double current = angle + (Math.PI * i);
+                Location point = base.clone().add(
+                    Math.cos(current) * radius,
+                    0.22,
+                    Math.sin(current) * radius
+                );
+                world.spawnParticle(Particle.END_ROD, point, 1, 0.02, 0.04, 0.02, 0.005);
+            }
+
             if (world.getGameTime() % 20L == 0L) {
-                world.spawnParticle(Particle.ENCHANT, center, 4, 0.4, 0.15, 0.4, 0.15);
+                world.spawnParticle(Particle.ENCHANT, upper, 4, 0.4, 0.15, 0.4, 0.15);
             }
         }
     }
@@ -267,7 +292,7 @@ public final class DivineAltarService implements Listener, AutoCloseable {
             menu.set(11, menuButton(
                 Material.ENCHANTED_BOOK,
                 "<aqua>Sacred Arts",
-                "<gray>Browse Sanctuary recipes",
+                "<gray>Browse and craft Sanctuary recipes",
                 click -> click.menu().open(new SacredArtsMenu())
             ));
             menu.set(13, menuButton(
@@ -328,7 +353,13 @@ public final class DivineAltarService implements Listener, AutoCloseable {
 
             boolean ready = hasAllIngredients(player, recipe);
             menu.set(24, ExtendedButton.builder(() -> recipeStatusIcon(player, recipe, ready)).enabled(false).build());
-            menu.set(25, ExtendedButton.builder(() -> recipeResultIcon(recipe)).enabled(false).build());
+            ExtendedButton.Builder resultButton = ExtendedButton.builder(() -> craftResultIcon(recipe, ready));
+            if (ready) {
+                resultButton.onClick(click -> craftAtAltar(click.player(), recipe, click.menu()));
+            } else {
+                resultButton.enabled(false);
+            }
+            menu.set(25, resultButton.build());
             menu.set(36, StandardButtons.back(context.theme()));
             menu.set(44, StandardButtons.close(context.theme()));
         }
@@ -396,13 +427,33 @@ public final class DivineAltarService implements Listener, AutoCloseable {
     }
 
     private ItemStack recipeResultIcon(SanctuaryRecipeCatalog.RecipeDefinition recipe) {
-        ItemStack item = customItem(recipe.result());
+        ItemStack item = createCraftResult(recipe);
         item.editMeta(meta -> {
             List<Component> lore = new ArrayList<>();
             if (meta.lore() != null) {
                 lore.addAll(meta.lore());
             }
             lore.add(Component.text("Click to view recipe", NamedTextColor.AQUA));
+            meta.lore(lore);
+        });
+        return item;
+    }
+
+    private ItemStack craftResultIcon(
+        SanctuaryRecipeCatalog.RecipeDefinition recipe,
+        boolean ready
+    ) {
+        ItemStack item = createCraftResult(recipe);
+        item.editMeta(meta -> {
+            List<Component> lore = new ArrayList<>();
+            if (meta.lore() != null) {
+                lore.addAll(meta.lore());
+            }
+            lore.add(Component.empty());
+            lore.add(Component.text(
+                ready ? "Click to craft" : "Gather the missing ingredients to craft",
+                ready ? NamedTextColor.GREEN : NamedTextColor.GRAY
+            ));
             meta.lore(lore);
         });
         return item;
@@ -493,6 +544,99 @@ public final class DivineAltarService implements Listener, AutoCloseable {
             item.editMeta(meta -> meta.setEnchantmentGlintOverride(true));
         }
         return item;
+    }
+
+    private ItemStack createCraftResult(SanctuaryRecipeCatalog.RecipeDefinition recipe) {
+        if (recipe.result().equals(ExtendedItemIds.SANCTUARY_BEACON)) {
+            return anchorItemService.createUnboundBeacon();
+        }
+        return customItem(recipe.result());
+    }
+
+    private void craftAtAltar(
+        Player player,
+        SanctuaryRecipeCatalog.RecipeDefinition recipe,
+        ExtendedMenuContext menu
+    ) {
+        if (!hasAllIngredients(player, recipe)) {
+            player.sendMessage(Component.text(
+                "You no longer have every exact ingredient for that recipe.",
+                NamedTextColor.YELLOW
+            ));
+            menu.refresh();
+            return;
+        }
+
+        List<ItemStack> consumed = new ArrayList<>();
+        for (var ingredient : flattenedIngredients(recipe)) {
+            ItemStack taken = takeIngredient(player.getInventory(), ingredient);
+            if (taken == null) {
+                rollbackIngredients(player, consumed);
+                player.sendMessage(Component.text(
+                    "The altar could not consume the exact recipe ingredients.",
+                    NamedTextColor.YELLOW
+                ));
+                menu.refresh();
+                return;
+            }
+            consumed.add(taken);
+        }
+
+        ItemStack result = createCraftResult(recipe);
+        Map<Integer, ItemStack> leftovers = player.getInventory().addItem(result);
+        for (ItemStack leftover : leftovers.values()) {
+            player.getWorld().dropItemNaturally(player.getLocation(), leftover);
+        }
+        advancementService.recordSanctuaryCraft(player, recipe.result());
+        player.updateInventory();
+        menu.refresh();
+    }
+
+    private ItemStack takeIngredient(
+        PlayerInventory inventory,
+        SanctuaryRecipeCatalog.Ingredient ingredient
+    ) {
+        ItemStack[] storage = inventory.getStorageContents();
+        for (int slot = 0; slot < storage.length; slot++) {
+            ItemStack candidate = storage[slot];
+            if (!matchesIngredient(candidate, ingredient)) {
+                continue;
+            }
+
+            ItemStack taken = candidate.clone();
+            taken.setAmount(1);
+            if (candidate.getAmount() <= 1) {
+                inventory.setItem(slot, null);
+            } else {
+                candidate.setAmount(candidate.getAmount() - 1);
+                inventory.setItem(slot, candidate);
+            }
+            return taken;
+        }
+        return null;
+    }
+
+    private boolean matchesIngredient(
+        ItemStack item,
+        SanctuaryRecipeCatalog.Ingredient ingredient
+    ) {
+        if (item == null || item.getType().isAir()) {
+            return false;
+        }
+        if (ingredient.extendedItem() != null) {
+            return ExtendedItems.is(item, ingredient.extendedItem());
+        }
+        return item.getType() == ingredient.material()
+            && ExtendedItems.getId(item).isEmpty();
+    }
+
+    private void rollbackIngredients(Player player, List<ItemStack> consumed) {
+        for (ItemStack item : consumed) {
+            Map<Integer, ItemStack> leftovers = player.getInventory().addItem(item);
+            for (ItemStack leftover : leftovers.values()) {
+                player.getWorld().dropItemNaturally(player.getLocation(), leftover);
+            }
+        }
     }
 
     private boolean hasAllIngredients(Player player, SanctuaryRecipeCatalog.RecipeDefinition recipe) {

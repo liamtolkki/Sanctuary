@@ -63,13 +63,11 @@ public final class SanctuaryRecipeCatalog {
     }
 
     private static final Ingredient S = Ingredient.extended(ExtendedItemIds.CONSECRATED_SHARD);
-    private static final List<ShapelessRecipeDefinition> SHAPELESS_RECIPES = List.of(
-        shapeless("recipe_consecrated_shard", ExtendedItemIds.CONSECRATED_SHARD,
-            Ingredient.extended(ExtendedItemIds.CONSECRATED_SHARD_FRAGMENT), Ingredient.extended(ExtendedItemIds.CONSECRATED_SHARD_FRAGMENT),
-            Ingredient.extended(ExtendedItemIds.CONSECRATED_SHARD_FRAGMENT), Ingredient.extended(ExtendedItemIds.CONSECRATED_SHARD_FRAGMENT))
-    );
+    private static final Ingredient F = Ingredient.extended(ExtendedItemIds.CONSECRATED_SHARD_FRAGMENT);
+    private static final List<ShapelessRecipeDefinition> SHAPELESS_RECIPES = List.of();
 
     private static final List<ShapedRecipeDefinition> SHAPED_RECIPES = List.of(
+        shaped("recipe_consecrated_shard", ExtendedItemIds.CONSECRATED_SHARD, "FF ", "FF ", "   ", ingredients('F', F)),
         shaped("recipe_sanctuary_beacon", ExtendedItemIds.SANCTUARY_BEACON, "SSS", "SBS", "QQQ", ingredients('S', S, 'B', Ingredient.material(Material.BEACON), 'Q', Ingredient.material(Material.QUARTZ_BLOCK))),
         shaped("recipe_sanctuary_core", ExtendedItemIds.SANCTUARY_CORE, "SSS", "SNS", "SSS", ingredients('S', S, 'N', Ingredient.material(Material.NETHER_STAR))),
         shaped("recipe_territory_keystone", ExtendedItemIds.TERRITORY_KEYSTONE, "SPS", "PLP", "SPS", ingredients('S', S, 'P', Ingredient.material(Material.ENDER_PEARL), 'L', Ingredient.material(Material.LODESTONE))),
@@ -101,6 +99,34 @@ public final class SanctuaryRecipeCatalog {
     public static List<RecipeDefinition> allRecipes() { return ALL_RECIPES; }
     public static Optional<RecipeDefinition> findByKey(String key) { return key == null ? Optional.empty() : Optional.ofNullable(BY_KEY.get(key)); }
     public static Optional<RecipeDefinition> findByResult(ExtendedItemId result) { return result == null ? Optional.empty() : ALL_RECIPES.stream().filter(recipe -> recipe.result().equals(result)).findFirst(); }
+
+    static List<String> compactShape(ShapedRecipeDefinition definition) {
+        int minRow = 3;
+        int maxRow = -1;
+        int minColumn = 3;
+        int maxColumn = -1;
+        for (int row = 0; row < 3; row++) {
+            String value = definition.shape().get(row);
+            for (int column = 0; column < 3; column++) {
+                if (value.charAt(column) == ' ') {
+                    continue;
+                }
+                minRow = Math.min(minRow, row);
+                maxRow = Math.max(maxRow, row);
+                minColumn = Math.min(minColumn, column);
+                maxColumn = Math.max(maxColumn, column);
+            }
+        }
+        if (maxRow < 0) {
+            throw new IllegalArgumentException("Sanctuary shaped recipe must contain at least one ingredient");
+        }
+        List<String> compact = new ArrayList<>(maxRow - minRow + 1);
+        for (int row = minRow; row <= maxRow; row++) {
+            compact.add(definition.shape().get(row).substring(minColumn, maxColumn + 1));
+        }
+        return List.copyOf(compact);
+    }
+
     private static void validateKeyAndResult(String key, ExtendedItemId result) { if (key == null || key.isBlank()) throw new IllegalArgumentException("Recipe key must not be blank"); Objects.requireNonNull(result, "result"); }
     private static ShapedRecipeDefinition shaped(String key, ExtendedItemId result, String top, String middle, String bottom, Map<Character, Ingredient> ingredients) { return new ShapedRecipeDefinition(key, result, List.of(top, middle, bottom), ingredients); }
     private static ShapelessRecipeDefinition shapeless(String key, ExtendedItemId result, Ingredient... ingredients) { return new ShapelessRecipeDefinition(key, result, List.of(ingredients)); }

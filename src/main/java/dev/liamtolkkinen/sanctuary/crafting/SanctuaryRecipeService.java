@@ -148,7 +148,7 @@ public final class SanctuaryRecipeService implements Listener {
     private void registerShaped(SanctuaryRecipeCatalog.ShapedRecipeDefinition definition) {
         NamespacedKey key = new NamespacedKey(plugin, definition.key());
         ShapedRecipe recipe = new ShapedRecipe(key, createResult(definition));
-        recipe.shape(definition.shape().toArray(String[]::new));
+        recipe.shape(SanctuaryRecipeCatalog.compactShape(definition).toArray(String[]::new));
         for (var entry : definition.ingredients().entrySet()) {
             recipe.setIngredient(entry.getKey(), registrationChoice(entry.getValue()));
         }
@@ -235,13 +235,18 @@ public final class SanctuaryRecipeService implements Listener {
         ItemStack[] desired,
         List<ItemStack> taken
     ) {
-        if (desired.length < 9) {
+        int gridSize = desired.length == 4 ? 2 : desired.length == 9 ? 3 : -1;
+        if (gridSize < 0) {
+            return false;
+        }
+        List<String> shape = SanctuaryRecipeCatalog.compactShape(definition);
+        if (shape.size() > gridSize || shape.stream().anyMatch(row -> row.length() > gridSize)) {
             return false;
         }
 
-        for (int row = 0; row < 3; row++) {
-            String shapeRow = definition.shape().get(row);
-            for (int column = 0; column < 3; column++) {
+        for (int row = 0; row < shape.size(); row++) {
+            String shapeRow = shape.get(row);
+            for (int column = 0; column < shapeRow.length(); column++) {
                 char symbol = shapeRow.charAt(column);
                 if (symbol == ' ') {
                     continue;
@@ -253,7 +258,7 @@ public final class SanctuaryRecipeService implements Listener {
                 if (ingredient == null) {
                     return false;
                 }
-                desired[row * 3 + column] = ingredient;
+                desired[row * gridSize + column] = ingredient;
                 taken.add(ingredient.clone());
             }
         }

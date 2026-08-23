@@ -41,7 +41,7 @@ public final class SanctuaryAdvancementService implements Listener {
     @EventHandler(priority=EventPriority.MONITOR,ignoreCancelled=true) public void onInventoryClick(InventoryClickEvent event){if(event.getWhoClicked() instanceof Player player)scheduleRefresh(player);}
     @EventHandler(priority=EventPriority.MONITOR,ignoreCancelled=true) public void onInventoryDrag(InventoryDragEvent event){if(event.getWhoClicked() instanceof Player player)scheduleRefresh(player);}
 
-    private void recordSanctuaryCraft(Player player,ExtendedItemId result){
+    public void recordSanctuaryCraft(Player player,ExtendedItemId result){
         if(result.equals(ExtendedItemIds.CONSECRATED_SHARD)){grantCompleted(player,SanctuaryAdvancementCatalog.FIRST_FRAGMENT);grantCompleted(player,SanctuaryAdvancementCatalog.FIRST_SHARD);return;}
         if(result.equals(ExtendedItemIds.DIVINE_ALTAR)){grantCompleted(player,SanctuaryAdvancementCatalog.DIVINE_ALTAR);return;}
         if(result.equals(ExtendedItemIds.SANCTUARY_BEACON)){grantCompleted(player,SanctuaryAdvancementCatalog.SANCTUARY_BEACON);return;}

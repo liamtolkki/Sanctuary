@@ -28,10 +28,12 @@ class SanctuaryRecipeRegistrationTest {
 
     @Test
     void customFragmentIngredientUsesExactChoice() {
-        var ingredient = SanctuaryRecipeCatalog.shapelessRecipes()
-            .getFirst()
-            .ingredients()
-            .getFirst();
+        var recipe = SanctuaryRecipeCatalog.shapedRecipes()
+            .stream()
+            .filter(value -> value.result().equals(ExtendedItemIds.CONSECRATED_SHARD))
+            .findFirst()
+            .orElseThrow();
+        var ingredient = recipe.ingredients().get('F');
 
         RecipeChoice choice = SanctuaryRecipeService.registrationChoice(ingredient);
 

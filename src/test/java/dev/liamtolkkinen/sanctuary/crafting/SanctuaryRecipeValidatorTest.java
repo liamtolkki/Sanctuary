@@ -28,7 +28,7 @@ class SanctuaryRecipeValidatorTest {
 
     @Test
     void consecratedShardWorksInPlayerTwoByTwoCraftingGrid() {
-        var recipe = SanctuaryRecipeCatalog.shapelessRecipes().getFirst();
+        var recipe = shaped(ExtendedItemIds.CONSECRATED_SHARD);
         ItemStack[] matrix = new ItemStack[4];
         for (int slot = 0; slot < matrix.length; slot++) {
             matrix[slot] = ExtendedItems.create(
@@ -40,10 +40,30 @@ class SanctuaryRecipeValidatorTest {
     }
 
     @Test
-    void vanillaAmethystShardsCannotImpersonateConsecratedFragments() {
-        var recipe = SanctuaryRecipeCatalog.shapelessRecipes().getFirst();
-        ItemStack[] valid = new ItemStack[9];
+    void consecratedShardUsesARealTwoByTwoPatternInCraftingTable() {
+        var recipe = shaped(ExtendedItemIds.CONSECRATED_SHARD);
+        ItemStack[] matrix = new ItemStack[9];
+        for (int slot : new int[] {0, 1, 3, 4}) {
+            matrix[slot] = ExtendedItems.create(
+                ExtendedItemIds.CONSECRATED_SHARD_FRAGMENT
+            );
+        }
+        assertTrue(validator.matches(recipe, matrix));
+
+        ItemStack[] line = new ItemStack[9];
         for (int slot = 0; slot < 4; slot++) {
+            line[slot] = ExtendedItems.create(
+                ExtendedItemIds.CONSECRATED_SHARD_FRAGMENT
+            );
+        }
+        assertFalse(validator.matches(recipe, line));
+    }
+
+    @Test
+    void vanillaAmethystShardsCannotImpersonateConsecratedFragments() {
+        var recipe = shaped(ExtendedItemIds.CONSECRATED_SHARD);
+        ItemStack[] valid = new ItemStack[9];
+        for (int slot : new int[] {0, 1, 3, 4}) {
             valid[slot] = ExtendedItems.create(
                 ExtendedItemIds.CONSECRATED_SHARD_FRAGMENT
             );
@@ -51,7 +71,7 @@ class SanctuaryRecipeValidatorTest {
         assertTrue(validator.matches(recipe, valid));
 
         ItemStack[] vanilla = new ItemStack[9];
-        for (int slot = 0; slot < 4; slot++) {
+        for (int slot : new int[] {0, 1, 3, 4}) {
             vanilla[slot] = new ItemStack(Material.AMETHYST_SHARD);
         }
         assertFalse(validator.matches(recipe, vanilla));

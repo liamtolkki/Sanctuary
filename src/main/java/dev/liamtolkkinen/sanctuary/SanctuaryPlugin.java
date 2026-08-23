@@ -1,6 +1,7 @@
 package dev.liamtolkkinen.sanctuary;
 
 import dev.liamtolkkinen.extendedui.ExtendedUI;
+import dev.liamtolkkinen.sanctuary.anchor.AnchorBeamTask;
 import dev.liamtolkkinen.sanctuary.anchor.AnchorBreakListener;
 import dev.liamtolkkinen.sanctuary.anchor.AnchorItemRemovalListener;
 import dev.liamtolkkinen.sanctuary.anchor.AnchorItemService;
@@ -179,6 +180,10 @@ public final class SanctuaryPlugin extends JavaPlugin {
                 territoryPresenceService,
                 effectService,
                 this::getMaximumTerritoryRadius,
+                getLogger()
+            ).start(this);
+            new AnchorBeamTask(
+                repository,
                 getLogger()
             ).start(this);
             getServer().getPluginManager().registerEvents(

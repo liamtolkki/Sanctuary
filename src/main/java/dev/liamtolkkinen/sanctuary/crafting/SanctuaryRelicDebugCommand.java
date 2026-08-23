@@ -1,5 +1,6 @@
 package dev.liamtolkkinen.sanctuary.crafting;
 
+import dev.liamtolkkinen.extendeditems.ExtendedItemId;
 import dev.liamtolkkinen.extendeditems.ExtendedItemIds;
 import dev.liamtolkkinen.extendeditems.ExtendedItems;
 import dev.liamtolkkinen.sanctuary.altar.OfferingCatalog;
@@ -9,6 +10,7 @@ import java.util.Map;
 import java.util.Objects;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
+import org.bukkit.Material;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
@@ -80,9 +82,18 @@ public final class SanctuaryRelicDebugCommand implements CommandExecutor {
     static List<ItemStack> createTestItems() {
         List<ItemStack> items = new ArrayList<>();
         for (var offering : OfferingCatalog.all()) {
-            items.add(ExtendedItems.create(offering.itemId()));
+            items.add(createCompatibleItem(offering.itemId()));
         }
-        items.add(ExtendedItems.create(ExtendedItemIds.DIVINE_RELIC));
+        items.add(createCompatibleItem(ExtendedItemIds.DIVINE_RELIC));
         return List.copyOf(items);
+    }
+
+    private static ItemStack createCompatibleItem(ExtendedItemId id) {
+        ItemStack item = ExtendedItems.create(id);
+        if (id.equals(ExtendedItemIds.SEAL_OF_KEEPING) && item.getType() == Material.ENDER_CHEST) {
+            item.setType(Material.SHULKER_SHELL);
+            item.editMeta(meta -> meta.setEnchantmentGlintOverride(true));
+        }
+        return item;
     }
 }

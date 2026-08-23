@@ -361,7 +361,9 @@ public final class SentryTask implements Runnable {
                 verticalRadius,
                 territoryRadius
             )) {
-                if (entity instanceof Vex vex) service.ensureVexCompanion(vex);
+                if (entity instanceof Vex vex && !service.isCompanion(vex)) {
+                    service.ensureVexCompanion(vex);
+                }
                 if (!(entity instanceof LivingEntity living)
                     || service.isDefenseEntity(entity)
                     || isPlayerCompanion(entity)) continue;
@@ -372,9 +374,10 @@ public final class SentryTask implements Runnable {
 
                 String key = sanctuary.id() + ":" + entity.getUniqueId();
                 current.add(key);
+                boolean entered = !mobPresence.contains(key);
 
                 if (entity instanceof Player player) {
-                    if (!mobPresence.contains(key)) {
+                    if (entered) {
                         service.trigger(sanctuary, SentryTrigger.UNAUTHORIZED_PLAYER_ENTERED, player);
                     }
                     double dx = location.getX() - (sanctuary.position().orElseThrow().x() + 0.5);
@@ -385,6 +388,9 @@ public final class SentryTask implements Runnable {
                     continue;
                 }
 
+                if (!entered) {
+                    continue;
+                }
                 if (NEUTRAL_TYPES.contains(entity.getType())) {
                     service.trigger(sanctuary, SentryTrigger.NEUTRAL_MOB_ENTERED, living);
                 } else if (entity instanceof Enemy) {

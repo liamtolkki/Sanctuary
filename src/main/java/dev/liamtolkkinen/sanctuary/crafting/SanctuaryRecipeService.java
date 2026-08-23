@@ -39,6 +39,7 @@ public final class SanctuaryRecipeService implements Listener {
             registerShaped(definition);
         }
         plugin.getServer().getPluginManager().registerEvents(this, plugin);
+        SanctuaryProgressionDebugCommand.register(plugin);
     }
 
     @EventHandler(priority = EventPriority.HIGHEST)

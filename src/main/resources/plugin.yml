@@ -13,6 +13,10 @@ commands:
     description: Gives all Sanctuary Companion Eggs for testing.
     usage: /sanctuarydebugcompanions [player]
     permission: sanctuary.admin
+  sanctuarydebugshards:
+    description: Gives Consecrated Shard materials for testing.
+    usage: /sanctuarydebugshards [player]
+    permission: sanctuary.admin
 permissions:
   sanctuary.use:
     description: Allows normal Sanctuary commands.

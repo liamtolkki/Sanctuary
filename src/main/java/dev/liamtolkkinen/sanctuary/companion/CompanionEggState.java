@@ -23,26 +23,6 @@ public final class CompanionEggState {
         return ExtendedItems.create(Objects.requireNonNull(definition, "definition").itemId());
     }
 
-    public ItemStack createPickupEgg(Mob companion) {
-        Objects.requireNonNull(companion, "companion");
-        CompanionDefinition definition = CompanionDefinition.byPersistentId(
-            companion.getPersistentDataContainer().get(
-                new NamespacedKey(companion.getServer().getPluginManager().getPlugin("Sanctuary"), "companion_type"),
-                PersistentDataType.STRING
-            )
-        ).orElseThrow(() -> new IllegalArgumentException("Entity is not a recognized companion"));
-
-        ItemStack egg = createBaseEgg(definition);
-        ItemMeta meta = egg.getItemMeta();
-        meta.getPersistentDataContainer().set(
-            healthKey,
-            PersistentDataType.DOUBLE,
-            companion.getHealth()
-        );
-        egg.setItemMeta(meta);
-        return egg;
-    }
-
     public ItemStack createPickupEgg(Mob companion, CompanionDefinition definition) {
         Objects.requireNonNull(companion, "companion");
         ItemStack egg = createBaseEgg(definition);

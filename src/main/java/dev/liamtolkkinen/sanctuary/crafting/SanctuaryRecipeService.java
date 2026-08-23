@@ -9,12 +9,14 @@ import java.util.Objects;
 import org.bukkit.Keyed;
 import org.bukkit.NamespacedKey;
 import org.bukkit.block.Crafter;
+import org.bukkit.enchantments.Enchantment;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.CrafterCraftEvent;
 import org.bukkit.event.inventory.CraftItemEvent;
 import org.bukkit.event.inventory.PrepareItemCraftEvent;
+import org.bukkit.inventory.ItemFlag;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.Recipe;
 import org.bukkit.inventory.RecipeChoice;
@@ -140,7 +142,16 @@ public final class SanctuaryRecipeService implements Listener {
         if (definition.result().equals(ExtendedItemIds.SANCTUARY_BEACON)) {
             return anchorItemService.createUnboundBeacon();
         }
-        return ExtendedItems.create(definition.result());
+
+        ItemStack result = ExtendedItems.create(definition.result());
+        if (definition.result().equals(ExtendedItemIds.SEAL_OF_KEEPING)) {
+            result.editMeta(meta -> {
+                meta.setEnchantmentGlintOverride(true);
+                meta.addEnchant(Enchantment.UNBREAKING, 1, true);
+                meta.addItemFlags(ItemFlag.HIDE_ENCHANTS);
+            });
+        }
+        return result;
     }
 
     private void replaceRecipe(

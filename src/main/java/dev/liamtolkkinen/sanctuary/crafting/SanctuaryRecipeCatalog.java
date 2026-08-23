@@ -67,7 +67,7 @@ public final class SanctuaryRecipeCatalog {
     private static final List<ShapelessRecipeDefinition> SHAPELESS_RECIPES = List.of();
 
     private static final List<ShapedRecipeDefinition> SHAPED_RECIPES = List.of(
-        shaped("recipe_consecrated_shard", ExtendedItemIds.CONSECRATED_SHARD, "FF ", "FF ", "   ", ingredients('F', F)),
+        shaped("recipe_consecrated_shard", ExtendedItemIds.CONSECRATED_SHARD, "FFF", "FFF", "FFF", ingredients('F', F)),
         shaped("recipe_sanctuary_beacon", ExtendedItemIds.SANCTUARY_BEACON, "SSS", "SBS", "QQQ", ingredients('S', S, 'B', Ingredient.material(Material.BEACON), 'Q', Ingredient.material(Material.QUARTZ_BLOCK))),
         shaped("recipe_sanctuary_core", ExtendedItemIds.SANCTUARY_CORE, "SSS", "SNS", "SSS", ingredients('S', S, 'N', Ingredient.material(Material.NETHER_STAR))),
         shaped("recipe_territory_keystone", ExtendedItemIds.TERRITORY_KEYSTONE, "SPS", "PLP", "SPS", ingredients('S', S, 'P', Ingredient.material(Material.ENDER_PEARL), 'L', Ingredient.material(Material.LODESTONE))),

@@ -16,4 +16,12 @@ class AltarGuardCraftingMenusTest {
             AltarGuardCraftingMenus.craftingGridSlots()
         );
     }
+
+    @Test
+    void sentryRecipeUsesShardEggAndPostDownTheCenterColumn() {
+        assertArrayEquals(
+            new int[] {1, 4, 7},
+            AltarGuardCraftingMenus.sentryIngredientIndexes()
+        );
+    }
 }

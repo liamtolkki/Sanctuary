@@ -70,6 +70,7 @@ public final class DivineAltarService implements Listener, AutoCloseable {
     private final NamespacedKey altarKey;
     private final AnchorItemService anchorItemService;
     private final SanctuaryAdvancementService advancementService;
+    private final AltarGuardCraftingMenus guardCraftingMenus;
     private final OfferingProgressRepository offeringProgress;
     private final Set<BlockPosition> loadedAltars = ConcurrentHashMap.newKeySet();
     private BukkitTask particleTask;
@@ -85,6 +86,7 @@ public final class DivineAltarService implements Listener, AutoCloseable {
         this.altarKey = new NamespacedKey(plugin, "divine_altar");
         this.anchorItemService = new AnchorItemService(plugin);
         this.advancementService = new SanctuaryAdvancementService(plugin);
+        this.guardCraftingMenus = new AltarGuardCraftingMenus(plugin, advancementService);
     }
 
     public void start() {
@@ -284,25 +286,37 @@ public final class DivineAltarService implements Listener, AutoCloseable {
         @Override
         public void build(ExtendedMenuContext context, ExtendedMenuBuilder menu) {
             menu.fillBackground();
-            menu.set(11, menuButton(
+            menu.set(10, menuButton(
                 Material.ENCHANTED_BOOK,
                 "<aqua>Sacred Arts",
                 "<gray>Browse and craft Sanctuary recipes",
                 click -> click.menu().open(new SacredArtsMenu())
             ));
-            menu.set(13, menuButton(
+            menu.set(12, customMenuButton(
+                ExtendedItemIds.COMPANION_WARDEN,
+                "<aqua>Companions",
+                "<gray>Craft companion spawn eggs",
+                click -> click.menu().open(guardCraftingMenus.companionsMenu())
+            ));
+            menu.set(14, customMenuButton(
+                ExtendedItemIds.SENTRY_WARDEN,
+                "<gold>Sentries",
+                "<gray>Convert companion eggs into Sentry Posts",
+                click -> click.menu().open(guardCraftingMenus.sentriesMenu())
+            ));
+            menu.set(16, menuButton(
                 Material.ECHO_SHARD,
                 "<light_purple>Offerings",
                 "<gray>Make the twelve sacred offerings",
                 click -> click.menu().open(new OfferingsMenu())
             ));
-            menu.set(15, menuButton(
+            menu.set(22, menuButton(
                 Material.NETHER_STAR,
                 "<gold>Divine Favor",
                 "<gray>View your path to the Divine Relic",
                 click -> click.menu().open(new DivineFavorMenu())
             ));
-            menu.set(22, StandardButtons.close(context.theme()));
+            menu.set(26, StandardButtons.close(context.theme()));
         }
     }
 
@@ -339,7 +353,7 @@ public final class DivineAltarService implements Listener, AutoCloseable {
             menu.fillBackground();
             Player player = context.player();
             ItemStack[] displayed = recipeGrid(recipe);
-            int[] gridSlots = {10, 11, 12, 19, 20, 21, 28, 29, 30};
+            int[] gridSlots = AltarGuardCraftingMenus.craftingGridSlots();
             for (int i = 0; i < displayed.length; i++) {
                 if (displayed[i] != null) {
                     menu.set(gridSlots[i], ExtendedButton.builder(displayed[i]).enabled(false).build());
@@ -436,6 +450,32 @@ public final class DivineAltarService implements Listener, AutoCloseable {
                 .name(name)
                 .lore(lore)
                 .build())
+            .onClick(click)
+            .build();
+    }
+
+    private ExtendedButton customMenuButton(
+        ExtendedItemId itemId,
+        String name,
+        String lore,
+        java.util.function.Consumer<dev.liamtolkkinen.extendedui.ExtendedClickContext> click
+    ) {
+        return ExtendedButton.builder(() -> {
+                ItemStack item = customItem(itemId);
+                item.editMeta(meta -> {
+                    meta.displayName(Component.text(
+                        name.replaceAll("<[^>]+>", ""),
+                        name.contains("gold") ? NamedTextColor.GOLD : NamedTextColor.AQUA
+                    ));
+                    List<Component> lines = new ArrayList<>();
+                    if (meta.lore() != null) {
+                        lines.addAll(meta.lore());
+                    }
+                    lines.add(Component.text(lore.replaceAll("<[^>]+>", ""), NamedTextColor.GRAY));
+                    meta.lore(lines);
+                });
+                return item;
+            })
             .onClick(click)
             .build();
     }

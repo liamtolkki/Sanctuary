@@ -71,19 +71,16 @@ public final class CompanionListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onUseCompanionEgg(PlayerInteractEvent event) {
-        if (event.getHand() != EquipmentSlot.HAND || !event.getAction().isRightClick()) {
+        if (event.getHand() != EquipmentSlot.HAND
+            || !event.getAction().isRightClick()) {
             return;
         }
-
         ItemStack item = event.getItem();
         Optional<CompanionDefinition> definition = service.definition(item);
         if (definition.isEmpty()) {
             return;
         }
 
-        // Intercept every custom Companion Egg before vanilla spawn-egg behavior
-        // can create an unmanaged mob. Open-water clicks often have no clicked
-        // block, so resolving the destination has to happen after cancellation.
         event.setCancelled(true);
         CompanionDefinition companionDefinition = definition.orElseThrow();
         Block clicked = resolveClickedBlock(event, companionDefinition);
@@ -97,14 +94,11 @@ public final class CompanionListener implements Listener {
             return;
         }
 
-        Block destinationBlock;
-        Location spawnLocation;
+        Block destinationBlock = clicked.getRelative(event.getBlockFace());
+        Location spawnLocation = destinationBlock.getLocation().add(0.5, 0.1, 0.5);
         if (clicked.getType() == Material.WATER) {
             destinationBlock = clicked;
             spawnLocation = clicked.getLocation().add(0.5, 0.2, 0.5);
-        } else {
-            destinationBlock = clicked.getRelative(event.getBlockFace());
-            spawnLocation = destinationBlock.getLocation().add(0.5, 0.1, 0.5);
         }
 
         if (companionDefinition.requiresWaterSpawn()
@@ -302,7 +296,10 @@ public final class CompanionListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)
     public void onTeleport(EntityTeleportEvent event) {
-        if (service.isManaged(event.getEntity()) && !service.consumeAuthorizedTeleport(event.getEntity())) {
+        if (!service.isManaged(event.getEntity())) {
+            return;
+        }
+        if (!service.teleportDestinationAllowed(event.getEntity(), event.getTo())) {
             event.setCancelled(true);
         }
     }
@@ -320,19 +317,24 @@ public final class CompanionListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)
     public void onWardenAnger(WardenAngerChangeEvent event) {
-        if (service.isManaged(event.getEntity())
-            && (event.getTarget() == null || !service.targetAllowed(event.getEntity(), event.getTarget()))) {
+        if (!service.isManaged(event.getEntity())) {
+            return;
+        }
+        if (!(event.getTarget() instanceof LivingEntity living)
+            || !service.targetAllowed(event.getEntity(), living)) {
             event.setCancelled(true);
         }
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)
-    public void onPotionEffect(EntityPotionEffectEvent event) {
-        if (!(event.getEntity() instanceof Mob mob) || !service.isManaged(mob)) {
+    public void onWardenDarkness(EntityPotionEffectEvent event) {
+        if (event.getCause() != EntityPotionEffectEvent.Cause.WARDEN
+            || !(event.getEntity() instanceof Player player)
+            || event.getNewEffect() == null
+            || event.getNewEffect().getType() != PotionEffectType.DARKNESS) {
             return;
         }
-        if (event.getModifiedType() == PotionEffectType.WITHER
-            && event.getCause() == EntityPotionEffectEvent.Cause.ATTACK) {
+        if (service.hasManagedWardenFor(player)) {
             event.setCancelled(true);
         }
     }
@@ -342,34 +344,36 @@ public final class CompanionListener implements Listener {
             return living;
         }
         if (damager instanceof Projectile projectile) {
-            ProjectileSource shooter = projectile.getShooter();
-            return shooter instanceof LivingEntity living ? living : null;
+            ProjectileSource source = projectile.getShooter();
+            if (source instanceof LivingEntity living) {
+                return living;
+            }
         }
-        if (damager instanceof EvokerFangs fangs) {
-            return fangs.getOwner();
+        if (damager instanceof EvokerFangs fangs && fangs.getOwner() instanceof LivingEntity living) {
+            return living;
         }
         return null;
     }
 
     private static ItemStack itemInHand(Player player, EquipmentSlot hand) {
-        return hand == EquipmentSlot.HAND
-            ? player.getInventory().getItemInMainHand()
-            : player.getInventory().getItemInOffHand();
+        return hand == EquipmentSlot.OFF_HAND
+            ? player.getInventory().getItemInOffHand()
+            : player.getInventory().getItemInMainHand();
     }
 
-    private static void consume(Player player, EquipmentSlot hand, ItemStack item) {
-        if (player.getGameMode() == GameMode.CREATIVE) {
+    private static void consume(Player player, EquipmentSlot hand, ItemStack source) {
+        if (player.getGameMode() == GameMode.CREATIVE || source == null) {
             return;
         }
-        int remaining = item.getAmount() - 1;
-        if (remaining > 0) {
-            item.setAmount(remaining);
-            return;
-        }
-        if (hand == EquipmentSlot.HAND) {
-            player.getInventory().setItemInMainHand(null);
+        ItemStack held = itemInHand(player, hand);
+        if (held.getAmount() <= 1) {
+            if (hand == EquipmentSlot.OFF_HAND) {
+                player.getInventory().setItemInOffHand(new ItemStack(Material.AIR));
+            } else {
+                player.getInventory().setItemInMainHand(new ItemStack(Material.AIR));
+            }
         } else {
-            player.getInventory().setItemInOffHand(null);
+            held.setAmount(held.getAmount() - 1);
         }
     }
 }

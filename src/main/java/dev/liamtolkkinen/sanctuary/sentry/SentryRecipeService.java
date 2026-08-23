@@ -1,6 +1,7 @@
 package dev.liamtolkkinen.sanctuary.sentry;
 
 import dev.liamtolkkinen.extendeditems.ExtendedItems;
+import dev.liamtolkkinen.sanctuary.api.SanctuaryApi;
 import java.util.Objects;
 import org.bukkit.NamespacedKey;
 import org.bukkit.inventory.ItemStack;
@@ -29,6 +30,21 @@ public final class SentryRecipeService {
         {
             registerSentryConversion(definition);
         }
+
+        SanctuaryApi sanctuaryApi = plugin.getServer()
+            .getServicesManager()
+            .load(SanctuaryApi.class);
+        if (sanctuaryApi == null) {
+            throw new IllegalStateException(
+                "Sanctuary API must be registered before sentry recipe discovery starts"
+            );
+        }
+
+        new SentryRecipeDiscoveryService(
+            plugin,
+            sanctuaryApi,
+            craftingItems
+        ).start();
     }
 
     public SentryCraftingItemService craftingItems() {

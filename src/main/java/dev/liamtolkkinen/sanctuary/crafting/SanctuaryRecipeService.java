@@ -17,7 +17,7 @@ import org.bukkit.event.block.CrafterCraftEvent;
 import org.bukkit.event.inventory.CraftItemEvent;
 import org.bukkit.event.inventory.PrepareItemCraftEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
-import org.bukkit.event.player.PlayerRecipeDiscoverEvent;
+import org.bukkit.event.player.PlayerRecipeBookClickEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.Recipe;
 import org.bukkit.inventory.RecipeChoice;
@@ -54,7 +54,7 @@ public final class SanctuaryRecipeService implements Listener {
         SanctuaryProgressionDebugCommand.register(plugin);
 
         for (Player player : plugin.getServer().getOnlinePlayers()) {
-            hideProgressionRecipes(player);
+            showProgressionRecipes(player);
         }
     }
 
@@ -113,18 +113,22 @@ public final class SanctuaryRecipeService implements Listener {
         event.setResult(createResult(definition));
     }
 
-    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
-    public void onRecipeDiscover(PlayerRecipeDiscoverEvent event) {
-        if (recipesByKey.containsKey(event.getRecipe())) {
-            event.setCancelled(true);
+    @EventHandler(priority = EventPriority.HIGHEST)
+    public void onRecipeBookClick(PlayerRecipeBookClickEvent event) {
+        Recipe originalRecipe = event.getOriginalRecipe();
+        var definition = definitionFor(originalRecipe);
+        if (definition == null) {
+            return;
         }
+
+        event.setRecipe(exactPlacementRecipe(definition, originalRecipe));
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
     public void onPlayerJoin(PlayerJoinEvent event) {
         plugin.getServer().getScheduler().runTask(
             plugin,
-            () -> hideProgressionRecipes(event.getPlayer())
+            () -> showProgressionRecipes(event.getPlayer())
         );
     }
 
@@ -154,6 +158,15 @@ public final class SanctuaryRecipeService implements Listener {
         if (ingredient.material() != null) {
             return new RecipeChoice.MaterialChoice(ingredient.material());
         }
+        return new RecipeChoice.MaterialChoice(
+            ExtendedItems.create(ingredient.extendedItem()).getType()
+        );
+    }
+
+    static RecipeChoice exactPlacementChoice(SanctuaryRecipeCatalog.Ingredient ingredient) {
+        if (ingredient.material() != null) {
+            return new RecipeChoice.MaterialChoice(ingredient.material());
+        }
         return new RecipeChoice.ExactChoice(
             ExtendedItems.create(ingredient.extendedItem())
         );
@@ -166,8 +179,36 @@ public final class SanctuaryRecipeService implements Listener {
         return ExtendedItems.create(definition.result());
     }
 
-    private void hideProgressionRecipes(Player player) {
-        player.undiscoverRecipes(recipesByKey.keySet());
+    private Recipe exactPlacementRecipe(
+        SanctuaryRecipeCatalog.RecipeDefinition definition,
+        Recipe originalRecipe
+    ) {
+        if (!(originalRecipe instanceof Keyed keyed)) {
+            return originalRecipe;
+        }
+
+        if (definition instanceof SanctuaryRecipeCatalog.ShapedRecipeDefinition shaped) {
+            ShapedRecipe recipe = new ShapedRecipe(keyed.getKey(), originalRecipe.getResult());
+            recipe.shape(shaped.shape().toArray(String[]::new));
+            for (var entry : shaped.ingredients().entrySet()) {
+                recipe.setIngredient(entry.getKey(), exactPlacementChoice(entry.getValue()));
+            }
+            return recipe;
+        }
+
+        if (definition instanceof SanctuaryRecipeCatalog.ShapelessRecipeDefinition shapeless) {
+            ShapelessRecipe recipe = new ShapelessRecipe(keyed.getKey(), originalRecipe.getResult());
+            for (var ingredient : shapeless.ingredients()) {
+                recipe.addIngredient(exactPlacementChoice(ingredient));
+            }
+            return recipe;
+        }
+
+        return originalRecipe;
+    }
+
+    private void showProgressionRecipes(Player player) {
+        player.discoverRecipes(recipesByKey.keySet());
     }
 
     private void replaceRecipe(

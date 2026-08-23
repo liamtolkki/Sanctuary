@@ -2,6 +2,7 @@ package dev.liamtolkkinen.sanctuary.sentry;
 
 import dev.liamtolkkinen.extendeditems.ExtendedItems;
 import dev.liamtolkkinen.sanctuary.api.SanctuaryApi;
+import dev.liamtolkkinen.sanctuary.companion.CompanionDebugCommand;
 import dev.liamtolkkinen.sanctuary.companion.CompanionService;
 import java.util.Objects;
 import org.bukkit.NamespacedKey;
@@ -47,6 +48,7 @@ public final class SentryRecipeService {
             craftingItems
         ).start();
 
+        CompanionDebugCommand.register(plugin);
         new CompanionService(plugin).start();
     }
 

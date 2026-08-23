@@ -18,8 +18,10 @@ import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Particle;
 import org.bukkit.Sound;
+import org.bukkit.attribute.Attribute;
 import org.bukkit.damage.DamageSource;
 import org.bukkit.damage.DamageType;
+import org.bukkit.entity.Creeper;
 import org.bukkit.entity.Enemy;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.EntityType;
@@ -36,6 +38,12 @@ public final class SentryTask implements Runnable {
         EntityType.ENDERMAN, EntityType.ZOMBIFIED_PIGLIN, EntityType.PIGLIN, EntityType.BEE,
         EntityType.WOLF, EntityType.IRON_GOLEM, EntityType.LLAMA, EntityType.POLAR_BEAR
     );
+
+    private static final double CREEPER_MAX_HEALTH = 40.0;
+    private static final double CREEPER_MOVEMENT_SPEED = 0.38;
+    private static final double CREEPER_IGNITION_RANGE = 3.5;
+    private static final int CREEPER_FUSE_TICKS = 12;
+    private static final int CREEPER_EXPLOSION_RADIUS = 4;
 
     private static final double WARDEN_MELEE_RANGE = 3.0;
     private static final double WARDEN_SONIC_MIN_HORIZONTAL_RANGE = 15.0;
@@ -123,6 +131,8 @@ public final class SentryTask implements Runnable {
             return;
         }
 
+        if (mob instanceof Creeper creeper) configureCreeperBody(creeper);
+
         Location loc = entity.getLocation();
         if (!TerritoryCalculator.contains(
             sanctuary.position().orElseThrow(), sanctuary.territoryRadius(), sentry.world(), loc.getX(), loc.getZ())) {
@@ -133,11 +143,13 @@ public final class SentryTask implements Runnable {
 
         if (sentry.state() == SentryState.DISABLED) {
             clearWardenCombatState(sentry.id());
+            if (mob instanceof Creeper creeper) disarmCreeper(creeper);
             return;
         }
 
         if (sentry.state() == SentryState.RECALLING) {
             clearWardenCombatState(sentry.id());
+            if (mob instanceof Creeper creeper) disarmCreeper(creeper);
             double distance = loc.distance(service.postStandLocation(sentry));
             if (distance <= SentryService.HOME_REACHED_DISTANCE) {
                 service.teleportHome(sentry);
@@ -156,18 +168,59 @@ public final class SentryTask implements Runnable {
         SentryDefinition definition = service.definition(sentry).orElse(null);
         LivingEntity target = service.authorizedTarget(sentry).orElse(null);
         if (target != null && definition != null && service.validTarget(sanctuary, sentry, definition, target)) {
-            if (mob instanceof Warden warden) {
+            if (mob instanceof Creeper creeper) {
+                tickCreeperCombat(sentry, creeper, target, now);
+            } else if (mob instanceof Warden warden) {
                 tickWardenCombat(sentry, warden, target, now);
             } else {
                 service.maintainAuthorizedTarget(sentry, mob, target, now);
             }
         } else {
             clearWardenCombatState(sentry.id());
+            if (mob instanceof Creeper creeper) disarmCreeper(creeper);
             if (target != null) service.clearTarget(sentry);
             service.idleAtHome(mob, sentry);
         }
 
         service.tickVexCompanions(sentry, mob, service.authorizedTarget(sentry).orElse(null), now);
+    }
+
+    private void configureCreeperBody(Creeper creeper) {
+        creeper.setPowered(true);
+        creeper.setMaxFuseTicks(CREEPER_FUSE_TICKS);
+        creeper.setExplosionRadius(CREEPER_EXPLOSION_RADIUS);
+
+        var maxHealth = creeper.getAttribute(Attribute.MAX_HEALTH);
+        if (maxHealth != null && Math.abs(maxHealth.getBaseValue() - CREEPER_MAX_HEALTH) > 0.001) {
+            double previousMaximum = maxHealth.getValue();
+            double previousHealth = creeper.getHealth();
+            maxHealth.setBaseValue(CREEPER_MAX_HEALTH);
+            if (previousHealth >= previousMaximum - 0.001) {
+                creeper.setHealth(CREEPER_MAX_HEALTH);
+            }
+        }
+
+        var movementSpeed = creeper.getAttribute(Attribute.MOVEMENT_SPEED);
+        if (movementSpeed != null && Math.abs(movementSpeed.getBaseValue() - CREEPER_MOVEMENT_SPEED) > 0.001) {
+            movementSpeed.setBaseValue(CREEPER_MOVEMENT_SPEED);
+        }
+    }
+
+    private void tickCreeperCombat(SentryRecord sentry, Creeper creeper, LivingEntity target, Instant now) {
+        configureCreeperBody(creeper);
+        service.maintainAuthorizedTarget(sentry, creeper, target, now);
+
+        if (creeper.isIgnited()) return;
+
+        double distanceSquared = creeper.getLocation().distanceSquared(target.getLocation());
+        if (distanceSquared <= CREEPER_IGNITION_RANGE * CREEPER_IGNITION_RANGE) {
+            creeper.setIgnited(true);
+        }
+    }
+
+    private void disarmCreeper(Creeper creeper) {
+        creeper.setIgnited(false);
+        creeper.setFuseTicks(0);
     }
 
     private void tickWardenCombat(SentryRecord sentry, Warden warden, LivingEntity target, Instant now) {

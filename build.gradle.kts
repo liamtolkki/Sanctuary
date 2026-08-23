@@ -73,7 +73,7 @@ val downloadExtendedUi by tasks.registering {
     }
 }
 
-val extendedItemsVersion = "0.1.0-alpha.2"
+val extendedItemsVersion = "0.1.0-alpha.3"
 val extendedItemsJar = layout.buildDirectory.file(
     "dependencies/extendeditems-$extendedItemsVersion.jar"
 )

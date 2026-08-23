@@ -3,8 +3,10 @@ package dev.liamtolkkinen.sanctuary.crafting;
 import dev.liamtolkkinen.extendeditems.ExtendedItemIds;
 import dev.liamtolkkinen.extendeditems.ExtendedItems;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import org.bukkit.Keyed;
 import org.bukkit.NamespacedKey;
 import org.bukkit.block.Crafter;
@@ -28,7 +30,7 @@ public final class SanctuaryRecipeService implements Listener {
     private final SanctuaryRecipeValidator validator = new SanctuaryRecipeValidator();
     private final Map<NamespacedKey, SanctuaryRecipeCatalog.RecipeDefinition> recipesByKey =
         new LinkedHashMap<>();
-    private NamespacedKey altarRecipeKey;
+    private final Set<NamespacedKey> progressionRecipeKeys = new LinkedHashSet<>();
 
     public SanctuaryRecipeService(JavaPlugin plugin) {
         this.plugin = Objects.requireNonNull(plugin, "plugin");
@@ -36,12 +38,19 @@ public final class SanctuaryRecipeService implements Listener {
 
     public void registerAll() {
         recipesByKey.clear();
+        progressionRecipeKeys.clear();
+
+        for (var definition : SanctuaryRecipeCatalog.allRecipes()) {
+            NamespacedKey key = new NamespacedKey(plugin, definition.key());
+            progressionRecipeKeys.add(key);
+            plugin.getServer().removeRecipe(key);
+        }
+
         var altar = SanctuaryRecipeCatalog.findByResult(ExtendedItemIds.DIVINE_ALTAR)
             .filter(SanctuaryRecipeCatalog.ShapedRecipeDefinition.class::isInstance)
             .map(SanctuaryRecipeCatalog.ShapedRecipeDefinition.class::cast)
             .orElseThrow(() -> new IllegalStateException("Divine Altar recipe is missing from the catalog"));
         registerShaped(altar);
-        altarRecipeKey = new NamespacedKey(plugin, altar.key());
 
         plugin.getServer().getPluginManager().registerEvents(this, plugin);
         plugin.getServer().getPluginManager().registerEvents(
@@ -52,7 +61,7 @@ public final class SanctuaryRecipeService implements Listener {
         SanctuaryRelicDebugCommand.register(plugin);
 
         for (Player player : plugin.getServer().getOnlinePlayers()) {
-            hideAltarRecipe(player);
+            hideProgressionRecipes(player);
         }
     }
 
@@ -82,7 +91,7 @@ public final class SanctuaryRecipeService implements Listener {
         }
         event.setCurrentItem(createResult(definition));
         if (event.getWhoClicked() instanceof Player player) {
-            plugin.getServer().getScheduler().runTask(plugin, () -> hideAltarRecipe(player));
+            plugin.getServer().getScheduler().runTask(plugin, () -> hideProgressionRecipes(player));
         }
     }
 
@@ -108,7 +117,7 @@ public final class SanctuaryRecipeService implements Listener {
     public void onPlayerJoin(PlayerJoinEvent event) {
         plugin.getServer().getScheduler().runTask(
             plugin,
-            () -> hideAltarRecipe(event.getPlayer())
+            () -> hideProgressionRecipes(event.getPlayer())
         );
     }
 
@@ -119,7 +128,10 @@ public final class SanctuaryRecipeService implements Listener {
         for (var entry : definition.ingredients().entrySet()) {
             recipe.setIngredient(entry.getKey(), registrationChoice(entry.getValue()));
         }
-        replaceRecipe(key, recipe, definition);
+        if (!plugin.getServer().addRecipe(recipe)) {
+            throw new IllegalStateException("Failed to register Sanctuary recipe " + key);
+        }
+        recipesByKey.put(key, definition);
     }
 
     static RecipeChoice registrationChoice(SanctuaryRecipeCatalog.Ingredient ingredient) {
@@ -133,22 +145,10 @@ public final class SanctuaryRecipeService implements Listener {
         return ExtendedItems.create(definition.result());
     }
 
-    private void hideAltarRecipe(Player player) {
-        if (altarRecipeKey != null) {
-            player.undiscoverRecipe(altarRecipeKey);
+    private void hideProgressionRecipes(Player player) {
+        for (NamespacedKey key : progressionRecipeKeys) {
+            player.undiscoverRecipe(key);
         }
-    }
-
-    private void replaceRecipe(
-        NamespacedKey key,
-        Recipe recipe,
-        SanctuaryRecipeCatalog.RecipeDefinition definition
-    ) {
-        plugin.getServer().removeRecipe(key);
-        if (!plugin.getServer().addRecipe(recipe)) {
-            throw new IllegalStateException("Failed to register Sanctuary recipe " + key);
-        }
-        recipesByKey.put(key, definition);
     }
 
     private SanctuaryRecipeCatalog.RecipeDefinition definitionFor(Recipe recipe) {

@@ -12,6 +12,7 @@ import dev.liamtolkkinen.sanctuary.anchor.InitialAnchorPlacementService;
 import dev.liamtolkkinen.sanctuary.api.DefaultSanctuaryApi;
 import dev.liamtolkkinen.sanctuary.api.SanctuaryApi;
 import dev.liamtolkkinen.sanctuary.command.SanctuaryCommand;
+import dev.liamtolkkinen.sanctuary.companion.CompanionRuntime;
 import dev.liamtolkkinen.sanctuary.persistence.DatabaseManager;
 import dev.liamtolkkinen.sanctuary.persistence.MigrationRunner;
 import dev.liamtolkkinen.sanctuary.persistence.SqliteSanctuaryRepository;
@@ -200,6 +201,7 @@ public final class SanctuaryPlugin extends JavaPlugin {
             );
 
             extendedUi = new ExtendedUI(this);
+            CompanionRuntime.start(this, extendedUi);
             SentryUiService sentryUiService = new SentryUiService(
                 this, extendedUi, repository, sentryRepository, sentryService, getLogger()
             );
@@ -516,6 +518,7 @@ public final class SanctuaryPlugin extends JavaPlugin {
         }
         return value;
     }
+
     public boolean areHardProtectionsEnabled() {
         return getConfig().getBoolean("protections.hard.enabled", false);
     }
@@ -535,5 +538,4 @@ public final class SanctuaryPlugin extends JavaPlugin {
         };
         return getConfig().getBoolean("protections.hard." + key, true);
     }
-
 }

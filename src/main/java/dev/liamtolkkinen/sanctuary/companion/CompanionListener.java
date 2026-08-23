@@ -9,6 +9,7 @@ import java.util.concurrent.ThreadLocalRandom;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import org.bukkit.ChatColor;
+import org.bukkit.FluidCollisionMode;
 import org.bukkit.GameMode;
 import org.bukkit.Location;
 import org.bukkit.Material;
@@ -42,9 +43,11 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.potion.PotionEffectType;
 import org.bukkit.projectiles.ProjectileSource;
+import org.bukkit.util.RayTraceResult;
 
 public final class CompanionListener implements Listener {
     private static final double WARDEN_EGG_DROP_CHANCE = 0.125;
+    private static final double OPEN_WATER_RAY_TRACE_DISTANCE = 6.0;
 
     private final CompanionService service;
     private final CompanionUiService uiService;
@@ -68,25 +71,40 @@ public final class CompanionListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onUseCompanionEgg(PlayerInteractEvent event) {
-        if (event.getHand() != EquipmentSlot.HAND
-            || !event.getAction().isRightClick()
-            || event.getClickedBlock() == null) {
+        if (event.getHand() != EquipmentSlot.HAND || !event.getAction().isRightClick()) {
             return;
         }
+
         ItemStack item = event.getItem();
         Optional<CompanionDefinition> definition = service.definition(item);
         if (definition.isEmpty()) {
             return;
         }
 
+        // Intercept every custom Companion Egg before vanilla spawn-egg behavior
+        // can create an unmanaged mob. Open-water clicks often have no clicked
+        // block, so resolving the destination has to happen after cancellation.
         event.setCancelled(true);
         CompanionDefinition companionDefinition = definition.orElseThrow();
-        Block clicked = event.getClickedBlock();
-        Block destinationBlock = clicked.getRelative(event.getBlockFace());
-        Location spawnLocation = destinationBlock.getLocation().add(0.5, 0.1, 0.5);
+        Block clicked = resolveClickedBlock(event, companionDefinition);
+        if (clicked == null) {
+            event.getPlayer().sendMessage(
+                ChatColor.YELLOW
+                    + (companionDefinition.requiresWaterSpawn()
+                        ? companionDefinition.displayName() + " must be summoned in water."
+                        : "Use the Companion Egg on a block to summon it.")
+            );
+            return;
+        }
+
+        Block destinationBlock;
+        Location spawnLocation;
         if (clicked.getType() == Material.WATER) {
             destinationBlock = clicked;
             spawnLocation = clicked.getLocation().add(0.5, 0.2, 0.5);
+        } else {
+            destinationBlock = clicked.getRelative(event.getBlockFace());
+            spawnLocation = destinationBlock.getLocation().add(0.5, 0.1, 0.5);
         }
 
         if (companionDefinition.requiresWaterSpawn()
@@ -110,6 +128,28 @@ public final class CompanionListener implements Listener {
             logger.log(Level.SEVERE, "Failed to spawn companion", exception);
             event.getPlayer().sendMessage(ChatColor.RED + "The companion could not be summoned here.");
         }
+    }
+
+    private Block resolveClickedBlock(
+        PlayerInteractEvent event,
+        CompanionDefinition definition
+    ) {
+        if (event.getClickedBlock() != null) {
+            return event.getClickedBlock();
+        }
+        if (!definition.requiresWaterSpawn()) {
+            return null;
+        }
+
+        RayTraceResult trace = event.getPlayer().rayTraceBlocks(
+            OPEN_WATER_RAY_TRACE_DISTANCE,
+            FluidCollisionMode.ALWAYS
+        );
+        if (trace == null || trace.getHitBlock() == null
+            || trace.getHitBlock().getType() != Material.WATER) {
+            return null;
+        }
+        return trace.getHitBlock();
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
@@ -262,10 +302,7 @@ public final class CompanionListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)
     public void onTeleport(EntityTeleportEvent event) {
-        if (!service.isManaged(event.getEntity())) {
-            return;
-        }
-        if (!service.teleportDestinationAllowed(event.getEntity(), event.getTo())) {
+        if (service.isManaged(event.getEntity()) && !service.consumeAuthorizedTeleport(event.getEntity())) {
             event.setCancelled(true);
         }
     }
@@ -283,24 +320,19 @@ public final class CompanionListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)
     public void onWardenAnger(WardenAngerChangeEvent event) {
-        if (!service.isManaged(event.getEntity())) {
-            return;
-        }
-        if (!(event.getTarget() instanceof LivingEntity living)
-            || !service.targetAllowed(event.getEntity(), living)) {
+        if (service.isManaged(event.getEntity())
+            && (event.getTarget() == null || !service.targetAllowed(event.getEntity(), event.getTarget()))) {
             event.setCancelled(true);
         }
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)
-    public void onWardenDarkness(EntityPotionEffectEvent event) {
-        if (event.getCause() != EntityPotionEffectEvent.Cause.WARDEN
-            || !(event.getEntity() instanceof Player player)
-            || event.getNewEffect() == null
-            || event.getNewEffect().getType() != PotionEffectType.DARKNESS) {
+    public void onPotionEffect(EntityPotionEffectEvent event) {
+        if (!(event.getEntity() instanceof Mob mob) || !service.isManaged(mob)) {
             return;
         }
-        if (service.hasManagedWardenFor(player)) {
+        if (event.getModifiedType() == PotionEffectType.WITHER
+            && event.getCause() == EntityPotionEffectEvent.Cause.ATTACK) {
             event.setCancelled(true);
         }
     }
@@ -310,36 +342,34 @@ public final class CompanionListener implements Listener {
             return living;
         }
         if (damager instanceof Projectile projectile) {
-            ProjectileSource source = projectile.getShooter();
-            if (source instanceof LivingEntity living) {
-                return living;
-            }
+            ProjectileSource shooter = projectile.getShooter();
+            return shooter instanceof LivingEntity living ? living : null;
         }
-        if (damager instanceof EvokerFangs fangs && fangs.getOwner() instanceof LivingEntity living) {
-            return living;
+        if (damager instanceof EvokerFangs fangs) {
+            return fangs.getOwner();
         }
         return null;
     }
 
     private static ItemStack itemInHand(Player player, EquipmentSlot hand) {
-        return hand == EquipmentSlot.OFF_HAND
-            ? player.getInventory().getItemInOffHand()
-            : player.getInventory().getItemInMainHand();
+        return hand == EquipmentSlot.HAND
+            ? player.getInventory().getItemInMainHand()
+            : player.getInventory().getItemInOffHand();
     }
 
-    private static void consume(Player player, EquipmentSlot hand, ItemStack source) {
-        if (player.getGameMode() == GameMode.CREATIVE || source == null) {
+    private static void consume(Player player, EquipmentSlot hand, ItemStack item) {
+        if (player.getGameMode() == GameMode.CREATIVE) {
             return;
         }
-        ItemStack held = itemInHand(player, hand);
-        if (held.getAmount() <= 1) {
-            if (hand == EquipmentSlot.OFF_HAND) {
-                player.getInventory().setItemInOffHand(new ItemStack(Material.AIR));
-            } else {
-                player.getInventory().setItemInMainHand(new ItemStack(Material.AIR));
-            }
+        int remaining = item.getAmount() - 1;
+        if (remaining > 0) {
+            item.setAmount(remaining);
+            return;
+        }
+        if (hand == EquipmentSlot.HAND) {
+            player.getInventory().setItemInMainHand(null);
         } else {
-            held.setAmount(held.getAmount() - 1);
+            player.getInventory().setItemInOffHand(null);
         }
     }
 }

@@ -27,7 +27,7 @@ class SanctuaryRecipeValidatorTest {
     }
 
     @Test
-    void consecratedShardWorksInPlayerTwoByTwoCraftingGrid() {
+    void consecratedShardRequiresCraftingTable() {
         var recipe = shaped(ExtendedItemIds.CONSECRATED_SHARD);
         ItemStack[] matrix = new ItemStack[4];
         for (int slot = 0; slot < matrix.length; slot++) {
@@ -36,34 +36,30 @@ class SanctuaryRecipeValidatorTest {
             );
         }
 
-        assertTrue(validator.matches(recipe, matrix));
+        assertFalse(validator.matches(recipe, matrix));
     }
 
     @Test
-    void consecratedShardUsesARealTwoByTwoPatternInCraftingTable() {
+    void consecratedShardUsesFullThreeByThreePatternInCraftingTable() {
         var recipe = shaped(ExtendedItemIds.CONSECRATED_SHARD);
         ItemStack[] matrix = new ItemStack[9];
-        for (int slot : new int[] {0, 1, 3, 4}) {
+        for (int slot = 0; slot < matrix.length; slot++) {
             matrix[slot] = ExtendedItems.create(
                 ExtendedItemIds.CONSECRATED_SHARD_FRAGMENT
             );
         }
         assertTrue(validator.matches(recipe, matrix));
 
-        ItemStack[] line = new ItemStack[9];
-        for (int slot = 0; slot < 4; slot++) {
-            line[slot] = ExtendedItems.create(
-                ExtendedItemIds.CONSECRATED_SHARD_FRAGMENT
-            );
-        }
-        assertFalse(validator.matches(recipe, line));
+        ItemStack[] missingOne = matrix.clone();
+        missingOne[8] = null;
+        assertFalse(validator.matches(recipe, missingOne));
     }
 
     @Test
     void vanillaAmethystShardsCannotImpersonateConsecratedFragments() {
         var recipe = shaped(ExtendedItemIds.CONSECRATED_SHARD);
         ItemStack[] valid = new ItemStack[9];
-        for (int slot : new int[] {0, 1, 3, 4}) {
+        for (int slot = 0; slot < valid.length; slot++) {
             valid[slot] = ExtendedItems.create(
                 ExtendedItemIds.CONSECRATED_SHARD_FRAGMENT
             );
@@ -71,7 +67,7 @@ class SanctuaryRecipeValidatorTest {
         assertTrue(validator.matches(recipe, valid));
 
         ItemStack[] vanilla = new ItemStack[9];
-        for (int slot : new int[] {0, 1, 3, 4}) {
+        for (int slot = 0; slot < vanilla.length; slot++) {
             vanilla[slot] = new ItemStack(Material.AMETHYST_SHARD);
         }
         assertFalse(validator.matches(recipe, vanilla));

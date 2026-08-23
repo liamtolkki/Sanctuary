@@ -34,6 +34,23 @@ public final class SentryCraftingItemService {
         };
     }
 
+    public boolean matchesSpecialIngredient(
+        ItemStack item,
+        SentryRecipeCatalog.SpecialIngredient ingredient
+    ) {
+        Objects.requireNonNull(ingredient, "ingredient");
+        if (item == null || item.getType().isAir()) {
+            return false;
+        }
+
+        return switch (ingredient) {
+            case OMINOUS_BOTTLE_V -> isOminousBottleV(item);
+            case CREEPER_TROPHY_HEAD,
+                 ZOMBIE_TROPHY_HEAD,
+                 PIGLIN_BRUTE_TROPHY_HEAD -> isTrophyHead(item, ingredient);
+        };
+    }
+
     public boolean isTrophyHead(
         ItemStack item,
         SentryRecipeCatalog.SpecialIngredient ingredient
@@ -62,6 +79,16 @@ public final class SentryCraftingItemService {
             PersistentDataType.STRING
         );
         return expected.equals(actual);
+    }
+
+    private boolean isOminousBottleV(ItemStack item) {
+        if (item.getType() != Material.OMINOUS_BOTTLE) {
+            return false;
+        }
+
+        ItemMeta rawMeta = item.getItemMeta();
+        return rawMeta instanceof OminousBottleMeta meta
+            && meta.getAmplifier() == 4;
     }
 
     private ItemStack createOminousBottleV() {

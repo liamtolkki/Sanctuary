@@ -61,6 +61,7 @@ public final class SentryTask implements Runnable {
         if (homeWorld == null || !homeWorld.isChunkLoaded(sentry.x() >> 4, sentry.z() >> 4)) return;
 
         if (sentry.state() == SentryState.DOWN) {
+            service.updateCooldownVisual(sentry, now);
             if (sentry.respawnAt().isPresent() && !now.isBefore(sentry.respawnAt().orElseThrow())) {
                 SentryDefinition definition = service.definition(sentry).orElse(null);
                 if (definition != null) service.spawn(sentry, definition, sanctuary, now);
@@ -68,6 +69,7 @@ public final class SentryTask implements Runnable {
             return;
         }
 
+        service.clearCooldownVisual(sentry);
         Entity entity = service.entity(sentry).orElse(null);
         if (!(entity instanceof Mob mob) || entity.isDead()) {
             if (sentry.state() != SentryState.DISABLED) service.markDown(sentry);
@@ -84,8 +86,9 @@ public final class SentryTask implements Runnable {
         if (sentry.state() == SentryState.DISABLED) return;
 
         if (sentry.state() == SentryState.RECALLING) {
-            double distance = loc.distance(service.home(sentry).clone().add(0, 1, 0));
+            double distance = loc.distance(service.postStandLocation(sentry));
             if (distance <= SentryService.HOME_REACHED_DISTANCE) {
+                service.teleportHome(sentry);
                 service.setDisabled(sentry, false);
                 return;
             }

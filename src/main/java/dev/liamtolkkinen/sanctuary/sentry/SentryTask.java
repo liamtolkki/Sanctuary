@@ -65,7 +65,6 @@ public final class SentryTask implements Runnable {
     private final Map<UUID, Instant> wardenLastMeleeAttack = new HashMap<>();
     private final Map<UUID, Instant> wardenSonicChargeStarted = new HashMap<>();
     private final Map<UUID, Instant> wardenSonicCooldownUntil = new HashMap<>();
-    private boolean runTriggerScan = true;
 
     public SentryTask(SentryService service, SentryRepository repository, SanctuaryRepository sanctuaryRepository, Logger logger) {
         this.service = service;
@@ -95,14 +94,11 @@ public final class SentryTask implements Runnable {
                     .add(sentry);
             }
 
+            scanTriggers(sanctuaries, sentriesBySanctuary);
+
             for (SentryRecord sentry : sentries) {
                 tickSentry(sentry, sanctuariesById.get(sentry.sanctuaryId()), now);
             }
-
-            if (runTriggerScan) {
-                scanTriggers(sanctuaries, sentriesBySanctuary);
-            }
-            runTriggerScan = !runTriggerScan;
         } catch (SQLException exception) {
             logger.log(Level.WARNING, "Failed sentry maintenance tick", exception);
         }

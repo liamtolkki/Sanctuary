@@ -1,16 +1,34 @@
 package dev.liamtolkkinen.sanctuary.sentry;
 
+import java.util.List;
 import java.util.Objects;
 import net.kyori.adventure.text.Component;
+import org.bukkit.DyeColor;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
+import org.bukkit.block.banner.Pattern;
+import org.bukkit.block.banner.PatternType;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.BannerMeta;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.inventory.meta.OminousBottleMeta;
+import org.bukkit.inventory.meta.PotionMeta;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.potion.PotionType;
 
 public final class SentryCraftingItemService {
+    private static final List<Pattern> OMINOUS_BANNER_PATTERNS = List.of(
+        new Pattern(DyeColor.CYAN, PatternType.RHOMBUS),
+        new Pattern(DyeColor.LIGHT_GRAY, PatternType.STRIPE_BOTTOM),
+        new Pattern(DyeColor.GRAY, PatternType.STRIPE_CENTER),
+        new Pattern(DyeColor.LIGHT_GRAY, PatternType.BORDER),
+        new Pattern(DyeColor.BLACK, PatternType.STRIPE_MIDDLE),
+        new Pattern(DyeColor.LIGHT_GRAY, PatternType.HALF_HORIZONTAL),
+        new Pattern(DyeColor.LIGHT_GRAY, PatternType.CIRCLE),
+        new Pattern(DyeColor.BLACK, PatternType.BORDER)
+    );
+
     private final NamespacedKey trophyTypeKey;
 
     public SentryCraftingItemService(JavaPlugin plugin) {
@@ -25,6 +43,8 @@ public final class SentryCraftingItemService {
 
         return switch (ingredient) {
             case OMINOUS_BOTTLE_V -> createOminousBottleV();
+            case OMINOUS_BANNER -> createOminousBanner();
+            case SPEED_II_POTION -> createSpeedIiPotion();
             case CREEPER_TROPHY_HEAD ->
                 createTrophyHead(Material.CREEPER_HEAD, "creeper", "Creeper Head");
             case ZOMBIE_TROPHY_HEAD ->
@@ -45,6 +65,8 @@ public final class SentryCraftingItemService {
 
         return switch (ingredient) {
             case OMINOUS_BOTTLE_V -> isOminousBottleV(item);
+            case OMINOUS_BANNER -> isOminousBanner(item);
+            case SPEED_II_POTION -> isSpeedIiPotion(item);
             case CREEPER_TROPHY_HEAD,
                  ZOMBIE_TROPHY_HEAD,
                  PIGLIN_BRUTE_TROPHY_HEAD -> isTrophyHead(item, ingredient);
@@ -63,7 +85,9 @@ public final class SentryCraftingItemService {
             case CREEPER_TROPHY_HEAD -> "creeper";
             case ZOMBIE_TROPHY_HEAD -> "zombie";
             case PIGLIN_BRUTE_TROPHY_HEAD -> "piglin_brute";
-            case OMINOUS_BOTTLE_V -> null;
+            case OMINOUS_BOTTLE_V,
+                 OMINOUS_BANNER,
+                 SPEED_II_POTION -> null;
         };
         if (expected == null) {
             return false;
@@ -91,6 +115,24 @@ public final class SentryCraftingItemService {
             && meta.getAmplifier() == 4;
     }
 
+    private boolean isOminousBanner(ItemStack item) {
+        if (item.getType() != Material.WHITE_BANNER) {
+            return false;
+        }
+        ItemMeta rawMeta = item.getItemMeta();
+        return rawMeta instanceof BannerMeta meta
+            && meta.getPatterns().equals(OMINOUS_BANNER_PATTERNS);
+    }
+
+    private boolean isSpeedIiPotion(ItemStack item) {
+        if (item.getType() != Material.POTION) {
+            return false;
+        }
+        ItemMeta rawMeta = item.getItemMeta();
+        return rawMeta instanceof PotionMeta meta
+            && meta.getBasePotionType() == PotionType.STRONG_SWIFTNESS;
+    }
+
     private ItemStack createOminousBottleV() {
         ItemStack item = new ItemStack(Material.OMINOUS_BOTTLE);
         ItemMeta rawMeta = item.getItemMeta();
@@ -99,6 +141,29 @@ public final class SentryCraftingItemService {
         }
 
         meta.setAmplifier(4);
+        item.setItemMeta(meta);
+        return item;
+    }
+
+    private ItemStack createOminousBanner() {
+        ItemStack item = new ItemStack(Material.WHITE_BANNER);
+        ItemMeta rawMeta = item.getItemMeta();
+        if (!(rawMeta instanceof BannerMeta meta)) {
+            throw new IllegalStateException("White Banner did not provide BannerMeta");
+        }
+        meta.setPatterns(OMINOUS_BANNER_PATTERNS);
+        meta.displayName(Component.text("Ominous Banner"));
+        item.setItemMeta(meta);
+        return item;
+    }
+
+    private ItemStack createSpeedIiPotion() {
+        ItemStack item = new ItemStack(Material.POTION);
+        ItemMeta rawMeta = item.getItemMeta();
+        if (!(rawMeta instanceof PotionMeta meta)) {
+            throw new IllegalStateException("Potion did not provide PotionMeta");
+        }
+        meta.setBasePotionType(PotionType.STRONG_SWIFTNESS);
         item.setItemMeta(meta);
         return item;
     }

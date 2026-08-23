@@ -3,16 +3,21 @@ package dev.liamtolkkinen.sanctuary.anchor;
 import dev.liamtolkkinen.sanctuary.sanctuary.Sanctuary;
 import dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryPosition;
 import java.sql.SQLException;
+import java.util.List;
 import java.util.Optional;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import org.bukkit.ChatColor;
 import org.bukkit.Location;
+import org.bukkit.Material;
+import org.bukkit.block.Block;
 import org.bukkit.block.TileState;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockBreakEvent;
+import org.bukkit.event.block.BlockExplodeEvent;
+import org.bukkit.event.entity.EntityExplodeEvent;
 import org.bukkit.inventory.ItemStack;
 
 public final class AnchorBreakListener implements Listener {
@@ -42,12 +47,7 @@ public final class AnchorBreakListener implements Listener {
         }
 
         AnchorMetadata metadata = metadataResult.orElseThrow();
-        SanctuaryPosition position = new SanctuaryPosition(
-            event.getBlock().getWorld().getName(),
-            event.getBlock().getX(),
-            event.getBlock().getY(),
-            event.getBlock().getZ()
-        );
+        SanctuaryPosition position = position(event.getBlock());
 
         try {
             if (!lifecycleService.hasRegisteredSanctuary(metadata.anchorId())) {
@@ -61,19 +61,11 @@ public final class AnchorBreakListener implements Listener {
                     "Destroyed orphaned Sanctuary Beacon "
                         + metadata.anchorId()
                         + " at "
-                        + position.world()
-                        + " "
-                        + position.x()
-                        + ","
-                        + position.y()
-                        + ","
-                        + position.z()
+                        + describe(position)
                 );
                 return;
             }
 
-            // Create the normal replacement before persistence changes so an item-creation
-            // failure cannot leave a regular Sanctuary inactive without its Beacon.
             ItemStack boundBeacon = anchorItemService.createBoundBeacon(metadata.nextGeneration());
             AnchorBreakResult result = lifecycleService.breakAnchor(
                 metadata,
@@ -120,5 +112,95 @@ public final class AnchorBreakListener implements Listener {
                 exception
             );
         }
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onEntityExplosion(EntityExplodeEvent event) {
+        handleExplosion(event.blockList());
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onBlockExplosion(BlockExplodeEvent event) {
+        handleExplosion(event.blockList());
+    }
+
+    private void handleExplosion(List<Block> affectedBlocks) {
+        for (Block block : List.copyOf(affectedBlocks)) {
+            if (!(block.getState() instanceof TileState tileState)) {
+                continue;
+            }
+
+            Optional<AnchorMetadata> metadataResult = anchorItemService.readBlockMetadata(tileState);
+            if (metadataResult.isEmpty()) {
+                continue;
+            }
+
+            AnchorMetadata metadata = metadataResult.orElseThrow();
+            SanctuaryPosition position = position(block);
+
+            try {
+                AnchorBreakResult result = lifecycleService.breakAnchorFromEnvironment(
+                    metadata,
+                    position
+                );
+
+                // Sanctuary owns the block removal and replacement drop. Leaving the Beacon in
+                // the vanilla explosion list would either duplicate the drop or lose its bound
+                // Sanctuary metadata.
+                affectedBlocks.remove(block);
+                block.setType(Material.AIR, false);
+
+                if (!result.deleted()) {
+                    ItemStack boundBeacon = anchorItemService.createBoundBeacon(result.sanctuary());
+                    block.getWorld().dropItemNaturally(
+                        block.getLocation().add(0.5, 0.5, 0.5),
+                        boundBeacon
+                    );
+                }
+
+                logger.info(
+                    "Sanctuary Beacon "
+                        + metadata.anchorId()
+                        + " was broken by an explosion at "
+                        + describe(position)
+                        + (result.deleted() ? " and its ephemeral Sanctuary was deleted." : "; Sanctuary is inactive.")
+                );
+            } catch (SQLException exception) {
+                // Fail closed. Keep the physical Beacon if persistence could not be updated so
+                // the world cannot drift away from the database state.
+                affectedBlocks.remove(block);
+                logger.log(
+                    Level.SEVERE,
+                    "Failed to deactivate exploded Sanctuary Beacon " + metadata.anchorId(),
+                    exception
+                );
+            } catch (AnchorPlacementException | IllegalStateException exception) {
+                affectedBlocks.remove(block);
+                logger.log(
+                    Level.WARNING,
+                    "Rejected exploded Sanctuary Beacon lifecycle for " + metadata.anchorId(),
+                    exception
+                );
+            }
+        }
+    }
+
+    private static SanctuaryPosition position(Block block) {
+        return new SanctuaryPosition(
+            block.getWorld().getName(),
+            block.getX(),
+            block.getY(),
+            block.getZ()
+        );
+    }
+
+    private static String describe(SanctuaryPosition position) {
+        return position.world()
+            + " "
+            + position.x()
+            + ","
+            + position.y()
+            + ","
+            + position.z();
     }
 }

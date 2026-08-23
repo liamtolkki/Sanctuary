@@ -74,6 +74,10 @@ class SanctuaryRecipeRegistrationTest {
 
         assertInstanceOf(RecipeChoice.MaterialChoice.class, choice);
         assertTrue(choice.test(new ItemStack(Material.BEACON)));
-        assertFalse(choice.test(ExtendedItems.create(ExtendedItemIds.SANCTUARY_BEACON)));
+
+        // MaterialChoice intentionally matches by vanilla material only. The
+        // SanctuaryRecipeValidator is responsible for rejecting ExtendedItems
+        // when a recipe slot explicitly requires a vanilla item.
+        assertTrue(choice.test(ExtendedItems.create(ExtendedItemIds.SANCTUARY_BEACON)));
     }
 }

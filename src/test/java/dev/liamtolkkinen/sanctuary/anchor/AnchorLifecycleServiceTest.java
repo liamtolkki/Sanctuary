@@ -238,7 +238,7 @@ class AnchorLifecycleServiceTest {
 
 
     @Test
-    void ephemeralDebugBeaconIsDeletedWhenBrokenAndDropsNoPersistentRecord() throws Exception {
+    void ephemeralDebugBeaconIsDestroyedWhenBrokenAndRetainsPersistentRecord() throws Exception {
         repository.values.clear();
         UUID debugOwner = DebugBeaconRegistrationService.syntheticOwnerId(anchorId);
         Sanctuary debug = new Sanctuary(
@@ -273,7 +273,15 @@ class AnchorLifecycleServiceTest {
         );
 
         assertTrue(result.deleted());
-        assertTrue(repository.findById(anchorId).isEmpty());
+        Sanctuary destroyed = repository.findById(anchorId).orElseThrow();
+        assertEquals(SanctuaryState.DESTROYED, destroyed.state());
+        assertTrue(destroyed.position().isEmpty());
+        assertTrue(destroyed.debugEphemeral());
+        assertEquals(Optional.of(NOW), destroyed.destroyedAt());
+        assertEquals(
+            Optional.of("DEBUG_BEACON_REMOVED"),
+            destroyed.destructionReason()
+        );
     }
 
     @Test

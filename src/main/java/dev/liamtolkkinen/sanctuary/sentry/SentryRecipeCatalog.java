@@ -2,7 +2,9 @@ package dev.liamtolkkinen.sanctuary.sentry;
 
 import dev.liamtolkkinen.extendeditems.ExtendedItemId;
 import dev.liamtolkkinen.extendeditems.ExtendedItemIds;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import org.bukkit.Material;
 
@@ -10,6 +12,8 @@ public final class SentryRecipeCatalog {
 
     public enum SpecialIngredient {
         OMINOUS_BOTTLE_V,
+        OMINOUS_BANNER,
+        SPEED_II_POTION,
         CREEPER_TROPHY_HEAD,
         ZOMBIE_TROPHY_HEAD,
         PIGLIN_BRUTE_TROPHY_HEAD
@@ -44,33 +48,41 @@ public final class SentryRecipeCatalog {
 
     public record Ingredient(
         Material material,
-        SpecialIngredient special,
-        int count
+        ExtendedItemId extendedItem,
+        SpecialIngredient special
     ) {
         public Ingredient {
-            if ((material == null) == (special == null)) {
+            int populated = (material == null ? 0 : 1)
+                + (extendedItem == null ? 0 : 1)
+                + (special == null ? 0 : 1);
+            if (populated != 1) {
                 throw new IllegalArgumentException(
-                    "Exactly one of material or special must be set"
+                    "Exactly one ingredient type must be set"
                 );
-            }
-            if (count < 1) {
-                throw new IllegalArgumentException("Ingredient count must be at least 1");
             }
         }
 
-        public static Ingredient material(Material material, int count) {
+        public static Ingredient material(Material material) {
             return new Ingredient(
                 Objects.requireNonNull(material, "material"),
                 null,
-                count
+                null
+            );
+        }
+
+        public static Ingredient extended(ExtendedItemId extendedItem) {
+            return new Ingredient(
+                null,
+                Objects.requireNonNull(extendedItem, "extendedItem"),
+                null
             );
         }
 
         public static Ingredient special(SpecialIngredient special) {
             return new Ingredient(
                 null,
-                Objects.requireNonNull(special, "special"),
-                1
+                null,
+                Objects.requireNonNull(special, "special")
             );
         }
     }
@@ -79,7 +91,8 @@ public final class SentryRecipeCatalog {
         String key,
         ExtendedItemId result,
         UnlockIngredient unlockIngredient,
-        List<Ingredient> ingredients
+        List<String> shape,
+        Map<Character, Ingredient> ingredients
     ) {
         public CompanionRecipe {
             if (key == null || key.isBlank()) {
@@ -87,18 +100,56 @@ public final class SentryRecipeCatalog {
             }
             Objects.requireNonNull(result, "result");
             Objects.requireNonNull(unlockIngredient, "unlockIngredient");
-            ingredients = List.copyOf(Objects.requireNonNull(ingredients, "ingredients"));
+            shape = List.copyOf(Objects.requireNonNull(shape, "shape"));
+            ingredients = Map.copyOf(Objects.requireNonNull(ingredients, "ingredients"));
 
-            int slots = ingredients.stream().mapToInt(Ingredient::count).sum();
-            if (slots < 1 || slots > 9) {
+            if (shape.size() != 3) {
                 throw new IllegalArgumentException(
-                    "Companion recipe must use between 1 and 9 crafting slots"
+                    "Companion recipe must have exactly three rows"
                 );
+            }
+            for (String row : shape) {
+                if (row == null || row.length() != 3) {
+                    throw new IllegalArgumentException(
+                        "Companion recipe rows must contain exactly three characters"
+                    );
+                }
+                for (int column = 0; column < row.length(); column++) {
+                    char symbol = row.charAt(column);
+                    if (symbol != ' ' && !ingredients.containsKey(symbol)) {
+                        throw new IllegalArgumentException(
+                            "Recipe shape references unmapped ingredient symbol '"
+                                + symbol + "'"
+                        );
+                    }
+                }
+            }
+
+            for (Character symbol : ingredients.keySet()) {
+                if (symbol == null || symbol == ' ') {
+                    throw new IllegalArgumentException(
+                        "Ingredient symbols must be non-space characters"
+                    );
+                }
+                boolean used = shape.stream().anyMatch(row -> row.indexOf(symbol) >= 0);
+                if (!used) {
+                    throw new IllegalArgumentException(
+                        "Ingredient symbol '" + symbol + "' is not used by the recipe shape"
+                    );
+                }
             }
         }
 
         public int slotCount() {
-            return ingredients.stream().mapToInt(Ingredient::count).sum();
+            return 9;
+        }
+
+        public Ingredient ingredientAt(int index) {
+            if (index < 0 || index >= 9) {
+                throw new IndexOutOfBoundsException("Companion recipe grid index: " + index);
+            }
+            char symbol = shape.get(index / 3).charAt(index % 3);
+            return symbol == ' ' ? null : ingredients.get(symbol);
         }
     }
 
@@ -118,102 +169,172 @@ public final class SentryRecipeCatalog {
         }
     }
 
+    private static final Ingredient S =
+        Ingredient.extended(ExtendedItemIds.CONSECRATED_SHARD);
+
     private static final List<CompanionRecipe> COMPANION_RECIPES = List.of(
         companion(
             "companion_iron_golem",
             ExtendedItemIds.COMPANION_IRON_GOLEM,
             UnlockIngredient.material(Material.CARVED_PUMPKIN),
-            Ingredient.material(Material.IRON_BLOCK, 7),
-            Ingredient.material(Material.CARVED_PUMPKIN, 1)
+            "SPS",
+            "III",
+            "SIS",
+            ingredients(
+                'S', S,
+                'P', Ingredient.material(Material.CARVED_PUMPKIN),
+                'I', Ingredient.material(Material.IRON_BLOCK)
+            )
         ),
         companion(
             "companion_pillager",
             ExtendedItemIds.COMPANION_PILLAGER,
-            UnlockIngredient.special(SpecialIngredient.OMINOUS_BOTTLE_V),
-            Ingredient.special(SpecialIngredient.OMINOUS_BOTTLE_V),
-            Ingredient.material(Material.EMERALD_BLOCK, 4),
-            Ingredient.material(Material.CROSSBOW, 4)
+            UnlockIngredient.special(SpecialIngredient.OMINOUS_BANNER),
+            "SSS",
+            "BCO",
+            "SSS",
+            ingredients(
+                'S', S,
+                'B', Ingredient.special(SpecialIngredient.OMINOUS_BANNER),
+                'C', Ingredient.material(Material.CROSSBOW),
+                'O', Ingredient.special(SpecialIngredient.OMINOUS_BOTTLE_V)
+            )
         ),
         companion(
             "companion_skeleton",
             ExtendedItemIds.COMPANION_SKELETON,
             UnlockIngredient.material(Material.SKELETON_SKULL),
-            Ingredient.material(Material.SKELETON_SKULL, 3),
-            Ingredient.material(Material.BONE_BLOCK, 3),
-            Ingredient.material(Material.ARROW, 3)
+            "SSS",
+            "BKA",
+            "SSS",
+            ingredients(
+                'S', S,
+                'B', Ingredient.material(Material.BOW),
+                'K', Ingredient.material(Material.SKELETON_SKULL),
+                'A', Ingredient.material(Material.ARROW)
+            )
         ),
         companion(
             "companion_piglin_brute",
             ExtendedItemIds.COMPANION_PIGLIN_BRUTE,
             UnlockIngredient.special(SpecialIngredient.PIGLIN_BRUTE_TROPHY_HEAD),
-            Ingredient.special(SpecialIngredient.PIGLIN_BRUTE_TROPHY_HEAD),
-            Ingredient.material(Material.GOLD_BLOCK, 4),
-            Ingredient.material(Material.NETHERITE_SCRAP, 4)
+            "SSS",
+            "GHA",
+            "NNN",
+            ingredients(
+                'S', S,
+                'G', Ingredient.material(Material.GOLD_BLOCK),
+                'H', Ingredient.special(SpecialIngredient.PIGLIN_BRUTE_TROPHY_HEAD),
+                'A', Ingredient.material(Material.GOLDEN_AXE),
+                'N', Ingredient.material(Material.NETHERITE_SCRAP)
+            )
         ),
         companion(
             "companion_evoker",
             ExtendedItemIds.COMPANION_EVOKER,
-            UnlockIngredient.material(Material.TOTEM_OF_UNDYING),
-            Ingredient.material(Material.TOTEM_OF_UNDYING, 8),
-            Ingredient.special(SpecialIngredient.OMINOUS_BOTTLE_V)
+            UnlockIngredient.special(SpecialIngredient.OMINOUS_BOTTLE_V),
+            "STS",
+            "TBT",
+            "STS",
+            ingredients(
+                'S', S,
+                'T', Ingredient.material(Material.TOTEM_OF_UNDYING),
+                'B', Ingredient.special(SpecialIngredient.OMINOUS_BOTTLE_V)
+            )
         ),
         companion(
             "companion_baby_zombie",
             ExtendedItemIds.COMPANION_BABY_ZOMBIE,
             UnlockIngredient.special(SpecialIngredient.ZOMBIE_TROPHY_HEAD),
-            Ingredient.special(SpecialIngredient.ZOMBIE_TROPHY_HEAD),
-            Ingredient.material(Material.NETHERITE_HELMET, 1),
-            Ingredient.material(Material.NETHERITE_CHESTPLATE, 1),
-            Ingredient.material(Material.NETHERITE_LEGGINGS, 1),
-            Ingredient.material(Material.NETHERITE_BOOTS, 1),
-            Ingredient.material(Material.NETHERITE_SWORD, 1),
-            Ingredient.material(Material.ROTTEN_FLESH, 3)
+            "SPS",
+            "HZW",
+            "SSS",
+            ingredients(
+                'S', S,
+                'P', Ingredient.special(SpecialIngredient.SPEED_II_POTION),
+                'H', Ingredient.material(Material.NETHERITE_HELMET),
+                'Z', Ingredient.special(SpecialIngredient.ZOMBIE_TROPHY_HEAD),
+                'W', Ingredient.material(Material.NETHERITE_SWORD)
+            )
         ),
         companion(
             "companion_blaze",
             ExtendedItemIds.COMPANION_BLAZE,
-            UnlockIngredient.material(Material.GHAST_TEAR),
-            Ingredient.material(Material.BLAZE_ROD, 4),
-            Ingredient.material(Material.MAGMA_CREAM, 4),
-            Ingredient.material(Material.GHAST_TEAR, 1)
+            UnlockIngredient.material(Material.BLAZE_ROD),
+            "RRR",
+            "RSR",
+            "RRR",
+            ingredients(
+                'R', Ingredient.material(Material.BLAZE_ROD),
+                'S', S
+            )
         ),
         companion(
             "companion_creeper",
             ExtendedItemIds.COMPANION_CREEPER,
             UnlockIngredient.special(SpecialIngredient.CREEPER_TROPHY_HEAD),
-            Ingredient.special(SpecialIngredient.CREEPER_TROPHY_HEAD),
-            Ingredient.material(Material.TNT, 4),
-            Ingredient.material(Material.GUNPOWDER, 4)
+            "SSS",
+            "THT",
+            "SSS",
+            ingredients(
+                'S', S,
+                'T', Ingredient.material(Material.TNT),
+                'H', Ingredient.special(SpecialIngredient.CREEPER_TROPHY_HEAD)
+            )
         ),
         companion(
             "companion_wither",
             ExtendedItemIds.COMPANION_WITHER,
-            UnlockIngredient.material(Material.NETHER_STAR),
-            Ingredient.material(Material.WITHER_SKELETON_SKULL, 4),
-            Ingredient.material(Material.WITHER_ROSE, 4),
-            Ingredient.material(Material.NETHER_STAR, 1)
+            UnlockIngredient.material(Material.WITHER_SKELETON_SKULL),
+            "KKK",
+            "CDC",
+            "SSS",
+            ingredients(
+                'K', Ingredient.material(Material.WITHER_SKELETON_SKULL),
+                'C', Ingredient.extended(ExtendedItemIds.SANCTUARY_CORE),
+                'D', Ingredient.extended(ExtendedItemIds.DIVINE_RELIC),
+                'S', S
+            )
         ),
         companion(
             "companion_drowned",
             ExtendedItemIds.COMPANION_DROWNED,
             UnlockIngredient.material(Material.TRIDENT),
-            Ingredient.material(Material.TRIDENT, 2),
-            Ingredient.special(SpecialIngredient.ZOMBIE_TROPHY_HEAD),
-            Ingredient.material(Material.ROTTEN_FLESH, 6)
+            "SSS",
+            "HZT",
+            "SSS",
+            ingredients(
+                'S', S,
+                'H', Ingredient.material(Material.NETHERITE_HELMET),
+                'Z', Ingredient.special(SpecialIngredient.ZOMBIE_TROPHY_HEAD),
+                'T', Ingredient.material(Material.TRIDENT)
+            )
         ),
         companion(
             "companion_guardian",
             ExtendedItemIds.COMPANION_GUARDIAN,
             UnlockIngredient.material(Material.HEART_OF_THE_SEA),
-            Ingredient.material(Material.HEART_OF_THE_SEA, 1),
-            Ingredient.material(Material.SPONGE, 8)
+            "SPS",
+            "PHP",
+            "SPS",
+            ingredients(
+                'S', S,
+                'P', Ingredient.material(Material.SPONGE),
+                'H', Ingredient.material(Material.HEART_OF_THE_SEA)
+            )
         ),
         companion(
             "companion_elder_guardian",
             ExtendedItemIds.COMPANION_ELDER_GUARDIAN,
             UnlockIngredient.material(Material.CONDUIT),
-            Ingredient.material(Material.CONDUIT, 1),
-            Ingredient.material(Material.SPONGE, 8)
+            "SSS",
+            "CHC",
+            "SSS",
+            ingredients(
+                'S', S,
+                'C', Ingredient.material(Material.CONDUIT),
+                'H', Ingredient.material(Material.HEART_OF_THE_SEA)
+            )
         )
     );
 
@@ -319,13 +440,17 @@ public final class SentryRecipeCatalog {
         String key,
         ExtendedItemId result,
         UnlockIngredient unlockIngredient,
-        Ingredient... ingredients
+        String top,
+        String middle,
+        String bottom,
+        Map<Character, Ingredient> ingredients
     ) {
         return new CompanionRecipe(
             key,
             result,
             unlockIngredient,
-            List.of(ingredients)
+            List.of(top, middle, bottom),
+            ingredients
         );
     }
 
@@ -336,5 +461,24 @@ public final class SentryRecipeCatalog {
         Material postMaterial
     ) {
         return new SentryConversion(key, companion, sentry, postMaterial);
+    }
+
+    private static Map<Character, Ingredient> ingredients(Object... values) {
+        if (values.length % 2 != 0) {
+            throw new IllegalArgumentException(
+                "Ingredient map values must be symbol/value pairs"
+            );
+        }
+        Map<Character, Ingredient> result = new LinkedHashMap<>();
+        for (int index = 0; index < values.length; index += 2) {
+            Character symbol = (Character) values[index];
+            Ingredient ingredient = (Ingredient) values[index + 1];
+            if (result.put(symbol, ingredient) != null) {
+                throw new IllegalArgumentException(
+                    "Duplicate ingredient symbol '" + symbol + "'"
+                );
+            }
+        }
+        return result;
     }
 }

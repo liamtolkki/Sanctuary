@@ -4,11 +4,7 @@ import dev.liamtolkkinen.sanctuary.sanctuary.Sanctuary;
 import dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryPosition;
 import dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryRepository;
 import dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryState;
-import java.lang.reflect.Field;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
 import java.sql.SQLException;
-import java.util.Arrays;
 import java.util.Objects;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -17,31 +13,35 @@ import org.bukkit.Color;
 import org.bukkit.Material;
 import org.bukkit.Particle;
 import org.bukkit.World;
-import org.bukkit.block.Beacon;
 import org.bukkit.block.Block;
-import org.bukkit.block.BlockState;
 import org.bukkit.plugin.java.JavaPlugin;
 
 /**
- * Keeps active Sanctuary cores visually powered without requiring a vanilla Beacon pyramid.
+ * Adds a restrained particle treatment around active Sanctuary cores.
  *
- * <p>The particle aura is Sanctuary-specific. The actual Beacon beam is forced by setting the
- * live Paper Beacon block entity to level 1 and notifying Paper that the block entity changed.
- * Reflection keeps the plugin compiled against the public Paper API instead of server-internal
- * classes.</p>
+ * <p>The vanilla Beacon beam is left entirely to vanilla mechanics, so a normal Beacon base can
+ * provide the beam without any server-internal state manipulation.</p>
  */
 public final class AnchorBeamTask implements Runnable {
-    private static final Particle.DustOptions CORE_BEAM =
-        new Particle.DustOptions(Color.fromRGB(116, 228, 255), 1.35f);
-    private static final Particle.DustOptions OUTER_BEAM =
-        new Particle.DustOptions(Color.fromRGB(230, 249, 255), 1.8f);
-    private static final double VERTICAL_STEP = 1.25;
-    private static final long UPDATE_PERIOD_TICKS = 5L;
-    private static final int FORCED_BEACON_LEVEL = 1;
+    private static final Particle.DustOptions CORE_GLOW =
+        new Particle.DustOptions(Color.fromRGB(116, 228, 255), 1.15f);
+    private static final Particle.DustOptions BASE_GLOW =
+        new Particle.DustOptions(Color.fromRGB(210, 246, 255), 0.9f);
+    private static final long UPDATE_PERIOD_TICKS = 10L;
+
+    private static final double[][] BASE_POINTS = {
+        {-1.0, -1.0},
+        {-1.0, 0.0},
+        {-1.0, 1.0},
+        {0.0, -1.0},
+        {0.0, 1.0},
+        {1.0, -1.0},
+        {1.0, 0.0},
+        {1.0, 1.0}
+    };
 
     private final SanctuaryRepository repository;
     private final Logger logger;
-    private boolean vanillaBeamReflectionWarningLogged;
 
     public AnchorBeamTask(SanctuaryRepository repository, Logger logger) {
         this.repository = Objects.requireNonNull(repository, "repository");
@@ -62,7 +62,7 @@ public final class AnchorBeamTask implements Runnable {
                 renderCore(sanctuary.position().orElseThrow());
             }
         } catch (SQLException exception) {
-            logger.log(Level.WARNING, "Failed Sanctuary Beacon beam tick", exception);
+            logger.log(Level.WARNING, "Failed Sanctuary Beacon particle tick", exception);
         }
     }
 
@@ -77,146 +77,67 @@ public final class AnchorBeamTask implements Runnable {
             return;
         }
 
-        forceVanillaBeaconBeam(block);
-        renderParticleAura(world, position);
-    }
-
-    private void renderParticleAura(World world, SanctuaryPosition position) {
-        double x = position.x() + 0.5;
-        double z = position.z() + 0.5;
-        double baseY = position.y() + 1.05;
+        double centerX = position.x() + 0.5;
+        double centerZ = position.z() + 0.5;
+        double baseY = position.y();
 
         world.spawnParticle(
             Particle.END_ROD,
-            x,
-            baseY + 0.15,
-            z,
-            5,
-            0.14,
-            0.18,
-            0.14,
-            0.005,
+            centerX,
+            baseY + 1.15,
+            centerZ,
+            2,
+            0.12,
+            0.12,
+            0.12,
+            0.003,
             null,
             true
         );
+        world.spawnParticle(
+            Particle.DUST,
+            centerX,
+            baseY + 1.08,
+            centerZ,
+            3,
+            0.18,
+            0.08,
+            0.18,
+            0.0,
+            CORE_GLOW,
+            true
+        );
 
-        for (double y = baseY; y < world.getMaxHeight(); y += VERTICAL_STEP) {
+        for (double[] point : BASE_POINTS) {
+            double x = centerX + point[0];
+            double z = centerZ + point[1];
             world.spawnParticle(
                 Particle.DUST,
                 x,
-                y,
-                z,
-                2,
-                0.05,
-                0.22,
-                0.05,
-                0.0,
-                CORE_BEAM,
-                true
-            );
-            world.spawnParticle(
-                Particle.DUST,
-                x,
-                y,
+                baseY - 0.02,
                 z,
                 1,
-                0.12,
-                0.28,
-                0.12,
+                0.06,
+                0.03,
+                0.06,
                 0.0,
-                OUTER_BEAM,
+                BASE_GLOW,
                 true
             );
         }
-    }
 
-    private void forceVanillaBeaconBeam(Block block) {
-        BlockState state = block.getState();
-        if (!(state instanceof Beacon)) {
-            return;
-        }
-
-        try {
-            Method getBlockEntity = state.getClass().getMethod("getBlockEntity");
-            Object blockEntity = getBlockEntity.invoke(state);
-            if (blockEntity == null) {
-                return;
-            }
-
-            Field levels = findField(blockEntity.getClass(), "levels");
-            if (levels.getInt(blockEntity) != FORCED_BEACON_LEVEL) {
-                levels.setInt(blockEntity, FORCED_BEACON_LEVEL);
-            }
-
-            Method setChanged = findZeroArgumentMethod(blockEntity.getClass(), "setChanged");
-            setChanged.invoke(blockEntity);
-
-            Method getBlockPos = findZeroArgumentMethod(blockEntity.getClass(), "getBlockPos");
-            Object blockPos = getBlockPos.invoke(blockEntity);
-            Method getLevel = findZeroArgumentMethod(blockEntity.getClass(), "getLevel");
-            Object level = getLevel.invoke(blockEntity);
-            if (level == null || blockPos == null) {
-                return;
-            }
-
-            Method getChunkSource = findZeroArgumentMethod(level.getClass(), "getChunkSource");
-            Object chunkSource = getChunkSource.invoke(level);
-            if (chunkSource == null) {
-                return;
-            }
-
-            Method blockChanged = Arrays.stream(chunkSource.getClass().getMethods())
-                .filter(method -> method.getName().equals("blockChanged"))
-                .filter(method -> method.getParameterCount() == 1)
-                .filter(method -> method.getParameterTypes()[0].isAssignableFrom(blockPos.getClass()))
-                .findFirst()
-                .orElseThrow(() -> new NoSuchMethodException("blockChanged(BlockPos)"));
-            blockChanged.invoke(chunkSource, blockPos);
-        } catch (ReflectiveOperationException | RuntimeException exception) {
-            logVanillaBeamReflectionWarning(exception);
-        }
-    }
-
-    private static Field findField(Class<?> type, String name) throws NoSuchFieldException {
-        Class<?> current = type;
-        while (current != null) {
-            try {
-                Field field = current.getDeclaredField(name);
-                field.setAccessible(true);
-                return field;
-            } catch (NoSuchFieldException ignored) {
-                current = current.getSuperclass();
-            }
-        }
-        throw new NoSuchFieldException(name);
-    }
-
-    private static Method findZeroArgumentMethod(Class<?> type, String name) throws NoSuchMethodException {
-        Class<?> current = type;
-        while (current != null) {
-            try {
-                Method method = current.getDeclaredMethod(name);
-                method.setAccessible(true);
-                return method;
-            } catch (NoSuchMethodException ignored) {
-                current = current.getSuperclass();
-            }
-        }
-        throw new NoSuchMethodException(name + "()");
-    }
-
-    private void logVanillaBeamReflectionWarning(Exception exception) {
-        if (vanillaBeamReflectionWarningLogged) {
-            return;
-        }
-        vanillaBeamReflectionWarningLogged = true;
-        Throwable cause = exception instanceof InvocationTargetException && exception.getCause() != null
-            ? exception.getCause()
-            : exception;
-        logger.log(
-            Level.WARNING,
-            "Could not force the vanilla Sanctuary Beacon beam. The particle core effect will continue.",
-            cause
+        world.spawnParticle(
+            Particle.ENCHANTED_HIT,
+            centerX,
+            baseY + 0.2,
+            centerZ,
+            3,
+            1.05,
+            0.06,
+            1.05,
+            0.0,
+            null,
+            true
         );
     }
 }

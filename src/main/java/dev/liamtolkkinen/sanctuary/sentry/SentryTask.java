@@ -7,6 +7,7 @@ import dev.liamtolkkinen.sanctuary.territory.TerritoryCalculator;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -60,7 +61,7 @@ public final class SentryTask implements Runnable {
     private final SentryRepository repository;
     private final SanctuaryRepository sanctuaryRepository;
     private final Logger logger;
-    private final Set<String> mobPresence = new HashSet<>();
+    private final Set<String> playerPresence = new HashSet<>();
     private final Map<UUID, Instant> wardenLastMeleeAttack = new HashMap<>();
     private final Map<UUID, Instant> wardenSonicChargeStarted = new HashMap<>();
     private final Map<UUID, Instant> wardenSonicCooldownUntil = new HashMap<>();
@@ -84,8 +85,14 @@ public final class SentryTask implements Runnable {
             List<SentryRecord> sentries = repository.findAll();
             List<Sanctuary> sanctuaries = sanctuaryRepository.findAll();
             Map<UUID, Sanctuary> sanctuariesById = new HashMap<>();
+            Map<UUID, List<SentryRecord>> sentriesBySanctuary = new HashMap<>();
             for (Sanctuary sanctuary : sanctuaries) {
                 sanctuariesById.put(sanctuary.id(), sanctuary);
+            }
+            for (SentryRecord sentry : sentries) {
+                sentriesBySanctuary
+                    .computeIfAbsent(sentry.sanctuaryId(), ignored -> new ArrayList<>())
+                    .add(sentry);
             }
 
             for (SentryRecord sentry : sentries) {
@@ -93,7 +100,7 @@ public final class SentryTask implements Runnable {
             }
 
             if (runTriggerScan) {
-                scanTriggers(sanctuaries);
+                scanTriggers(sanctuaries, sentriesBySanctuary);
             }
             runTriggerScan = !runTriggerScan;
         } catch (SQLException exception) {
@@ -338,8 +345,11 @@ public final class SentryTask implements Runnable {
         wardenSonicCooldownUntil.remove(sentryId);
     }
 
-    private void scanTriggers(List<Sanctuary> sanctuaries) throws SQLException {
-        Set<String> current = new HashSet<>();
+    private void scanTriggers(
+        List<Sanctuary> sanctuaries,
+        Map<UUID, List<SentryRecord>> sentriesBySanctuary
+    ) throws SQLException {
+        Set<String> currentPlayers = new HashSet<>();
         for (Sanctuary sanctuary : sanctuaries) {
             if (sanctuary.position().isEmpty() || sanctuary.state() != SanctuaryState.ACTIVE) continue;
             var world = Bukkit.getWorld(sanctuary.position().orElseThrow().world());
@@ -354,6 +364,8 @@ public final class SentryTask implements Runnable {
                 centerY,
                 sanctuary.position().orElseThrow().z() + 0.5
             );
+            List<LivingEntity> hostileMobs = new ArrayList<>();
+            List<LivingEntity> neutralMobs = new ArrayList<>();
 
             for (Entity entity : world.getNearbyEntities(
                 scanCenter,
@@ -372,12 +384,10 @@ public final class SentryTask implements Runnable {
                     sanctuary.position().orElseThrow(), sanctuary.territoryRadius(), world.getName(),
                     location.getX(), location.getZ())) continue;
 
-                String key = sanctuary.id() + ":" + entity.getUniqueId();
-                current.add(key);
-                boolean entered = !mobPresence.contains(key);
-
                 if (entity instanceof Player player) {
-                    if (entered) {
+                    String key = sanctuary.id() + ":" + player.getUniqueId();
+                    currentPlayers.add(key);
+                    if (!playerPresence.contains(key)) {
                         service.trigger(sanctuary, SentryTrigger.UNAUTHORIZED_PLAYER_ENTERED, player);
                     }
                     double dx = location.getX() - (sanctuary.position().orElseThrow().x() + 0.5);
@@ -388,18 +398,107 @@ public final class SentryTask implements Runnable {
                     continue;
                 }
 
-                if (!entered) {
-                    continue;
-                }
                 if (NEUTRAL_TYPES.contains(entity.getType())) {
-                    service.trigger(sanctuary, SentryTrigger.NEUTRAL_MOB_ENTERED, living);
-                } else if (entity instanceof Enemy) {
-                    service.trigger(sanctuary, SentryTrigger.HOSTILE_MOB_ENTERED, living);
+                    neutralMobs.add(living);
+                } else if (isHostileMob(entity)) {
+                    hostileMobs.add(living);
                 }
             }
+
+            engagePresentMobs(
+                sanctuary,
+                sentriesBySanctuary.getOrDefault(sanctuary.id(), List.of()),
+                hostileMobs,
+                neutralMobs
+            );
         }
-        mobPresence.clear();
-        mobPresence.addAll(current);
+        playerPresence.clear();
+        playerPresence.addAll(currentPlayers);
+    }
+
+    private void engagePresentMobs(
+        Sanctuary sanctuary,
+        List<SentryRecord> sentries,
+        List<LivingEntity> hostileMobs,
+        List<LivingEntity> neutralMobs
+    ) throws SQLException {
+        if (hostileMobs.isEmpty() && neutralMobs.isEmpty()) {
+            return;
+        }
+
+        for (SentryRecord sentry : sentries) {
+            if (sentry.state() != SentryState.ACTIVE) {
+                continue;
+            }
+            SentryDefinition definition = service.definition(sentry).orElse(null);
+            Mob mob = service.entity(sentry)
+                .filter(Mob.class::isInstance)
+                .map(Mob.class::cast)
+                .filter(entity -> !entity.isDead())
+                .orElse(null);
+            if (definition == null || mob == null) {
+                continue;
+            }
+
+            LivingEntity currentTarget = service.authorizedTarget(sentry).orElse(null);
+            if (currentTarget != null
+                && service.validTarget(sanctuary, sentry, definition, currentTarget)) {
+                continue;
+            }
+
+            boolean hostileEnabled = !hostileMobs.isEmpty()
+                && service.effective(sentry, SentryTrigger.HOSTILE_MOB_ENTERED);
+            boolean neutralEnabled = !neutralMobs.isEmpty()
+                && service.effective(sentry, SentryTrigger.NEUTRAL_MOB_ENTERED);
+            if (!hostileEnabled && !neutralEnabled) {
+                continue;
+            }
+
+            LivingEntity target = null;
+            double bestDistanceSquared = Double.POSITIVE_INFINITY;
+            Location home = service.home(sentry);
+
+            if (hostileEnabled) {
+                for (LivingEntity candidate : hostileMobs) {
+                    if (!service.validTarget(sanctuary, sentry, definition, candidate)) {
+                        continue;
+                    }
+                    double distanceSquared = horizontalDistanceSquared(home, candidate.getLocation());
+                    if (distanceSquared < bestDistanceSquared) {
+                        target = candidate;
+                        bestDistanceSquared = distanceSquared;
+                    }
+                }
+            }
+            if (neutralEnabled) {
+                for (LivingEntity candidate : neutralMobs) {
+                    if (!service.validTarget(sanctuary, sentry, definition, candidate)) {
+                        continue;
+                    }
+                    double distanceSquared = horizontalDistanceSquared(home, candidate.getLocation());
+                    if (distanceSquared < bestDistanceSquared) {
+                        target = candidate;
+                        bestDistanceSquared = distanceSquared;
+                    }
+                }
+            }
+
+            if (target != null) {
+                service.authorizeAndEngage(sanctuary, sentry, definition, mob, target);
+            }
+        }
+    }
+
+    private static boolean isHostileMob(Entity entity) {
+        return entity instanceof Enemy
+            || entity.getType() == EntityType.SLIME
+            || entity.getType() == EntityType.MAGMA_CUBE;
+    }
+
+    private static double horizontalDistanceSquared(Location first, Location second) {
+        double dx = first.getX() - second.getX();
+        double dz = first.getZ() - second.getZ();
+        return dx * dx + dz * dz;
     }
 
     private static boolean isPlayerCompanion(Entity entity) {

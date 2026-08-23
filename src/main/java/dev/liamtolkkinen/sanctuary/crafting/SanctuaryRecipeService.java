@@ -9,14 +9,15 @@ import java.util.Objects;
 import org.bukkit.Keyed;
 import org.bukkit.NamespacedKey;
 import org.bukkit.block.Crafter;
-import org.bukkit.enchantments.Enchantment;
+import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.CrafterCraftEvent;
 import org.bukkit.event.inventory.CraftItemEvent;
 import org.bukkit.event.inventory.PrepareItemCraftEvent;
-import org.bukkit.inventory.ItemFlag;
+import org.bukkit.event.player.PlayerJoinEvent;
+import org.bukkit.event.player.PlayerRecipeDiscoverEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.Recipe;
 import org.bukkit.inventory.RecipeChoice;
@@ -44,12 +45,17 @@ public final class SanctuaryRecipeService implements Listener {
         for (var definition : SanctuaryRecipeCatalog.shapedRecipes()) {
             registerShaped(definition);
         }
+
         plugin.getServer().getPluginManager().registerEvents(this, plugin);
         plugin.getServer().getPluginManager().registerEvents(
             new SanctuaryItemUsageGuard(plugin),
             plugin
         );
         SanctuaryProgressionDebugCommand.register(plugin);
+
+        for (Player player : plugin.getServer().getOnlinePlayers()) {
+            hideProgressionRecipes(player);
+        }
     }
 
     @EventHandler(priority = EventPriority.HIGHEST)
@@ -107,6 +113,21 @@ public final class SanctuaryRecipeService implements Listener {
         event.setResult(createResult(definition));
     }
 
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onRecipeDiscover(PlayerRecipeDiscoverEvent event) {
+        if (recipesByKey.containsKey(event.getRecipe())) {
+            event.setCancelled(true);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onPlayerJoin(PlayerJoinEvent event) {
+        plugin.getServer().getScheduler().runTask(
+            plugin,
+            () -> hideProgressionRecipes(event.getPlayer())
+        );
+    }
+
     private void registerShaped(SanctuaryRecipeCatalog.ShapedRecipeDefinition definition) {
         NamespacedKey key = new NamespacedKey(plugin, definition.key());
         ShapedRecipe recipe = new ShapedRecipe(key, createResult(definition));
@@ -142,16 +163,11 @@ public final class SanctuaryRecipeService implements Listener {
         if (definition.result().equals(ExtendedItemIds.SANCTUARY_BEACON)) {
             return anchorItemService.createUnboundBeacon();
         }
+        return ExtendedItems.create(definition.result());
+    }
 
-        ItemStack result = ExtendedItems.create(definition.result());
-        if (definition.result().equals(ExtendedItemIds.SEAL_OF_KEEPING)) {
-            result.editMeta(meta -> {
-                meta.setEnchantmentGlintOverride(true);
-                meta.addEnchant(Enchantment.UNBREAKING, 1, true);
-                meta.addItemFlags(ItemFlag.HIDE_ENCHANTS);
-            });
-        }
-        return result;
+    private void hideProgressionRecipes(Player player) {
+        player.undiscoverRecipes(recipesByKey.keySet());
     }
 
     private void replaceRecipe(

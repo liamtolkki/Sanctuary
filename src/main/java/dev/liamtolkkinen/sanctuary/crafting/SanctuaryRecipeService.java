@@ -24,7 +24,11 @@ import org.bukkit.inventory.RecipeChoice;
 import org.bukkit.inventory.ShapedRecipe;
 import org.bukkit.plugin.java.JavaPlugin;
 
-/** Registers only the bootstrap Divine Altar recipe. All other progression crafting lives in the altar UI. */
+/**
+ * Registers only the two bootstrap recipes needed before a Divine Altar exists:
+ * fragments -> Consecrated Shard, and Divine Altar. All later progression crafting
+ * lives exclusively in Sacred Arts. Bootstrap recipes are kept out of the recipe book.
+ */
 public final class SanctuaryRecipeService implements Listener {
     private final JavaPlugin plugin;
     private final SanctuaryRecipeValidator validator = new SanctuaryRecipeValidator();
@@ -46,11 +50,8 @@ public final class SanctuaryRecipeService implements Listener {
             plugin.getServer().removeRecipe(key);
         }
 
-        var altar = SanctuaryRecipeCatalog.findByResult(ExtendedItemIds.DIVINE_ALTAR)
-            .filter(SanctuaryRecipeCatalog.ShapedRecipeDefinition.class::isInstance)
-            .map(SanctuaryRecipeCatalog.ShapedRecipeDefinition.class::cast)
-            .orElseThrow(() -> new IllegalStateException("Divine Altar recipe is missing from the catalog"));
-        registerShaped(altar);
+        registerBootstrapRecipe(ExtendedItemIds.CONSECRATED_SHARD);
+        registerBootstrapRecipe(ExtendedItemIds.DIVINE_ALTAR);
 
         plugin.getServer().getPluginManager().registerEvents(this, plugin);
         plugin.getServer().getPluginManager().registerEvents(
@@ -63,6 +64,16 @@ public final class SanctuaryRecipeService implements Listener {
         for (Player player : plugin.getServer().getOnlinePlayers()) {
             hideProgressionRecipes(player);
         }
+    }
+
+    private void registerBootstrapRecipe(dev.liamtolkkinen.extendeditems.ExtendedItemId result) {
+        var definition = SanctuaryRecipeCatalog.findByResult(result)
+            .filter(SanctuaryRecipeCatalog.ShapedRecipeDefinition.class::isInstance)
+            .map(SanctuaryRecipeCatalog.ShapedRecipeDefinition.class::cast)
+            .orElseThrow(() -> new IllegalStateException(
+                "Bootstrap recipe is missing from the catalog: " + result.persistentId()
+            ));
+        registerShaped(definition);
     }
 
     @EventHandler(priority = EventPriority.HIGHEST)

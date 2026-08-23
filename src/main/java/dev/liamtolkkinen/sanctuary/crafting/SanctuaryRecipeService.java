@@ -2,15 +2,10 @@ package dev.liamtolkkinen.sanctuary.crafting;
 
 import dev.liamtolkkinen.extendeditems.ExtendedItemIds;
 import dev.liamtolkkinen.extendeditems.ExtendedItems;
-import dev.liamtolkkinen.sanctuary.anchor.AnchorItemService;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import org.bukkit.ChatColor;
 import org.bukkit.Keyed;
-import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
 import org.bukkit.block.Crafter;
 import org.bukkit.entity.Player;
@@ -21,36 +16,32 @@ import org.bukkit.event.block.CrafterCraftEvent;
 import org.bukkit.event.inventory.CraftItemEvent;
 import org.bukkit.event.inventory.PrepareItemCraftEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
-import org.bukkit.event.player.PlayerRecipeBookClickEvent;
-import org.bukkit.inventory.CraftingInventory;
 import org.bukkit.inventory.ItemStack;
-import org.bukkit.inventory.PlayerInventory;
 import org.bukkit.inventory.Recipe;
 import org.bukkit.inventory.RecipeChoice;
 import org.bukkit.inventory.ShapedRecipe;
-import org.bukkit.inventory.ShapelessRecipe;
 import org.bukkit.plugin.java.JavaPlugin;
 
+/** Registers only the bootstrap Divine Altar recipe. All other progression crafting lives in the altar UI. */
 public final class SanctuaryRecipeService implements Listener {
     private final JavaPlugin plugin;
-    private final AnchorItemService anchorItemService;
     private final SanctuaryRecipeValidator validator = new SanctuaryRecipeValidator();
     private final Map<NamespacedKey, SanctuaryRecipeCatalog.RecipeDefinition> recipesByKey =
         new LinkedHashMap<>();
+    private NamespacedKey altarRecipeKey;
 
     public SanctuaryRecipeService(JavaPlugin plugin) {
         this.plugin = Objects.requireNonNull(plugin, "plugin");
-        this.anchorItemService = new AnchorItemService(plugin);
     }
 
     public void registerAll() {
         recipesByKey.clear();
-        for (var definition : SanctuaryRecipeCatalog.shapelessRecipes()) {
-            registerShapeless(definition);
-        }
-        for (var definition : SanctuaryRecipeCatalog.shapedRecipes()) {
-            registerShaped(definition);
-        }
+        var altar = SanctuaryRecipeCatalog.findByResult(ExtendedItemIds.DIVINE_ALTAR)
+            .filter(SanctuaryRecipeCatalog.ShapedRecipeDefinition.class::isInstance)
+            .map(SanctuaryRecipeCatalog.ShapedRecipeDefinition.class::cast)
+            .orElseThrow(() -> new IllegalStateException("Divine Altar recipe is missing from the catalog"));
+        registerShaped(altar);
+        altarRecipeKey = new NamespacedKey(plugin, altar.key());
 
         plugin.getServer().getPluginManager().registerEvents(this, plugin);
         plugin.getServer().getPluginManager().registerEvents(
@@ -58,9 +49,10 @@ public final class SanctuaryRecipeService implements Listener {
             plugin
         );
         SanctuaryProgressionDebugCommand.register(plugin);
+        SanctuaryRelicDebugCommand.register(plugin);
 
         for (Player player : plugin.getServer().getOnlinePlayers()) {
-            showProgressionRecipes(player);
+            hideAltarRecipe(player);
         }
     }
 
@@ -88,17 +80,10 @@ public final class SanctuaryRecipeService implements Listener {
             event.setCurrentItem(null);
             return;
         }
-
-        if (definition.result().equals(ExtendedItemIds.SANCTUARY_BEACON)
-            && event.isShiftClick()) {
-            event.setCancelled(true);
-            event.getWhoClicked().sendMessage(
-                "Craft Sanctuary Beacons one at a time so each Beacon receives a unique anchor identity."
-            );
-            return;
-        }
-
         event.setCurrentItem(createResult(definition));
+        if (event.getWhoClicked() instanceof Player player) {
+            plugin.getServer().getScheduler().runTask(plugin, () -> hideAltarRecipe(player));
+        }
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
@@ -119,29 +104,11 @@ public final class SanctuaryRecipeService implements Listener {
         event.setResult(createResult(definition));
     }
 
-    @EventHandler(priority = EventPriority.HIGHEST)
-    public void onRecipeBookClick(PlayerRecipeBookClickEvent event) {
-        Recipe originalRecipe = event.getOriginalRecipe();
-        var definition = definitionFor(originalRecipe);
-        if (definition == null) {
-            return;
-        }
-
-        // Vanilla's recipe book does not understand ExtendedItems PDC identity.
-        // Let the click happen, then replace whatever vanilla tried to place with
-        // the exact Sanctuary ingredients from the player's inventory.
-        event.setShiftClick(false);
-        plugin.getServer().getScheduler().runTask(
-            plugin,
-            () -> fillExactRecipeFromBook(event.getPlayer(), definition)
-        );
-    }
-
     @EventHandler(priority = EventPriority.MONITOR)
     public void onPlayerJoin(PlayerJoinEvent event) {
         plugin.getServer().getScheduler().runTask(
             plugin,
-            () -> showProgressionRecipes(event.getPlayer())
+            () -> hideAltarRecipe(event.getPlayer())
         );
     }
 
@@ -155,199 +122,21 @@ public final class SanctuaryRecipeService implements Listener {
         replaceRecipe(key, recipe, definition);
     }
 
-    private void registerShapeless(SanctuaryRecipeCatalog.ShapelessRecipeDefinition definition) {
-        NamespacedKey key = new NamespacedKey(plugin, definition.key());
-        ShapelessRecipe recipe = new ShapelessRecipe(
-            key,
-            createResult(definition)
-        );
-        for (var ingredient : definition.ingredients()) {
-            recipe.addIngredient(registrationChoice(ingredient));
-        }
-        replaceRecipe(key, recipe, definition);
-    }
-
     static RecipeChoice registrationChoice(SanctuaryRecipeCatalog.Ingredient ingredient) {
         if (ingredient.material() != null) {
             return new RecipeChoice.MaterialChoice(ingredient.material());
         }
-        return new RecipeChoice.ExactChoice(
-            ExtendedItems.create(ingredient.extendedItem())
-        );
+        return new RecipeChoice.ExactChoice(ExtendedItems.create(ingredient.extendedItem()));
     }
 
     ItemStack createResult(SanctuaryRecipeCatalog.RecipeDefinition definition) {
-        if (definition.result().equals(ExtendedItemIds.SANCTUARY_BEACON)) {
-            return anchorItemService.createUnboundBeacon();
-        }
-
-        ItemStack result = ExtendedItems.create(definition.result());
-        if (definition.result().equals(ExtendedItemIds.SEAL_OF_KEEPING)
-            && result.getType() == Material.ENDER_CHEST) {
-            result.setType(Material.SHULKER_SHELL);
-            result.editMeta(meta -> meta.setEnchantmentGlintOverride(true));
-        }
-        return result;
+        return ExtendedItems.create(definition.result());
     }
 
-    private void fillExactRecipeFromBook(
-        Player player,
-        SanctuaryRecipeCatalog.RecipeDefinition definition
-    ) {
-        if (!(player.getOpenInventory().getTopInventory() instanceof CraftingInventory crafting)) {
-            return;
+    private void hideAltarRecipe(Player player) {
+        if (altarRecipeKey != null) {
+            player.undiscoverRecipe(altarRecipeKey);
         }
-
-        ItemStack[] current = crafting.getMatrix();
-        returnMatrixToPlayer(player, current);
-
-        ItemStack[] desired = new ItemStack[current.length];
-        List<ItemStack> taken = new ArrayList<>();
-        boolean complete;
-
-        if (definition instanceof SanctuaryRecipeCatalog.ShapedRecipeDefinition shaped) {
-            complete = fillShaped(player, shaped, desired, taken);
-        } else if (definition instanceof SanctuaryRecipeCatalog.ShapelessRecipeDefinition shapeless) {
-            complete = fillShapeless(player, shapeless, desired, taken);
-        } else {
-            complete = false;
-        }
-
-        if (!complete) {
-            rollbackTaken(player, taken);
-            crafting.setMatrix(new ItemStack[current.length]);
-            crafting.setResult(null);
-            player.updateInventory();
-            player.sendMessage(
-                ChatColor.YELLOW + "You do not have the exact Sanctuary ingredients for that recipe."
-            );
-            return;
-        }
-
-        crafting.setMatrix(desired);
-        crafting.setResult(createResult(definition));
-        player.updateInventory();
-    }
-
-    private boolean fillShaped(
-        Player player,
-        SanctuaryRecipeCatalog.ShapedRecipeDefinition definition,
-        ItemStack[] desired,
-        List<ItemStack> taken
-    ) {
-        int gridSize = desired.length == 4 ? 2 : desired.length == 9 ? 3 : -1;
-        if (gridSize < 0) {
-            return false;
-        }
-        List<String> shape = SanctuaryRecipeCatalog.compactShape(definition);
-        if (shape.size() > gridSize || shape.stream().anyMatch(row -> row.length() > gridSize)) {
-            return false;
-        }
-
-        for (int row = 0; row < shape.size(); row++) {
-            String shapeRow = shape.get(row);
-            for (int column = 0; column < shapeRow.length(); column++) {
-                char symbol = shapeRow.charAt(column);
-                if (symbol == ' ') {
-                    continue;
-                }
-                ItemStack ingredient = takeIngredient(
-                    player.getInventory(),
-                    definition.ingredients().get(symbol)
-                );
-                if (ingredient == null) {
-                    return false;
-                }
-                desired[row * gridSize + column] = ingredient;
-                taken.add(ingredient.clone());
-            }
-        }
-        return true;
-    }
-
-    private boolean fillShapeless(
-        Player player,
-        SanctuaryRecipeCatalog.ShapelessRecipeDefinition definition,
-        ItemStack[] desired,
-        List<ItemStack> taken
-    ) {
-        if (definition.ingredients().size() > desired.length) {
-            return false;
-        }
-
-        int slot = 0;
-        for (var ingredientDefinition : definition.ingredients()) {
-            ItemStack ingredient = takeIngredient(player.getInventory(), ingredientDefinition);
-            if (ingredient == null) {
-                return false;
-            }
-            desired[slot++] = ingredient;
-            taken.add(ingredient.clone());
-        }
-        return true;
-    }
-
-    private ItemStack takeIngredient(
-        PlayerInventory inventory,
-        SanctuaryRecipeCatalog.Ingredient ingredient
-    ) {
-        ItemStack[] storage = inventory.getStorageContents();
-        for (int slot = 0; slot < storage.length; slot++) {
-            ItemStack candidate = storage[slot];
-            if (!matchesIngredient(candidate, ingredient)) {
-                continue;
-            }
-
-            ItemStack taken = candidate.clone();
-            taken.setAmount(1);
-            if (candidate.getAmount() <= 1) {
-                inventory.setItem(slot, null);
-            } else {
-                candidate.setAmount(candidate.getAmount() - 1);
-                inventory.setItem(slot, candidate);
-            }
-            return taken;
-        }
-        return null;
-    }
-
-    private boolean matchesIngredient(
-        ItemStack item,
-        SanctuaryRecipeCatalog.Ingredient ingredient
-    ) {
-        if (item == null || item.getType().isAir()) {
-            return false;
-        }
-        if (ingredient.extendedItem() != null) {
-            return ExtendedItems.is(item, ingredient.extendedItem());
-        }
-        return item.getType() == ingredient.material()
-            && ExtendedItems.getId(item).isEmpty();
-    }
-
-    private void returnMatrixToPlayer(Player player, ItemStack[] matrix) {
-        for (ItemStack item : matrix) {
-            if (item == null || item.getType().isAir()) {
-                continue;
-            }
-            Map<Integer, ItemStack> leftovers = player.getInventory().addItem(item.clone());
-            for (ItemStack leftover : leftovers.values()) {
-                player.getWorld().dropItemNaturally(player.getLocation(), leftover);
-            }
-        }
-    }
-
-    private void rollbackTaken(Player player, List<ItemStack> taken) {
-        for (ItemStack item : taken) {
-            Map<Integer, ItemStack> leftovers = player.getInventory().addItem(item);
-            for (ItemStack leftover : leftovers.values()) {
-                player.getWorld().dropItemNaturally(player.getLocation(), leftover);
-            }
-        }
-    }
-
-    private void showProgressionRecipes(Player player) {
-        player.discoverRecipes(recipesByKey.keySet());
     }
 
     private void replaceRecipe(

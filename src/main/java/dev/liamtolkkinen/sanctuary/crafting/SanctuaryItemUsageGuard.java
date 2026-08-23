@@ -5,6 +5,8 @@ import dev.liamtolkkinen.extendeditems.ExtendedItemIds;
 import dev.liamtolkkinen.extendeditems.ExtendedItems;
 import dev.liamtolkkinen.extendedui.ExtendedUI;
 import dev.liamtolkkinen.sanctuary.altar.DivineAltarService;
+import dev.liamtolkkinen.sanctuary.persistence.DatabaseManager;
+import dev.liamtolkkinen.sanctuary.persistence.SqliteOfferingProgressRepository;
 import java.util.Objects;
 import org.bukkit.Keyed;
 import org.bukkit.event.EventHandler;
@@ -21,20 +23,31 @@ import org.bukkit.plugin.java.JavaPlugin;
 /**
  * Keeps ExtendedItems from falling back to their vanilla material behavior.
  *
- * Sanctuary recipes perform their own exact custom-item validation. Outside of
- * those recipes, a Sanctuary artifact must never be accepted merely because its
- * backing Material happens to satisfy a vanilla recipe or placeable block.
+ * Sanctuary-managed recipes perform their own exact custom-item validation.
+ * Outside those recipes, a Sanctuary artifact must never be accepted merely
+ * because its backing Material happens to satisfy vanilla behavior.
  */
 final class SanctuaryItemUsageGuard implements Listener {
     private final String recipeNamespace;
+    @SuppressWarnings("FieldCanBeLocal")
     private final ExtendedUI altarUi;
+    @SuppressWarnings("FieldCanBeLocal")
     private final DivineAltarService altarService;
 
     SanctuaryItemUsageGuard(JavaPlugin plugin) {
         Objects.requireNonNull(plugin, "plugin");
         this.recipeNamespace = plugin.getName().toLowerCase(java.util.Locale.ROOT);
+
+        String databaseFilename = plugin.getConfig().getString("database.filename", "sanctuary.db");
+        DatabaseManager databaseManager = new DatabaseManager(
+            plugin.getDataFolder().toPath().resolve(databaseFilename)
+        );
         this.altarUi = new ExtendedUI(plugin);
-        this.altarService = new DivineAltarService(plugin, altarUi);
+        this.altarService = new DivineAltarService(
+            plugin,
+            altarUi,
+            new SqliteOfferingProgressRepository(databaseManager)
+        );
         this.altarService.start();
     }
 
@@ -81,7 +94,6 @@ final class SanctuaryItemUsageGuard implements Listener {
             && keyed.getKey().getNamespace().equals(recipeNamespace)) {
             return false;
         }
-
         return containsExtendedItem(matrix);
     }
 
@@ -99,7 +111,6 @@ final class SanctuaryItemUsageGuard implements Listener {
             || id.equals(ExtendedItemIds.DIVINE_ALTAR)) {
             return true;
         }
-
         return id.persistentId().startsWith("sentry_");
     }
 }

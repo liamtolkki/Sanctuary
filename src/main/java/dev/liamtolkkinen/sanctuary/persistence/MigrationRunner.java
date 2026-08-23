@@ -11,46 +11,15 @@ import java.util.List;
 
 public final class MigrationRunner {
     private static final List<DatabaseMigration> MIGRATIONS = List.of(
-        new DatabaseMigration(
-            1,
-            "create_sanctuaries",
-            "/db/migration/V001__create_sanctuaries.sql"
-        ),
-        new DatabaseMigration(
-            2,
-            "anchor_lifecycle",
-            "/db/migration/V002__anchor_lifecycle.sql"
-        ),
-        new DatabaseMigration(
-            3,
-            "territory_debug_beacons",
-            "/db/migration/V003__territory_debug_beacons.sql"
-        ),
-        new DatabaseMigration(
-            4,
-            "territory_radius",
-            "/db/migration/V004__territory_radius.sql"
-        ),
-        new DatabaseMigration(
-            5,
-            "trust_capabilities",
-            "/db/migration/V005__trust_capabilities.sql"
-        ),
-        new DatabaseMigration(
-            6,
-            "security_policy",
-            "/db/migration/V006__security_policy.sql"
-        ),
-        new DatabaseMigration(
-            7,
-            "beacon_effect_levels",
-            "/db/migration/V007__beacon_effect_levels.sql"
-        ),
-        new DatabaseMigration(
-            8,
-            "sentries",
-            "/db/migration/V008__sentries.sql"
-        )
+        new DatabaseMigration(1, "create_sanctuaries", "/db/migration/V001__create_sanctuaries.sql"),
+        new DatabaseMigration(2, "anchor_lifecycle", "/db/migration/V002__anchor_lifecycle.sql"),
+        new DatabaseMigration(3, "territory_debug_beacons", "/db/migration/V003__territory_debug_beacons.sql"),
+        new DatabaseMigration(4, "territory_radius", "/db/migration/V004__territory_radius.sql"),
+        new DatabaseMigration(5, "trust_capabilities", "/db/migration/V005__trust_capabilities.sql"),
+        new DatabaseMigration(6, "security_policy", "/db/migration/V006__security_policy.sql"),
+        new DatabaseMigration(7, "beacon_effect_levels", "/db/migration/V007__beacon_effect_levels.sql"),
+        new DatabaseMigration(8, "sentries", "/db/migration/V008__sentries.sql"),
+        new DatabaseMigration(9, "altar_offerings", "/db/migration/V009__altar_offerings.sql")
     );
 
     private final DatabaseManager databaseManager;
@@ -62,7 +31,6 @@ public final class MigrationRunner {
     public void migrate() throws SQLException, IOException {
         try (Connection connection = databaseManager.openConnection()) {
             ensureMigrationTable(connection);
-
             for (DatabaseMigration migration : MIGRATIONS) {
                 if (!isApplied(connection, migration.version())) {
                     apply(connection, migration);
@@ -94,10 +62,8 @@ public final class MigrationRunner {
         }
     }
 
-    private static void apply(
-        Connection connection,
-        DatabaseMigration migration
-    ) throws SQLException, IOException {
+    private static void apply(Connection connection, DatabaseMigration migration)
+        throws SQLException, IOException {
         String sql = readResource(migration.resourcePath());
         boolean originalAutoCommit = connection.getAutoCommit();
         connection.setAutoCommit(false);
@@ -144,7 +110,6 @@ public final class MigrationRunner {
                 radii.add(Math.sqrt(area / Math.PI));
             }
         }
-
         try (var update = connection.prepareStatement(
             "UPDATE sanctuaries SET territory_radius = ? WHERE id = ?"
         )) {
@@ -167,7 +132,7 @@ public final class MigrationRunner {
     }
 
     private static List<String> splitStatements(String sql) {
-        String withoutComments = sql.replaceAll("(?m)^\s*--.*$", "");
+        String withoutComments = sql.replaceAll("(?m)^\\s*--.*$", "");
         return java.util.Arrays.stream(withoutComments.split(";"))
             .map(String::trim)
             .filter(statement -> !statement.isEmpty())

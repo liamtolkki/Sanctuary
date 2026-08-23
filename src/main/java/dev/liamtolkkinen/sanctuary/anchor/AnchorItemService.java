@@ -113,6 +113,7 @@ public final class AnchorItemService {
 
     private ItemStack createBeacon(AnchorMetadata metadata) {
         ItemStack item = ExtendedItems.create(ExtendedItemIds.SANCTUARY_BEACON);
+        item.editMeta(meta -> meta.setEnchantmentGlintOverride(true));
         writeItemMetadata(item, metadata);
 
         if (!ExtendedItems.validate(item).isValid()) {

@@ -1,5 +1,6 @@
 package dev.liamtolkkinen.sanctuary.crafting;
 
+import com.destroystokyo.paper.event.player.PlayerRecipeBookClickEvent;
 import dev.liamtolkkinen.extendeditems.ExtendedItemIds;
 import dev.liamtolkkinen.extendeditems.ExtendedItems;
 import dev.liamtolkkinen.sanctuary.anchor.AnchorItemService;
@@ -21,7 +22,6 @@ import org.bukkit.event.block.CrafterCraftEvent;
 import org.bukkit.event.inventory.CraftItemEvent;
 import org.bukkit.event.inventory.PrepareItemCraftEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
-import org.bukkit.event.player.PlayerRecipeBookClickEvent;
 import org.bukkit.inventory.CraftingInventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.PlayerInventory;
@@ -119,18 +119,15 @@ public final class SanctuaryRecipeService implements Listener {
         event.setResult(createResult(definition));
     }
 
-    @EventHandler(priority = EventPriority.HIGHEST)
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)
     public void onRecipeBookClick(PlayerRecipeBookClickEvent event) {
-        Recipe originalRecipe = event.getOriginalRecipe();
-        var definition = definitionFor(originalRecipe);
+        var definition = recipesByKey.get(event.getRecipe());
         if (definition == null) {
             return;
         }
 
-        // Vanilla's recipe book does not understand ExtendedItems PDC identity.
-        // Let the click happen, then replace whatever vanilla tried to place with
-        // the exact Sanctuary ingredients from the player's inventory.
-        event.setShiftClick(false);
+        event.setCancelled(true);
+        event.setMakeAll(false);
         plugin.getServer().getScheduler().runTask(
             plugin,
             () -> fillExactRecipeFromBook(event.getPlayer(), definition)
@@ -157,10 +154,7 @@ public final class SanctuaryRecipeService implements Listener {
 
     private void registerShapeless(SanctuaryRecipeCatalog.ShapelessRecipeDefinition definition) {
         NamespacedKey key = new NamespacedKey(plugin, definition.key());
-        ShapelessRecipe recipe = new ShapelessRecipe(
-            key,
-            createResult(definition)
-        );
+        ShapelessRecipe recipe = new ShapelessRecipe(key, createResult(definition));
         for (var ingredient : definition.ingredients()) {
             recipe.addIngredient(registrationChoice(ingredient));
         }
@@ -184,9 +178,6 @@ public final class SanctuaryRecipeService implements Listener {
         ItemStack result = ExtendedItems.create(definition.result());
         if (definition.result().equals(ExtendedItemIds.SEAL_OF_KEEPING)
             && result.getType() == Material.ENDER_CHEST) {
-            // Sanctuary is still pinned to ExtendedItems alpha.7 while the
-            // alpha.8 Seal definition is awaiting release. Keep the PDC
-            // identity but use the corrected backing material immediately.
             result.setType(Material.SHULKER_SHELL);
             result.editMeta(meta -> meta.setEnchantmentGlintOverride(true));
         }
@@ -239,6 +230,7 @@ public final class SanctuaryRecipeService implements Listener {
         List<ItemStack> taken
     ) {
         if (desired.length < 9) {
+            player.sendMessage(ChatColor.YELLOW + "Use a crafting table for this Sanctuary recipe.");
             return false;
         }
 

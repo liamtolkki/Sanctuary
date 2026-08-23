@@ -37,6 +37,7 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockBreakEvent;
+import org.bukkit.event.block.BlockBurnEvent;
 import org.bukkit.event.block.BlockExplodeEvent;
 import org.bukkit.event.block.BlockPistonExtendEvent;
 import org.bukkit.event.block.BlockPistonRetractEvent;
@@ -115,7 +116,6 @@ public final class DivineAltarService implements Listener, AutoCloseable {
         }
         Block block = event.getBlockPlaced();
         if (!(block.getState() instanceof TileState tileState)) {
-            event.setCancelled(true);
             event.getPlayer().sendMessage("The Divine Altar could not bind to that block.");
             return;
         }
@@ -148,6 +148,15 @@ public final class DivineAltarService implements Listener, AutoCloseable {
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onBurn(BlockBurnEvent event) {
+        if (!isAltar(event.getBlock())) {
+            return;
+        }
+        event.setCancelled(true);
+        breakAltarImmediately(event.getBlock());
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onEntityExplode(EntityExplodeEvent event) {
         replaceExplosionDrops(event.blockList());
     }
@@ -159,24 +168,12 @@ public final class DivineAltarService implements Listener, AutoCloseable {
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onPistonExtend(BlockPistonExtendEvent event) {
-        for (Block block : event.getBlocks()) {
-            if (isAltar(block)) {
-                event.setCancelled(true);
-                breakAltarImmediately(block);
-                return;
-            }
-        }
+        breakIfPistonMovesAltar(event.getBlocks(), event::setCancelled);
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onPistonRetract(BlockPistonRetractEvent event) {
-        for (Block block : event.getBlocks()) {
-            if (isAltar(block)) {
-                event.setCancelled(true);
-                breakAltarImmediately(block);
-                return;
-            }
-        }
+        breakIfPistonMovesAltar(event.getBlocks(), event::setCancelled);
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
@@ -184,12 +181,22 @@ public final class DivineAltarService implements Listener, AutoCloseable {
         discoverAltars(event.getChunk());
     }
 
+    private void breakIfPistonMovesAltar(List<Block> blocks, java.util.function.Consumer<Boolean> cancel) {
+        for (Block block : blocks) {
+            if (!isAltar(block)) {
+                continue;
+            }
+            cancel.accept(true);
+            breakAltarImmediately(block);
+            return;
+        }
+    }
+
     private void replaceExplosionDrops(List<Block> blocks) {
         for (Block block : List.copyOf(blocks)) {
             if (!isAltar(block)) {
                 continue;
             }
-            loadedAltars.remove(BlockPosition.of(block));
             blocks.remove(block);
             breakAltarImmediately(block);
         }
@@ -205,7 +212,7 @@ public final class DivineAltarService implements Listener, AutoCloseable {
     private void dropAltar(Location location) {
         location.getWorld().dropItemNaturally(
             location.clone().add(0.5, 0.5, 0.5),
-            ExtendedItems.create(ExtendedItemIds.DIVINE_ALTAR)
+            customItem(ExtendedItemIds.DIVINE_ALTAR)
         );
     }
 
@@ -389,7 +396,7 @@ public final class DivineAltarService implements Listener, AutoCloseable {
     }
 
     private ItemStack recipeResultIcon(SanctuaryRecipeCatalog.RecipeDefinition recipe) {
-        ItemStack item = ExtendedItems.create(recipe.result());
+        ItemStack item = customItem(recipe.result());
         item.editMeta(meta -> {
             List<Component> lore = new ArrayList<>();
             if (meta.lore() != null) {
@@ -423,7 +430,7 @@ public final class DivineAltarService implements Listener, AutoCloseable {
 
     private ItemStack ingredientIcon(SanctuaryRecipeCatalog.Ingredient ingredient) {
         return ingredient.extendedItem() != null
-            ? ExtendedItems.create(ingredient.extendedItem())
+            ? customItem(ingredient.extendedItem())
             : new ItemStack(ingredient.material());
     }
 
@@ -432,25 +439,22 @@ public final class DivineAltarService implements Listener, AutoCloseable {
         SanctuaryRecipeCatalog.RecipeDefinition recipe,
         boolean ready
     ) {
-        List<SanctuaryRecipeCatalog.Ingredient> required = flattenedIngredients(recipe);
         Map<String, Integer> needed = new LinkedHashMap<>();
-        Map<String, Integer> owned = new LinkedHashMap<>();
         Map<String, SanctuaryRecipeCatalog.Ingredient> definitions = new LinkedHashMap<>();
-        for (var ingredient : required) {
+        for (var ingredient : flattenedIngredients(recipe)) {
             String key = ingredientKey(ingredient);
             needed.merge(key, 1, Integer::sum);
             definitions.putIfAbsent(key, ingredient);
         }
-        for (var entry : definitions.entrySet()) {
-            owned.put(entry.getKey(), countIngredient(player, entry.getValue()));
-        }
 
         List<Component> lore = new ArrayList<>();
         for (var entry : needed.entrySet()) {
-            int have = owned.getOrDefault(entry.getKey(), 0);
+            int have = countIngredient(player, definitions.get(entry.getKey()));
             int need = entry.getValue();
-            NamedTextColor color = have >= need ? NamedTextColor.GREEN : NamedTextColor.RED;
-            lore.add(Component.text(displayName(definitions.get(entry.getKey())) + ": " + have + " / " + need, color));
+            lore.add(Component.text(
+                displayName(definitions.get(entry.getKey())) + ": " + have + " / " + need,
+                have >= need ? NamedTextColor.GREEN : NamedTextColor.RED
+            ));
         }
         lore.add(Component.empty());
         lore.add(Component.text(
@@ -460,14 +464,17 @@ public final class DivineAltarService implements Listener, AutoCloseable {
 
         ItemStack status = new ItemStack(ready ? Material.LIME_DYE : Material.GRAY_DYE);
         status.editMeta(meta -> {
-            meta.displayName(Component.text(ready ? "READY" : "NOT READY", ready ? NamedTextColor.GREEN : NamedTextColor.GRAY));
+            meta.displayName(Component.text(
+                ready ? "READY" : "NOT READY",
+                ready ? NamedTextColor.GREEN : NamedTextColor.GRAY
+            ));
             meta.lore(lore);
         });
         return status;
     }
 
     private ItemStack offeringIcon(int number, ExtendedItemId id) {
-        ItemStack item = ExtendedItems.create(id);
+        ItemStack item = customItem(id);
         item.editMeta(meta -> {
             List<Component> lore = new ArrayList<>();
             if (meta.lore() != null) {
@@ -476,6 +483,15 @@ public final class DivineAltarService implements Listener, AutoCloseable {
             lore.add(Component.text("Offering " + number + " of 12", NamedTextColor.LIGHT_PURPLE));
             meta.lore(lore);
         });
+        return item;
+    }
+
+    private ItemStack customItem(ExtendedItemId id) {
+        ItemStack item = ExtendedItems.create(id);
+        if (id.equals(ExtendedItemIds.SEAL_OF_KEEPING) && item.getType() == Material.ENDER_CHEST) {
+            item.setType(Material.SHULKER_SHELL);
+            item.editMeta(meta -> meta.setEnchantmentGlintOverride(true));
+        }
         return item;
     }
 
@@ -538,12 +554,9 @@ public final class DivineAltarService implements Listener, AutoCloseable {
     }
 
     private String displayName(SanctuaryRecipeCatalog.Ingredient ingredient) {
-        if (ingredient.extendedItem() != null) {
-            ItemStack item = ExtendedItems.create(ingredient.extendedItem());
-            Component name = item.getItemMeta().displayName();
-            return name == null ? pretty(ingredient.extendedItem().persistentId()) : pretty(ingredient.extendedItem().persistentId());
-        }
-        return pretty(ingredient.material().name());
+        return ingredient.extendedItem() != null
+            ? pretty(ingredient.extendedItem().persistentId())
+            : pretty(ingredient.material().name());
     }
 
     private String pretty(String value) {

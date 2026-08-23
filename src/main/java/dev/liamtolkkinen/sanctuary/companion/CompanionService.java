@@ -43,7 +43,6 @@ import org.bukkit.util.Vector;
 public final class CompanionService {
     public static final double HOSTILE_RADIUS = 10.0;
     public static final double FOLLOW_DISTANCE = 7.5;
-    public static final double FOLLOW_MIN_DISTANCE = 5.5;
     public static final double FOLLOW_MAX_DISTANCE = 10.0;
     public static final double TELEPORT_DISTANCE = 28.0;
     public static final double DEFENSE_MAX_DISTANCE = 32.0;
@@ -86,14 +85,6 @@ public final class CompanionService {
         this.companionVexParentKey = new NamespacedKey(plugin, "companion_vex_parent");
         this.sentryIdKey = new NamespacedKey(plugin, "sentry_id");
         this.sentryVexParentKey = new NamespacedKey(plugin, "sentry_vex_parent");
-    }
-
-    public void start() {
-        plugin.getServer().getPluginManager().registerEvents(
-            new CompanionListener(this, plugin, logger),
-            plugin
-        );
-        new CompanionTask(this, logger).start(plugin);
     }
 
     public Optional<CompanionDefinition> definition(ItemStack item) {
@@ -490,10 +481,7 @@ public final class CompanionService {
             return;
         }
 
-        double targetDistanceSquared = companion.getLocation().distanceSquared(target);
-        if (distanceSquared >= FOLLOW_MIN_DISTANCE * FOLLOW_MIN_DISTANCE
-            && distanceSquared <= FOLLOW_MAX_DISTANCE * FOLLOW_MAX_DISTANCE
-            && targetDistanceSquared <= 9.0) {
+        if (distanceSquared <= FOLLOW_MAX_DISTANCE * FOLLOW_MAX_DISTANCE) {
             companion.getPathfinder().stopPathfinding();
             companion.setVelocity(new Vector(0, 0, 0));
             companion.setAware(false);

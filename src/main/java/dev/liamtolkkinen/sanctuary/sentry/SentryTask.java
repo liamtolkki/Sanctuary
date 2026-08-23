@@ -333,7 +333,9 @@ public final class SentryTask implements Runnable {
 
             for (Entity entity : world.getEntities()) {
                 if (entity instanceof Vex vex) service.ensureVexCompanion(vex);
-                if (!(entity instanceof LivingEntity living) || service.isDefenseEntity(entity)) continue;
+                if (!(entity instanceof LivingEntity living)
+                    || service.isDefenseEntity(entity)
+                    || isPlayerCompanion(entity)) continue;
                 Location location = entity.getLocation();
                 if (!TerritoryCalculator.contains(
                     sanctuary.position().orElseThrow(), sanctuary.territoryRadius(), world.getName(),
@@ -363,5 +365,13 @@ public final class SentryTask implements Runnable {
         }
         mobPresence.clear();
         mobPresence.addAll(current);
+    }
+
+    private static boolean isPlayerCompanion(Entity entity) {
+        return entity.getPersistentDataContainer().getKeys().stream().anyMatch(key ->
+            key.getNamespace().equals("sanctuary")
+                && (key.getKey().equals("companion_id")
+                    || key.getKey().equals("companion_vex_parent"))
+        );
     }
 }

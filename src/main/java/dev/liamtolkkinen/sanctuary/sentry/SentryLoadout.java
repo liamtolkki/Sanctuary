@@ -12,11 +12,11 @@ import org.bukkit.entity.Zombie;
 import org.bukkit.inventory.EntityEquipment;
 import org.bukkit.inventory.ItemStack;
 
-final class SentryLoadout {
+public final class SentryLoadout {
     private SentryLoadout() {
     }
 
-    static void apply(Mob mob) {
+    public static void apply(Mob mob) {
         EntityEquipment equipment = mob.getEquipment();
         if (equipment == null) return;
 

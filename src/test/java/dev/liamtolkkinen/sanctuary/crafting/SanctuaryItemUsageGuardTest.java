@@ -56,9 +56,6 @@ class SanctuaryItemUsageGuardTest {
             ExtendedItemIds.CONSECRATED_KEYSTONE
         ));
         assertFalse(SanctuaryItemUsageGuard.isAllowedPlacedItem(
-            ExtendedItemIds.DIVINE_ALTAR
-        ));
-        assertFalse(SanctuaryItemUsageGuard.isAllowedPlacedItem(
             ExtendedItemIds.SANCTUARY_CONDUIT
         ));
     }
@@ -67,6 +64,9 @@ class SanctuaryItemUsageGuardTest {
     void explicitlyHandledPlaceableItemsRemainAllowed() {
         assertTrue(SanctuaryItemUsageGuard.isAllowedPlacedItem(
             ExtendedItemIds.SANCTUARY_BEACON
+        ));
+        assertTrue(SanctuaryItemUsageGuard.isAllowedPlacedItem(
+            ExtendedItemIds.DIVINE_ALTAR
         ));
         assertTrue(SanctuaryItemUsageGuard.isAllowedPlacedItem(
             ExtendedItemIds.SENTRY_IRON_GOLEM

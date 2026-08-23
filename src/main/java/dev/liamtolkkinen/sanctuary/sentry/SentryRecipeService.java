@@ -1,7 +1,9 @@
 package dev.liamtolkkinen.sanctuary.sentry;
 
 import dev.liamtolkkinen.extendeditems.ExtendedItems;
+import dev.liamtolkkinen.sanctuary.advancement.SanctuaryAdvancementService;
 import dev.liamtolkkinen.sanctuary.api.SanctuaryApi;
+import dev.liamtolkkinen.sanctuary.crafting.SanctuaryRecipeService;
 import java.util.Objects;
 import org.bukkit.NamespacedKey;
 import org.bukkit.inventory.ItemStack;
@@ -19,6 +21,8 @@ public final class SentryRecipeService {
     }
 
     public void registerAll() {
+        new SanctuaryRecipeService(plugin).registerAll();
+
         for (SentryRecipeCatalog.CompanionRecipe definition
             : SentryRecipeCatalog.companionRecipes())
         {
@@ -45,6 +49,8 @@ public final class SentryRecipeService {
             sanctuaryApi,
             craftingItems
         ).start();
+
+        new SanctuaryAdvancementService(plugin).start();
     }
 
     public SentryCraftingItemService craftingItems() {

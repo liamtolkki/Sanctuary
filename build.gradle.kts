@@ -73,7 +73,7 @@ val downloadExtendedUi by tasks.registering {
     }
 }
 
-val extendedItemsVersion = "0.1.0-alpha.3"
+val extendedItemsVersion = "0.1.0-alpha.5"
 val extendedItemsJar = layout.buildDirectory.file(
     "dependencies/extendeditems-$extendedItemsVersion.jar"
 )
@@ -141,6 +141,9 @@ dependencies {
 
     testImplementation("org.junit.jupiter:junit-jupiter:6.1.0")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher:6.1.0")
+    testImplementation(
+        "org.mockbukkit.mockbukkit:mockbukkit-v26.1.2:4.114.0"
+    )
 }
 
 java {

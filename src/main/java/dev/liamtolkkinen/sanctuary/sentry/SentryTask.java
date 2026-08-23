@@ -15,6 +15,10 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
+import org.bukkit.Particle;
+import org.bukkit.Sound;
+import org.bukkit.damage.DamageSource;
+import org.bukkit.damage.DamageType;
 import org.bukkit.entity.Enemy;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.EntityType;
@@ -24,21 +28,32 @@ import org.bukkit.entity.Player;
 import org.bukkit.entity.Vex;
 import org.bukkit.entity.Warden;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.util.Vector;
 
 public final class SentryTask implements Runnable {
     private static final Set<EntityType> NEUTRAL_TYPES = Set.of(
         EntityType.ENDERMAN, EntityType.ZOMBIFIED_PIGLIN, EntityType.PIGLIN, EntityType.BEE,
         EntityType.WOLF, EntityType.IRON_GOLEM, EntityType.LLAMA, EntityType.POLAR_BEAR
     );
+
     private static final double WARDEN_MELEE_RANGE = 3.0;
+    private static final double WARDEN_SONIC_HORIZONTAL_RANGE = 15.0;
+    private static final double WARDEN_SONIC_VERTICAL_RANGE = 20.0;
+    private static final double WARDEN_SONIC_DAMAGE = 10.0;
+    private static final double WARDEN_SONIC_HORIZONTAL_KNOCKBACK = 2.5;
+    private static final double WARDEN_SONIC_VERTICAL_KNOCKBACK = 0.5;
     private static final Duration WARDEN_MELEE_COOLDOWN = Duration.ofMillis(1000);
+    private static final Duration WARDEN_SONIC_CHARGE_TIME = Duration.ofMillis(1700);
+    private static final Duration WARDEN_SONIC_COOLDOWN = Duration.ofSeconds(2);
 
     private final SentryService service;
     private final SentryRepository repository;
     private final SanctuaryRepository sanctuaryRepository;
     private final Logger logger;
     private final Set<String> mobPresence = new HashSet<>();
-    private final Map<UUID, Instant> wardenLastAttack = new HashMap<>();
+    private final Map<UUID, Instant> wardenLastMeleeAttack = new HashMap<>();
+    private final Map<UUID, Instant> wardenSonicChargeStarted = new HashMap<>();
+    private final Map<UUID, Instant> wardenSonicCooldownUntil = new HashMap<>();
 
     public SentryTask(SentryService service, SentryRepository repository, SanctuaryRepository sanctuaryRepository, Logger logger) {
         this.service = service;
@@ -69,7 +84,7 @@ public final class SentryTask implements Runnable {
         if (homeWorld == null || !homeWorld.isChunkLoaded(sentry.x() >> 4, sentry.z() >> 4)) return;
 
         if (sentry.state() == SentryState.DOWN) {
-            wardenLastAttack.remove(sentry.id());
+            clearWardenCombatState(sentry.id());
             service.updateCooldownVisual(sentry, now);
             if (sentry.respawnAt().isPresent() && !now.isBefore(sentry.respawnAt().orElseThrow())) {
                 SentryDefinition definition = service.definition(sentry).orElse(null);
@@ -81,7 +96,7 @@ public final class SentryTask implements Runnable {
         service.clearCooldownVisual(sentry);
         Entity entity = service.entity(sentry).orElse(null);
         if (!(entity instanceof Mob mob) || entity.isDead()) {
-            wardenLastAttack.remove(sentry.id());
+            clearWardenCombatState(sentry.id());
             if (sentry.state() != SentryState.DISABLED) service.markDown(sentry);
             return;
         }
@@ -89,18 +104,18 @@ public final class SentryTask implements Runnable {
         Location loc = entity.getLocation();
         if (!TerritoryCalculator.contains(
             sanctuary.position().orElseThrow(), sanctuary.territoryRadius(), sentry.world(), loc.getX(), loc.getZ())) {
-            wardenLastAttack.remove(sentry.id());
+            clearWardenCombatState(sentry.id());
             service.markDown(sentry);
             return;
         }
 
         if (sentry.state() == SentryState.DISABLED) {
-            wardenLastAttack.remove(sentry.id());
+            clearWardenCombatState(sentry.id());
             return;
         }
 
         if (sentry.state() == SentryState.RECALLING) {
-            wardenLastAttack.remove(sentry.id());
+            clearWardenCombatState(sentry.id());
             double distance = loc.distance(service.postStandLocation(sentry));
             if (distance <= SentryService.HOME_REACHED_DISTANCE) {
                 service.teleportHome(sentry);
@@ -120,12 +135,12 @@ public final class SentryTask implements Runnable {
         LivingEntity target = service.authorizedTarget(sentry).orElse(null);
         if (target != null && definition != null && service.validTarget(sanctuary, sentry, definition, target)) {
             if (mob instanceof Warden warden) {
-                tickWardenMelee(sentry, warden, target, now);
+                tickWardenCombat(sentry, warden, target, now);
             } else {
                 service.maintainAuthorizedTarget(sentry, mob, target, now);
             }
         } else {
-            wardenLastAttack.remove(sentry.id());
+            clearWardenCombatState(sentry.id());
             if (target != null) service.clearTarget(sentry);
             service.idleAtHome(mob, sentry);
         }
@@ -133,31 +148,103 @@ public final class SentryTask implements Runnable {
         service.tickVexCompanions(sentry, mob, service.authorizedTarget(sentry).orElse(null), now);
     }
 
-    private void tickWardenMelee(SentryRecord sentry, Warden warden, LivingEntity target, Instant now) {
+    private void tickWardenCombat(SentryRecord sentry, Warden warden, LivingEntity target, Instant now) {
         warden.setAware(true);
         warden.setAggressive(true);
 
-        // The Warden's Sonic Boom is driven by its Brain rather than the normal MobGoals API.
-        // Managed Wardens therefore keep the Sanctuary-authorized target outside the vanilla
-        // target/anger state and use direct pathing plus the native melee attack instead.
+        // Sanctuary owns target selection for the managed Warden. Keeping the target out of the
+        // vanilla Warden Brain prevents vibrations and the vanilla Sonic Boom behavior from
+        // redirecting or entering the stuck charge state observed under external targeting.
         warden.setTarget(null);
         LivingEntity angryAt = warden.getEntityAngryAt();
         if (angryAt != null) warden.clearAnger(angryAt);
 
+        double horizontalDx = target.getX() - warden.getX();
+        double horizontalDz = target.getZ() - warden.getZ();
+        double horizontalDistanceSquared = horizontalDx * horizontalDx + horizontalDz * horizontalDz;
+        double verticalDistance = Math.abs(target.getY() - warden.getY());
         double distanceSquared = warden.getLocation().distanceSquared(target.getLocation());
-        if (distanceSquared > WARDEN_MELEE_RANGE * WARDEN_MELEE_RANGE) {
-            var path = warden.getPathfinder().findPath(target);
-            if (path != null) warden.getPathfinder().moveTo(path, 1.2);
+
+        Instant chargeStarted = wardenSonicChargeStarted.get(sentry.id());
+        if (chargeStarted != null) {
+            boolean stillInSonicRange = horizontalDistanceSquared <= WARDEN_SONIC_HORIZONTAL_RANGE * WARDEN_SONIC_HORIZONTAL_RANGE
+                && verticalDistance <= WARDEN_SONIC_VERTICAL_RANGE
+                && distanceSquared > WARDEN_MELEE_RANGE * WARDEN_MELEE_RANGE;
+            if (!stillInSonicRange) {
+                wardenSonicChargeStarted.remove(sentry.id());
+            } else {
+                warden.getPathfinder().stopPathfinding();
+                warden.lookAt(target);
+                if (!now.isBefore(chargeStarted.plus(WARDEN_SONIC_CHARGE_TIME))) {
+                    fireWardenSonicBoom(warden, target);
+                    wardenSonicChargeStarted.remove(sentry.id());
+                    wardenSonicCooldownUntil.put(sentry.id(), now.plus(WARDEN_SONIC_COOLDOWN));
+                }
+                return;
+            }
+        }
+
+        if (distanceSquared <= WARDEN_MELEE_RANGE * WARDEN_MELEE_RANGE) {
+            warden.getPathfinder().stopPathfinding();
+            warden.lookAt(target);
+            Instant previousAttack = wardenLastMeleeAttack.get(sentry.id());
+            if (previousAttack == null || !now.isBefore(previousAttack.plus(WARDEN_MELEE_COOLDOWN))) {
+                warden.attack(target);
+                wardenLastMeleeAttack.put(sentry.id(), now);
+            }
             return;
         }
 
-        warden.getPathfinder().stopPathfinding();
-        warden.lookAt(target);
-        Instant previousAttack = wardenLastAttack.get(sentry.id());
-        if (previousAttack == null || !now.isBefore(previousAttack.plus(WARDEN_MELEE_COOLDOWN))) {
-            warden.attack(target);
-            wardenLastAttack.put(sentry.id(), now);
+        Instant sonicCooldown = wardenSonicCooldownUntil.get(sentry.id());
+        boolean sonicReady = sonicCooldown == null || !now.isBefore(sonicCooldown);
+        boolean inSonicRange = horizontalDistanceSquared <= WARDEN_SONIC_HORIZONTAL_RANGE * WARDEN_SONIC_HORIZONTAL_RANGE
+            && verticalDistance <= WARDEN_SONIC_VERTICAL_RANGE;
+        if (sonicReady && inSonicRange) {
+            warden.getPathfinder().stopPathfinding();
+            warden.lookAt(target);
+            warden.getWorld().playSound(warden.getLocation(), Sound.ENTITY_WARDEN_SONIC_CHARGE, 3.0f, 1.0f);
+            wardenSonicChargeStarted.put(sentry.id(), now);
+            return;
         }
+
+        var path = warden.getPathfinder().findPath(target);
+        if (path != null) warden.getPathfinder().moveTo(path, 1.2);
+    }
+
+    private void fireWardenSonicBoom(Warden warden, LivingEntity target) {
+        Location origin = warden.getEyeLocation();
+        Location destination = target.getLocation().add(0, target.getHeight() * 0.5, 0);
+        Vector delta = destination.toVector().subtract(origin.toVector());
+        double distance = delta.length();
+        if (distance <= 0.001) return;
+
+        Vector direction = delta.clone().normalize();
+        for (double travelled = 1.0; travelled < distance; travelled += 1.5) {
+            Location particleLocation = origin.clone().add(direction.clone().multiply(travelled));
+            warden.getWorld().spawnParticle(Particle.SONIC_BOOM, particleLocation, 1, 0, 0, 0, 0);
+        }
+        warden.getWorld().playSound(warden.getLocation(), Sound.ENTITY_WARDEN_SONIC_BOOM, 3.0f, 1.0f);
+
+        DamageSource damageSource = DamageSource.builder(DamageType.SONIC_BOOM)
+            .withCausingEntity(warden)
+            .withDirectEntity(warden)
+            .withDamageLocation(origin)
+            .build();
+        target.damage(WARDEN_SONIC_DAMAGE, damageSource);
+
+        Vector knockback = target.getLocation().toVector().subtract(warden.getLocation().toVector());
+        knockback.setY(0);
+        if (knockback.lengthSquared() > 0.0001) {
+            knockback.normalize().multiply(WARDEN_SONIC_HORIZONTAL_KNOCKBACK);
+        }
+        knockback.setY(WARDEN_SONIC_VERTICAL_KNOCKBACK);
+        target.setVelocity(target.getVelocity().add(knockback));
+    }
+
+    private void clearWardenCombatState(UUID sentryId) {
+        wardenLastMeleeAttack.remove(sentryId);
+        wardenSonicChargeStarted.remove(sentryId);
+        wardenSonicCooldownUntil.remove(sentryId);
     }
 
     private void scanTriggers() throws SQLException {

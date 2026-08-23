@@ -77,7 +77,7 @@ public final class SanctuaryRecipeCatalog {
         shaped("recipe_ward_stone", ExtendedItemIds.WARD_STONE, "SIS", "IOI", "SIS", ingredients('S', S, 'I', Ingredient.material(Material.IRON_BLOCK), 'O', Ingredient.material(Material.OBSIDIAN))),
         shaped("recipe_blast_ward", ExtendedItemIds.BLAST_WARD, "SGS", "GCG", "SGS", ingredients('S', S, 'G', Ingredient.material(Material.GUNPOWDER), 'C', Ingredient.material(Material.CRYING_OBSIDIAN))),
         shaped("recipe_purification_relic", ExtendedItemIds.PURIFICATION_RELIC, "SAS", "ATA", "SAS", ingredients('S', S, 'A', Ingredient.material(Material.GOLDEN_APPLE), 'T', Ingredient.material(Material.GHAST_TEAR))),
-        shaped("recipe_seal_of_keeping", ExtendedItemIds.SEAL_OF_KEEPING, "SHS", "HEH", "SHS", ingredients('S', S, 'H', Ingredient.material(Material.SHULKER_SHELL), 'E', Ingredient.material(Material.ENDER_CHEST))),
+        shaped("recipe_seal_of_keeping", ExtendedItemIds.SEAL_OF_KEEPING, "SSS", "SHS", "SSS", ingredients('S', S, 'H', Ingredient.material(Material.SHULKER_SHELL))),
         shaped("recipe_guardian_token", ExtendedItemIds.GUARDIAN_TOKEN, "SNS", "NHN", "SNS", ingredients('S', S, 'N', Ingredient.material(Material.NAUTILUS_SHELL), 'H', Ingredient.material(Material.HEART_OF_THE_SEA))),
         shaped("recipe_sentinel_seal", ExtendedItemIds.SENTINEL_SEAL, "SCS", "CEC", "SCS", ingredients('S', S, 'C', Ingredient.material(Material.SCULK_CATALYST), 'E', Ingredient.material(Material.ECHO_SHARD))),
         shaped("recipe_consecrated_keystone", ExtendedItemIds.CONSECRATED_KEYSTONE, "SCS", "CKC", "SCS", ingredients('S', S, 'C', Ingredient.material(Material.CRYING_OBSIDIAN), 'K', Ingredient.extended(ExtendedItemIds.SANCTUARY_CORE))),

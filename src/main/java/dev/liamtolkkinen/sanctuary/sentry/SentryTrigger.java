@@ -1,6 +1,7 @@
 package dev.liamtolkkinen.sanctuary.sentry;
 
 public enum SentryTrigger {
+    UNAUTHORIZED_PLAYER_ENTERED("Unauthorized Player Entered", true),
     CONTAINER_OPENED("Container Opened", true),
     ENTITY_HURT("Entity Hurt", true),
     HOSTILE_MOB_ENTERED("Hostile Mob Entered", true),

@@ -7,6 +7,7 @@ import dev.liamtolkkinen.extendeditems.ExtendedItemId;
 import dev.liamtolkkinen.extendeditems.ExtendedItemIds;
 import java.util.Set;
 import java.util.stream.Collectors;
+import org.bukkit.entity.EntityType;
 import org.junit.jupiter.api.Test;
 
 class CompanionDefinitionTest {
@@ -49,5 +50,23 @@ class CompanionDefinitionTest {
 
         assertEquals(CompanionDefinition.ALL.size(), ids.size());
         assertTrue(ids.stream().allMatch(id -> id.startsWith("companion_")));
+    }
+
+    @Test
+    void onlyStrictlyAquaticCompanionsRequireWaterSpawn() {
+        Set<EntityType> actual = CompanionDefinition.ALL.stream()
+            .filter(CompanionDefinition::requiresWaterSpawn)
+            .map(CompanionDefinition::entityType)
+            .collect(Collectors.toSet());
+
+        assertEquals(
+            Set.of(
+                EntityType.GUARDIAN,
+                EntityType.ELDER_GUARDIAN,
+                EntityType.AXOLOTL,
+                EntityType.DOLPHIN
+            ),
+            actual
+        );
     }
 }

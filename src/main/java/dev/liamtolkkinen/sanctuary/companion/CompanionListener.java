@@ -68,19 +68,29 @@ public final class CompanionListener implements Listener {
         }
 
         event.setCancelled(true);
+        CompanionDefinition companionDefinition = definition.orElseThrow();
         Block clicked = event.getClickedBlock();
         Block destinationBlock = clicked.getRelative(event.getBlockFace());
         Location spawnLocation = destinationBlock.getLocation().add(0.5, 0.1, 0.5);
-        if (clicked.isLiquid()) {
+        if (clicked.getType() == Material.WATER) {
+            destinationBlock = clicked;
             spawnLocation = clicked.getLocation().add(0.5, 0.2, 0.5);
         }
 
+        if (companionDefinition.requiresWaterSpawn()
+            && destinationBlock.getType() != Material.WATER) {
+            event.getPlayer().sendMessage(
+                ChatColor.YELLOW + companionDefinition.displayName() + " must be summoned in water."
+            );
+            return;
+        }
+
         try {
-            service.spawn(event.getPlayer(), definition.orElseThrow(), spawnLocation);
+            service.spawn(event.getPlayer(), companionDefinition, spawnLocation);
             consume(event.getPlayer(), event.getHand(), item);
             event.getPlayer().sendMessage(
                 ChatColor.GREEN
-                    + definition.orElseThrow().displayName()
+                    + companionDefinition.displayName()
                     + " is now following you. Sneak-right-click it to make it stay."
             );
         } catch (RuntimeException exception) {
@@ -118,7 +128,6 @@ public final class CompanionListener implements Listener {
             event.getPlayer().sendMessage(ChatColor.YELLOW + name + " will stay here.");
         } else {
             event.getPlayer().sendMessage(ChatColor.GREEN + name + " is following you.");
-            service.teleportFollowers(event.getPlayer());
         }
     }
 

@@ -35,6 +35,13 @@ public record CompanionDefinition(
         new CompanionDefinition(ExtendedItemIds.COMPANION_DOLPHIN, "companion_dolphin", "Dolphin Companion", EntityType.DOLPHIN, false)
     );
 
+    public boolean requiresWaterSpawn() {
+        return entityType == EntityType.GUARDIAN
+            || entityType == EntityType.ELDER_GUARDIAN
+            || entityType == EntityType.AXOLOTL
+            || entityType == EntityType.DOLPHIN;
+    }
+
     public static Optional<CompanionDefinition> fromItem(ItemStack item) {
         return ExtendedItems.getId(item).flatMap(CompanionDefinition::byItemId);
     }

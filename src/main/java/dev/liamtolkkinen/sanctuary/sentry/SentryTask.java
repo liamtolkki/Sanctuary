@@ -9,6 +9,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -63,6 +64,7 @@ public final class SentryTask implements Runnable {
     private final Map<UUID, Instant> wardenLastMeleeAttack = new HashMap<>();
     private final Map<UUID, Instant> wardenSonicChargeStarted = new HashMap<>();
     private final Map<UUID, Instant> wardenSonicCooldownUntil = new HashMap<>();
+    private boolean runTriggerScan = true;
 
     public SentryTask(SentryService service, SentryRepository repository, SanctuaryRepository sanctuaryRepository, Logger logger) {
         this.service = service;
@@ -79,15 +81,27 @@ public final class SentryTask implements Runnable {
     public void run() {
         try {
             Instant now = Instant.now();
-            for (SentryRecord sentry : repository.findAll()) tickSentry(sentry, now);
-            scanTriggers();
+            List<SentryRecord> sentries = repository.findAll();
+            List<Sanctuary> sanctuaries = sanctuaryRepository.findAll();
+            Map<UUID, Sanctuary> sanctuariesById = new HashMap<>();
+            for (Sanctuary sanctuary : sanctuaries) {
+                sanctuariesById.put(sanctuary.id(), sanctuary);
+            }
+
+            for (SentryRecord sentry : sentries) {
+                tickSentry(sentry, sanctuariesById.get(sentry.sanctuaryId()), now);
+            }
+
+            if (runTriggerScan) {
+                scanTriggers(sanctuaries);
+            }
+            runTriggerScan = !runTriggerScan;
         } catch (SQLException exception) {
             logger.log(Level.WARNING, "Failed sentry maintenance tick", exception);
         }
     }
 
-    private void tickSentry(SentryRecord sentry, Instant now) throws SQLException {
-        Sanctuary sanctuary = sanctuaryRepository.findById(sentry.sanctuaryId()).orElse(null);
+    private void tickSentry(SentryRecord sentry, Sanctuary sanctuary, Instant now) throws SQLException {
         if (sanctuary == null) {
             clearWardenCombatState(sentry.id());
             service.entity(sentry).ifPresent(Entity::remove);
@@ -324,14 +338,29 @@ public final class SentryTask implements Runnable {
         wardenSonicCooldownUntil.remove(sentryId);
     }
 
-    private void scanTriggers() throws SQLException {
+    private void scanTriggers(List<Sanctuary> sanctuaries) throws SQLException {
         Set<String> current = new HashSet<>();
-        for (Sanctuary sanctuary : sanctuaryRepository.findAll()) {
+        for (Sanctuary sanctuary : sanctuaries) {
             if (sanctuary.position().isEmpty() || sanctuary.state() != SanctuaryState.ACTIVE) continue;
             var world = Bukkit.getWorld(sanctuary.position().orElseThrow().world());
             if (world == null) continue;
 
-            for (Entity entity : world.getEntities()) {
+            double centerY = (world.getMinHeight() + world.getMaxHeight()) * 0.5;
+            double verticalRadius = (world.getMaxHeight() - world.getMinHeight()) * 0.5 + 1.0;
+            double territoryRadius = sanctuary.territoryRadius();
+            Location scanCenter = new Location(
+                world,
+                sanctuary.position().orElseThrow().x() + 0.5,
+                centerY,
+                sanctuary.position().orElseThrow().z() + 0.5
+            );
+
+            for (Entity entity : world.getNearbyEntities(
+                scanCenter,
+                territoryRadius,
+                verticalRadius,
+                territoryRadius
+            )) {
                 if (entity instanceof Vex vex) service.ensureVexCompanion(vex);
                 if (!(entity instanceof LivingEntity living)
                     || service.isDefenseEntity(entity)

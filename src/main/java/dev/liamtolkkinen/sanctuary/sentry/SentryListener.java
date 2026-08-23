@@ -21,7 +21,6 @@ import org.bukkit.entity.EntityType;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Mob;
 import org.bukkit.entity.Player;
-import org.bukkit.entity.Vex;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
@@ -240,7 +239,6 @@ public final class SentryListener implements Listener {
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)
     public void onTarget(EntityTargetLivingEntityEvent event) {
         try {
-            if (event.getEntity() instanceof Vex vex) service.ensureVexCompanion(vex);
             if (event.getTarget() != null && service.isDefenseEntity(event.getTarget())) {
                 event.setCancelled(true);
                 return;
@@ -259,7 +257,6 @@ public final class SentryListener implements Listener {
         LivingEntity attacker = resolveAttacker(event.getDamager());
         if (attacker == null) return;
         try {
-            if (attacker instanceof Vex vex) service.ensureVexCompanion(vex);
             if (service.isDefenseEntity(attacker) && event.getEntity() instanceof LivingEntity victim
                 && !service.mayDamage(attacker, victim)) {
                 event.setCancelled(true);

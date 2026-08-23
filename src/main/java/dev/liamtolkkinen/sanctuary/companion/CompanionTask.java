@@ -22,9 +22,8 @@ import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.util.Vector;
 
 public final class CompanionTask implements Runnable {
-    private static final Duration CREEPER_BLAST_COOLDOWN = Duration.ofSeconds(3);
-    private static final double CREEPER_BLAST_RANGE = 3.5;
-    private static final float CREEPER_BLAST_POWER = 3.0f;
+    private static final double CREEPER_EMERGENCY_RANGE = 4.0;
+    private static final float CREEPER_BLAST_POWER = 4.0f;
 
     private static final double FRIENDLY_MELEE_RANGE = 3.0;
     private static final Duration FRIENDLY_MELEE_COOLDOWN = Duration.ofMillis(1000);
@@ -41,7 +40,6 @@ public final class CompanionTask implements Runnable {
 
     private final CompanionService service;
     private final Logger logger;
-    private final Map<UUID, Instant> creeperBlastCooldownUntil = new HashMap<>();
     private final Map<UUID, Instant> friendlyLastMeleeAttack = new HashMap<>();
     private final Map<UUID, Instant> wardenLastMeleeAttack = new HashMap<>();
     private final Map<UUID, Instant> wardenSonicChargeStarted = new HashMap<>();
@@ -90,7 +88,8 @@ public final class CompanionTask implements Runnable {
 
         service.authorizeTarget(companion, target);
         if (companion instanceof Creeper creeper) {
-            tickCreeperCombat(companionId, creeper, target, now);
+            tickCreeperCombat(creeper, owner, target);
+            return;
         } else if (companion instanceof Warden warden) {
             tickWardenCombat(companionId, warden, target, now);
         } else if (!(companion instanceof Enemy)) {
@@ -125,37 +124,28 @@ public final class CompanionTask implements Runnable {
     }
 
     private void tickCreeperCombat(
-        UUID companionId,
         Creeper creeper,
-        LivingEntity target,
-        Instant now
+        Player owner,
+        LivingEntity target
     ) {
-        creeper.setPowered(true);
-        creeper.setAware(true);
-        creeper.setAggressive(true);
-        creeper.setTarget(null);
-        creeper.setIgnited(false);
-        creeper.setFuseTicks(0);
-
-        double distanceSquared = creeper.getLocation().distanceSquared(target.getLocation());
-        if (distanceSquared > CREEPER_BLAST_RANGE * CREEPER_BLAST_RANGE) {
-            service.moveTo(creeper, target.getLocation(), 1.2);
+        double ownerDistanceSquared = owner.getLocation().distanceSquared(target.getLocation());
+        if (ownerDistanceSquared > CREEPER_EMERGENCY_RANGE * CREEPER_EMERGENCY_RANGE) {
+            service.clearTarget(creeper);
+            service.idleAtAnchor(creeper, owner);
             return;
         }
 
         creeper.getPathfinder().stopPathfinding();
+        creeper.setVelocity(new Vector(0, 0, 0));
         creeper.lookAt(target);
-        Instant cooldown = creeperBlastCooldownUntil.get(companionId);
-        if (cooldown != null && now.isBefore(cooldown)) {
-            return;
-        }
-
         creeper.getWorld().playSound(
             creeper.getLocation(),
             Sound.ENTITY_CREEPER_PRIMED,
             1.0f,
             1.0f
         );
+
+        creeper.setInvulnerable(true);
         creeper.getWorld().createExplosion(
             creeper,
             target.getLocation(),
@@ -164,7 +154,8 @@ public final class CompanionTask implements Runnable {
             false,
             true
         );
-        creeperBlastCooldownUntil.put(companionId, now.plus(CREEPER_BLAST_COOLDOWN));
+        service.removeCompanion(creeper);
+        creeper.remove();
     }
 
     private void tickWardenCombat(
@@ -293,7 +284,6 @@ public final class CompanionTask implements Runnable {
     }
 
     private void clearSpecialCombat(UUID companionId) {
-        creeperBlastCooldownUntil.remove(companionId);
         friendlyLastMeleeAttack.remove(companionId);
         wardenLastMeleeAttack.remove(companionId);
         wardenSonicChargeStarted.remove(companionId);

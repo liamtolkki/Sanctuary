@@ -27,7 +27,7 @@ class SanctuaryRecipeRegistrationTest {
     }
 
     @Test
-    void customFragmentIngredientUsesBackingMaterialForRecipeBook() {
+    void customFragmentIngredientUsesExactChoice() {
         var ingredient = SanctuaryRecipeCatalog.shapelessRecipes()
             .getFirst()
             .ingredients()
@@ -35,16 +35,16 @@ class SanctuaryRecipeRegistrationTest {
 
         RecipeChoice choice = SanctuaryRecipeService.registrationChoice(ingredient);
 
-        assertInstanceOf(RecipeChoice.MaterialChoice.class, choice);
+        assertInstanceOf(RecipeChoice.ExactChoice.class, choice);
         assertTrue(choice.test(
             ExtendedItems.create(ExtendedItemIds.CONSECRATED_SHARD_FRAGMENT)
         ));
-        assertTrue(choice.test(new ItemStack(Material.SMALL_AMETHYST_BUD)));
+        assertFalse(choice.test(new ItemStack(Material.SMALL_AMETHYST_BUD)));
         assertFalse(choice.test(new ItemStack(Material.AMETHYST_SHARD)));
     }
 
     @Test
-    void completedShardIngredientUsesBackingMaterialForRecipeBook() {
+    void completedShardIngredientUsesExactChoice() {
         var beaconRecipe = SanctuaryRecipeCatalog.shapedRecipes()
             .stream()
             .filter(recipe -> recipe.result().equals(ExtendedItemIds.SANCTUARY_BEACON))
@@ -55,50 +55,29 @@ class SanctuaryRecipeRegistrationTest {
             beaconRecipe.ingredients().get('S')
         );
 
-        assertInstanceOf(RecipeChoice.MaterialChoice.class, choice);
-        assertTrue(choice.test(ExtendedItems.create(ExtendedItemIds.CONSECRATED_SHARD)));
-        assertTrue(choice.test(new ItemStack(Material.AMETHYST_SHARD)));
-    }
-
-    @Test
-    void recipeBookPlacementUsesExactCustomItemChoice() {
-        var beaconRecipe = SanctuaryRecipeCatalog.shapedRecipes()
-            .stream()
-            .filter(recipe -> recipe.result().equals(ExtendedItemIds.SANCTUARY_BEACON))
-            .findFirst()
-            .orElseThrow();
-
-        RecipeChoice choice = SanctuaryRecipeService.exactPlacementChoice(
-            beaconRecipe.ingredients().get('S')
-        );
-
         assertInstanceOf(RecipeChoice.ExactChoice.class, choice);
         assertTrue(choice.test(ExtendedItems.create(ExtendedItemIds.CONSECRATED_SHARD)));
         assertFalse(choice.test(new ItemStack(Material.AMETHYST_SHARD)));
     }
 
     @Test
-    void vanillaIngredientsRemainMaterialChoicesForRegistrationAndPlacement() {
+    void vanillaIngredientsRemainMaterialChoices() {
         var beaconRecipe = SanctuaryRecipeCatalog.shapedRecipes()
             .stream()
             .filter(recipe -> recipe.result().equals(ExtendedItemIds.SANCTUARY_BEACON))
             .findFirst()
             .orElseThrow();
 
-        var ingredient = beaconRecipe.ingredients().get('B');
-        RecipeChoice registrationChoice = SanctuaryRecipeService.registrationChoice(ingredient);
-        RecipeChoice placementChoice = SanctuaryRecipeService.exactPlacementChoice(ingredient);
+        RecipeChoice choice = SanctuaryRecipeService.registrationChoice(
+            beaconRecipe.ingredients().get('B')
+        );
 
-        assertInstanceOf(RecipeChoice.MaterialChoice.class, registrationChoice);
-        assertInstanceOf(RecipeChoice.MaterialChoice.class, placementChoice);
-        assertTrue(registrationChoice.test(new ItemStack(Material.BEACON)));
-        assertTrue(placementChoice.test(new ItemStack(Material.BEACON)));
+        assertInstanceOf(RecipeChoice.MaterialChoice.class, choice);
+        assertTrue(choice.test(new ItemStack(Material.BEACON)));
 
         // MaterialChoice intentionally matches by vanilla material only. The
         // SanctuaryRecipeValidator is responsible for rejecting ExtendedItems
         // when a recipe slot explicitly requires a vanilla item.
-        assertTrue(registrationChoice.test(
-            ExtendedItems.create(ExtendedItemIds.SANCTUARY_BEACON)
-        ));
+        assertTrue(choice.test(ExtendedItems.create(ExtendedItemIds.SANCTUARY_BEACON)));
     }
 }

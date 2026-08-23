@@ -4,9 +4,13 @@ import dev.liamtolkkinen.sanctuary.sanctuary.Sanctuary;
 import dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryRepository;
 import dev.liamtolkkinen.sanctuary.territory.TerritoryCalculator;
 import java.sql.SQLException;
+import java.time.Duration;
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import org.bukkit.Bukkit;
@@ -18,6 +22,7 @@ import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Mob;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Vex;
+import org.bukkit.entity.Warden;
 import org.bukkit.plugin.java.JavaPlugin;
 
 public final class SentryTask implements Runnable {
@@ -25,12 +30,15 @@ public final class SentryTask implements Runnable {
         EntityType.ENDERMAN, EntityType.ZOMBIFIED_PIGLIN, EntityType.PIGLIN, EntityType.BEE,
         EntityType.WOLF, EntityType.IRON_GOLEM, EntityType.LLAMA, EntityType.POLAR_BEAR
     );
+    private static final double WARDEN_MELEE_RANGE = 3.0;
+    private static final Duration WARDEN_MELEE_COOLDOWN = Duration.ofMillis(1000);
 
     private final SentryService service;
     private final SentryRepository repository;
     private final SanctuaryRepository sanctuaryRepository;
     private final Logger logger;
     private final Set<String> mobPresence = new HashSet<>();
+    private final Map<UUID, Instant> wardenLastAttack = new HashMap<>();
 
     public SentryTask(SentryService service, SentryRepository repository, SanctuaryRepository sanctuaryRepository, Logger logger) {
         this.service = service;
@@ -61,6 +69,7 @@ public final class SentryTask implements Runnable {
         if (homeWorld == null || !homeWorld.isChunkLoaded(sentry.x() >> 4, sentry.z() >> 4)) return;
 
         if (sentry.state() == SentryState.DOWN) {
+            wardenLastAttack.remove(sentry.id());
             service.updateCooldownVisual(sentry, now);
             if (sentry.respawnAt().isPresent() && !now.isBefore(sentry.respawnAt().orElseThrow())) {
                 SentryDefinition definition = service.definition(sentry).orElse(null);
@@ -72,6 +81,7 @@ public final class SentryTask implements Runnable {
         service.clearCooldownVisual(sentry);
         Entity entity = service.entity(sentry).orElse(null);
         if (!(entity instanceof Mob mob) || entity.isDead()) {
+            wardenLastAttack.remove(sentry.id());
             if (sentry.state() != SentryState.DISABLED) service.markDown(sentry);
             return;
         }
@@ -79,13 +89,18 @@ public final class SentryTask implements Runnable {
         Location loc = entity.getLocation();
         if (!TerritoryCalculator.contains(
             sanctuary.position().orElseThrow(), sanctuary.territoryRadius(), sentry.world(), loc.getX(), loc.getZ())) {
+            wardenLastAttack.remove(sentry.id());
             service.markDown(sentry);
             return;
         }
 
-        if (sentry.state() == SentryState.DISABLED) return;
+        if (sentry.state() == SentryState.DISABLED) {
+            wardenLastAttack.remove(sentry.id());
+            return;
+        }
 
         if (sentry.state() == SentryState.RECALLING) {
+            wardenLastAttack.remove(sentry.id());
             double distance = loc.distance(service.postStandLocation(sentry));
             if (distance <= SentryService.HOME_REACHED_DISTANCE) {
                 service.teleportHome(sentry);
@@ -104,13 +119,45 @@ public final class SentryTask implements Runnable {
         SentryDefinition definition = service.definition(sentry).orElse(null);
         LivingEntity target = service.authorizedTarget(sentry).orElse(null);
         if (target != null && definition != null && service.validTarget(sanctuary, sentry, definition, target)) {
-            service.maintainAuthorizedTarget(sentry, mob, target, now);
+            if (mob instanceof Warden warden) {
+                tickWardenMelee(sentry, warden, target, now);
+            } else {
+                service.maintainAuthorizedTarget(sentry, mob, target, now);
+            }
         } else {
+            wardenLastAttack.remove(sentry.id());
             if (target != null) service.clearTarget(sentry);
             service.idleAtHome(mob, sentry);
         }
 
         service.tickVexCompanions(sentry, mob, service.authorizedTarget(sentry).orElse(null), now);
+    }
+
+    private void tickWardenMelee(SentryRecord sentry, Warden warden, LivingEntity target, Instant now) {
+        warden.setAware(true);
+        warden.setAggressive(true);
+
+        // The Warden's Sonic Boom is driven by its Brain rather than the normal MobGoals API.
+        // Managed Wardens therefore keep the Sanctuary-authorized target outside the vanilla
+        // target/anger state and use direct pathing plus the native melee attack instead.
+        warden.setTarget(null);
+        LivingEntity angryAt = warden.getEntityAngryAt();
+        if (angryAt != null) warden.clearAnger(angryAt);
+
+        double distanceSquared = warden.getLocation().distanceSquared(target.getLocation());
+        if (distanceSquared > WARDEN_MELEE_RANGE * WARDEN_MELEE_RANGE) {
+            var path = warden.getPathfinder().findPath(target);
+            if (path != null) warden.getPathfinder().moveTo(path, 1.2);
+            return;
+        }
+
+        warden.getPathfinder().stopPathfinding();
+        warden.lookAt(target);
+        Instant previousAttack = wardenLastAttack.get(sentry.id());
+        if (previousAttack == null || !now.isBefore(previousAttack.plus(WARDEN_MELEE_COOLDOWN))) {
+            warden.attack(target);
+            wardenLastAttack.put(sentry.id(), now);
+        }
     }
 
     private void scanTriggers() throws SQLException {

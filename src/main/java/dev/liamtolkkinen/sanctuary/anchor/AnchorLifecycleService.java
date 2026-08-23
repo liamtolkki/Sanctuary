@@ -51,40 +51,20 @@ public final class AnchorLifecycleService {
         Objects.requireNonNull(breakerId, "breakerId");
         Objects.requireNonNull(currentPosition, "currentPosition");
 
-        Sanctuary sanctuary = requireMatchingSanctuary(metadata);
-        if (sanctuary.state() != SanctuaryState.ACTIVE) {
-            throw new AnchorPlacementException("This Sanctuary is not currently active");
-        }
-        if (!sanctuary.position().equals(Optional.of(currentPosition))) {
-            throw new AnchorPlacementException(
-                "This Beacon does not match the registered Sanctuary location"
-            );
-        }
+        Sanctuary sanctuary = requireActiveAt(metadata, currentPosition);
         if (!adminOverride && !sanctuary.ownerId().equals(breakerId)) {
             throw new AnchorPlacementException("Only the Sanctuary owner may break this Beacon");
         }
+        return deactivateActiveSanctuary(sanctuary);
+    }
 
-        if (sanctuary.debugEphemeral()) {
-            repository.delete(sanctuary.id());
-            return new AnchorBreakResult(sanctuary, true);
-        }
-
-        if (sanctuary.anchorGeneration() == Integer.MAX_VALUE) {
-            throw new AnchorPlacementException("This Sanctuary cannot advance to another Beacon generation");
-        }
-
-        Instant now = clock.instant();
-        Sanctuary inactive = copy(
-            sanctuary,
-            Optional.empty(),
-            sanctuary.anchorGeneration() + 1,
-            SanctuaryState.INACTIVE,
-            Optional.empty(),
-            Optional.empty(),
-            now
-        );
-        repository.save(inactive);
-        return new AnchorBreakResult(inactive, false);
+    public AnchorBreakResult breakAnchorFromEnvironment(
+        AnchorMetadata metadata,
+        SanctuaryPosition currentPosition
+    ) throws SQLException, AnchorPlacementException {
+        Objects.requireNonNull(metadata, "metadata");
+        Objects.requireNonNull(currentPosition, "currentPosition");
+        return deactivateActiveSanctuary(requireActiveAt(metadata, currentPosition));
     }
 
     public Sanctuary deactivateForBreak(
@@ -260,6 +240,48 @@ public final class AnchorLifecycleService {
                 recovered.anchorGeneration()
             )
         );
+    }
+
+    private Sanctuary requireActiveAt(
+        AnchorMetadata metadata,
+        SanctuaryPosition currentPosition
+    ) throws SQLException, AnchorPlacementException {
+        Sanctuary sanctuary = requireMatchingSanctuary(metadata);
+        if (sanctuary.state() != SanctuaryState.ACTIVE) {
+            throw new AnchorPlacementException("This Sanctuary is not currently active");
+        }
+        if (!sanctuary.position().equals(Optional.of(currentPosition))) {
+            throw new AnchorPlacementException(
+                "This Beacon does not match the registered Sanctuary location"
+            );
+        }
+        return sanctuary;
+    }
+
+    private AnchorBreakResult deactivateActiveSanctuary(
+        Sanctuary sanctuary
+    ) throws SQLException, AnchorPlacementException {
+        if (sanctuary.debugEphemeral()) {
+            repository.delete(sanctuary.id());
+            return new AnchorBreakResult(sanctuary, true);
+        }
+
+        if (sanctuary.anchorGeneration() == Integer.MAX_VALUE) {
+            throw new AnchorPlacementException("This Sanctuary cannot advance to another Beacon generation");
+        }
+
+        Instant now = clock.instant();
+        Sanctuary inactive = copy(
+            sanctuary,
+            Optional.empty(),
+            sanctuary.anchorGeneration() + 1,
+            SanctuaryState.INACTIVE,
+            Optional.empty(),
+            Optional.empty(),
+            now
+        );
+        repository.save(inactive);
+        return new AnchorBreakResult(inactive, false);
     }
 
     private Sanctuary requireMatchingSanctuary(

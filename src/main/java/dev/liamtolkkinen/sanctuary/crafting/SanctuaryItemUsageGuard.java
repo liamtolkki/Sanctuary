@@ -3,6 +3,8 @@ package dev.liamtolkkinen.sanctuary.crafting;
 import dev.liamtolkkinen.extendeditems.ExtendedItemId;
 import dev.liamtolkkinen.extendeditems.ExtendedItemIds;
 import dev.liamtolkkinen.extendeditems.ExtendedItems;
+import dev.liamtolkkinen.extendedui.ExtendedUI;
+import dev.liamtolkkinen.sanctuary.altar.DivineAltarService;
 import java.util.Objects;
 import org.bukkit.Keyed;
 import org.bukkit.event.EventHandler;
@@ -25,10 +27,15 @@ import org.bukkit.plugin.java.JavaPlugin;
  */
 final class SanctuaryItemUsageGuard implements Listener {
     private final String recipeNamespace;
+    private final ExtendedUI altarUi;
+    private final DivineAltarService altarService;
 
     SanctuaryItemUsageGuard(JavaPlugin plugin) {
         Objects.requireNonNull(plugin, "plugin");
         this.recipeNamespace = plugin.getName().toLowerCase(java.util.Locale.ROOT);
+        this.altarUi = new ExtendedUI(plugin);
+        this.altarService = new DivineAltarService(plugin, altarUi);
+        this.altarService.start();
     }
 
     @EventHandler(priority = EventPriority.HIGHEST)

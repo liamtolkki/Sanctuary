@@ -1,9 +1,11 @@
 package dev.liamtolkkinen.sanctuary.companion;
 
 import com.destroystokyo.paper.event.entity.EndermanEscapeEvent;
+import dev.liamtolkkinen.extendeditems.ExtendedItemIds;
 import io.papermc.paper.event.entity.WardenAngerChangeEvent;
 import java.time.Instant;
 import java.util.Optional;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import org.bukkit.ChatColor;
@@ -20,6 +22,7 @@ import org.bukkit.entity.Mob;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Projectile;
 import org.bukkit.entity.Vex;
+import org.bukkit.entity.Warden;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
@@ -42,23 +45,33 @@ import org.bukkit.potion.PotionEffectType;
 import org.bukkit.projectiles.ProjectileSource;
 
 public final class CompanionListener implements Listener {
+    private static final double WARDEN_EGG_DROP_CHANCE = 0.125;
+
     private final CompanionService service;
+    private final CompanionUiService uiService;
+    private final CompanionEggState eggState;
     private final JavaPlugin plugin;
     private final Logger logger;
 
     public CompanionListener(
         CompanionService service,
+        CompanionUiService uiService,
+        CompanionEggState eggState,
         JavaPlugin plugin,
         Logger logger
     ) {
         this.service = service;
+        this.uiService = uiService;
+        this.eggState = eggState;
         this.plugin = plugin;
         this.logger = logger;
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onUseCompanionEgg(PlayerInteractEvent event) {
-        if (!event.getAction().isRightClick() || event.getClickedBlock() == null) {
+        if (event.getHand() != EquipmentSlot.HAND
+            || !event.getAction().isRightClick()
+            || event.getClickedBlock() == null) {
             return;
         }
         ItemStack item = event.getItem();
@@ -86,12 +99,13 @@ public final class CompanionListener implements Listener {
         }
 
         try {
-            service.spawn(event.getPlayer(), companionDefinition, spawnLocation);
+            Mob companion = service.spawn(event.getPlayer(), companionDefinition, spawnLocation);
+            eggState.restoreHealth(item, companion);
             consume(event.getPlayer(), event.getHand(), item);
             event.getPlayer().sendMessage(
                 ChatColor.GREEN
                     + companionDefinition.displayName()
-                    + " is now following you. Sneak-right-click it to make it stay."
+                    + " is now following you. Right-click it to manage it."
             );
         } catch (RuntimeException exception) {
             logger.log(Level.SEVERE, "Failed to spawn companion", exception);
@@ -101,6 +115,10 @@ public final class CompanionListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onUseEggOnEntity(PlayerInteractEntityEvent event) {
+        if (event.getHand() != EquipmentSlot.HAND) {
+            return;
+        }
+
         ItemStack held = itemInHand(event.getPlayer(), event.getHand());
         if (service.definition(held).isPresent()) {
             event.setCancelled(true);
@@ -115,20 +133,9 @@ public final class CompanionListener implements Listener {
             || !service.isOwner(event.getPlayer(), companion)) {
             return;
         }
-        if (!event.getPlayer().isSneaking()) {
-            return;
-        }
 
         event.setCancelled(true);
-        CompanionMode mode = service.toggleMode(companion);
-        String name = service.definition(companion)
-            .map(CompanionDefinition::displayName)
-            .orElse("Companion");
-        if (mode == CompanionMode.STAY) {
-            event.getPlayer().sendMessage(ChatColor.YELLOW + name + " will stay here.");
-        } else {
-            event.getPlayer().sendMessage(ChatColor.GREEN + name + " is following you.");
-        }
+        uiService.open(event.getPlayer(), companion);
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
@@ -202,22 +209,33 @@ public final class CompanionListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGHEST)
     public void onDeath(EntityDeathEvent event) {
-        if (!(event.getEntity() instanceof Mob mob) || !service.isManaged(mob)) {
+        if (event.getEntity() instanceof Mob mob && service.isManaged(mob)) {
+            event.getDrops().clear();
+            event.setDroppedExp(0);
+            service.ownerId(mob)
+                .map(plugin.getServer()::getPlayer)
+                .filter(player -> player != null && player.isOnline())
+                .ifPresent(player -> player.sendMessage(
+                    ChatColor.RED
+                        + service.definition(mob)
+                            .map(CompanionDefinition::displayName)
+                            .orElse("Your companion")
+                        + " was killed."
+                ));
+            service.removeCompanion(mob);
             return;
         }
-        event.getDrops().clear();
-        event.setDroppedExp(0);
-        service.ownerId(mob)
-            .map(plugin.getServer()::getPlayer)
-            .filter(player -> player != null && player.isOnline())
-            .ifPresent(player -> player.sendMessage(
-                ChatColor.RED
-                    + service.definition(mob)
-                        .map(CompanionDefinition::displayName)
-                        .orElse("Your companion")
-                    + " was killed."
-            ));
-        service.removeCompanion(mob);
+
+        if (!(event.getEntity() instanceof Warden warden)
+            || service.isSanctuaryDefenseEntity(warden)
+            || warden.getKiller() == null
+            || ThreadLocalRandom.current().nextDouble() >= WARDEN_EGG_DROP_CHANCE) {
+            return;
+        }
+
+        CompanionDefinition.byItemId(ExtendedItemIds.COMPANION_WARDEN)
+            .map(eggState::createBaseEgg)
+            .ifPresent(event.getDrops()::add);
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)

@@ -8,17 +8,21 @@ import java.util.UUID;
 import java.util.logging.Logger;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
+import org.bukkit.Material;
 import org.bukkit.Particle;
 import org.bukkit.Sound;
 import org.bukkit.damage.DamageSource;
 import org.bukkit.damage.DamageType;
 import org.bukkit.entity.Creeper;
 import org.bukkit.entity.Enemy;
+import org.bukkit.entity.EntityType;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Mob;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Warden;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.potion.PotionEffect;
+import org.bukkit.potion.PotionEffectType;
 import org.bukkit.util.Vector;
 
 public final class CompanionTask implements Runnable {
@@ -37,6 +41,9 @@ public final class CompanionTask implements Runnable {
     private static final Duration WARDEN_MELEE_COOLDOWN = Duration.ofMillis(1000);
     private static final Duration WARDEN_SONIC_CHARGE_TIME = Duration.ofMillis(1700);
     private static final Duration WARDEN_SONIC_COOLDOWN = Duration.ofSeconds(2);
+
+    private static final double DOLPHINS_GRACE_RANGE = 10.0;
+    private static final int DOLPHINS_GRACE_DURATION_TICKS = 40;
 
     private final CompanionService service;
     private final Logger logger;
@@ -77,7 +84,31 @@ public final class CompanionTask implements Runnable {
             return;
         }
 
+        boolean strictAquatic = service.definition(companion)
+            .map(CompanionDefinition::requiresWaterSpawn)
+            .orElse(false);
+
+        if (companion.getType() == EntityType.DOLPHIN) {
+            grantDolphinsGrace(companion, owner);
+        }
+
+        // Guardian, Elder Guardian, Axolotl and Dolphin companions are strictly
+        // aquatic. They stay where they are when their owner leaves the water
+        // instead of pathing or teleporting onto land. Drowned are intentionally
+        // excluded because their definition is amphibious.
+        if (strictAquatic && !isWater(owner.getLocation())) {
+            clearSpecialCombat(companionId);
+            service.clearTarget(companion);
+            service.idleWithoutOwner(companion);
+            service.tickEvokerVexes(companion, null, now);
+            return;
+        }
+
         LivingEntity target = service.findTarget(companion, owner, now);
+        if (strictAquatic && target != null && !isWater(target.getLocation())) {
+            target = null;
+        }
+
         if (target == null) {
             clearSpecialCombat(companionId);
             service.clearTarget(companion);
@@ -98,6 +129,28 @@ public final class CompanionTask implements Runnable {
             service.maintainTarget(companion, target, now);
         }
         service.tickEvokerVexes(companion, target, now);
+    }
+
+    private void grantDolphinsGrace(Mob dolphin, Player owner) {
+        if (dolphin.getWorld() != owner.getWorld()
+            || !isWater(owner.getLocation())
+            || dolphin.getLocation().distanceSquared(owner.getLocation())
+                > DOLPHINS_GRACE_RANGE * DOLPHINS_GRACE_RANGE) {
+            return;
+        }
+
+        owner.addPotionEffect(new PotionEffect(
+            PotionEffectType.DOLPHINS_GRACE,
+            DOLPHINS_GRACE_DURATION_TICKS,
+            0,
+            true,
+            false,
+            true
+        ));
+    }
+
+    private boolean isWater(Location location) {
+        return location.getBlock().getType() == Material.WATER;
     }
 
     private void tickFriendlyCombat(

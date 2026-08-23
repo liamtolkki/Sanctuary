@@ -23,6 +23,7 @@ import org.bukkit.entity.Mob;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Projectile;
 import org.bukkit.entity.Warden;
+import org.bukkit.event.Event;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
@@ -69,7 +70,7 @@ public final class CompanionListener implements Listener {
         this.logger = logger;
     }
 
-    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)
     public void onUseCompanionEgg(PlayerInteractEvent event) {
         if (event.getHand() != EquipmentSlot.HAND
             || !event.getAction().isRightClick()) {
@@ -82,6 +83,9 @@ public final class CompanionListener implements Listener {
         }
 
         event.setCancelled(true);
+        event.setUseItemInHand(Event.Result.DENY);
+        event.setUseInteractedBlock(Event.Result.DENY);
+
         CompanionDefinition companionDefinition = definition.orElseThrow();
         Block clicked = resolveClickedBlock(event, companionDefinition);
         if (clicked == null) {

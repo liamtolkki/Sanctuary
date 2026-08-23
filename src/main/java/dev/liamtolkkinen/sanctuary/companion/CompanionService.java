@@ -42,10 +42,10 @@ import org.bukkit.util.Vector;
 
 public final class CompanionService {
     public static final double HOSTILE_RADIUS = 10.0;
-    public static final double FOLLOW_DISTANCE = 5.0;
-    public static final double FOLLOW_MIN_DISTANCE = 3.5;
-    public static final double FOLLOW_MAX_DISTANCE = 7.0;
-    public static final double TELEPORT_DISTANCE = 18.0;
+    public static final double FOLLOW_DISTANCE = 7.5;
+    public static final double FOLLOW_MIN_DISTANCE = 5.5;
+    public static final double FOLLOW_MAX_DISTANCE = 10.0;
+    public static final double TELEPORT_DISTANCE = 28.0;
     public static final double DEFENSE_MAX_DISTANCE = 32.0;
     public static final double STAY_COMBAT_RADIUS = 20.0;
     public static final Duration OWNER_THREAT_TIMEOUT = Duration.ofSeconds(15);
@@ -245,6 +245,11 @@ public final class CompanionService {
             data.remove(stayZKey);
         }
         clearTarget(companion);
+        companion.getPathfinder().stopPathfinding();
+        companion.setVelocity(new Vector(0, 0, 0));
+        if (mode == CompanionMode.STAY) {
+            companion.setAware(false);
+        }
     }
 
     public Optional<Location> stayLocation(Entity entity) {
@@ -283,18 +288,6 @@ public final class CompanionService {
     }
 
     public LivingEntity findTarget(Mob companion, Player owner, Instant now) {
-        Threat threat = ownerThreats.get(owner.getUniqueId());
-        if (threat != null) {
-            if (now.isBefore(threat.expiresAt())) {
-                Entity attacker = Bukkit.getEntity(threat.attackerId());
-                if (attacker instanceof LivingEntity living && validTarget(companion, owner, living)) {
-                    return living;
-                }
-            } else {
-                ownerThreats.remove(owner.getUniqueId());
-            }
-        }
-
         LivingEntity targetingOwner = owner.getNearbyEntities(
                 DEFENSE_MAX_DISTANCE,
                 DEFENSE_MAX_DISTANCE,
@@ -312,14 +305,37 @@ public final class CompanionService {
             return targetingOwner;
         }
 
-        return owner.getNearbyEntities(HOSTILE_RADIUS, HOSTILE_RADIUS, HOSTILE_RADIUS)
+        Threat threat = ownerThreats.get(owner.getUniqueId());
+        if (threat != null) {
+            if (now.isBefore(threat.expiresAt())) {
+                Entity attacker = Bukkit.getEntity(threat.attackerId());
+                if (attacker instanceof LivingEntity living && validTarget(companion, owner, living)) {
+                    return living;
+                }
+            } else {
+                ownerThreats.remove(owner.getUniqueId());
+            }
+        }
+
+        Location center = mode(companion) == CompanionMode.STAY
+            ? stayLocation(companion).orElse(companion.getLocation())
+            : owner.getLocation();
+        if (center.getWorld() == null) {
+            return null;
+        }
+        return center.getWorld().getNearbyEntities(
+                center,
+                HOSTILE_RADIUS,
+                HOSTILE_RADIUS,
+                HOSTILE_RADIUS
+            )
             .stream()
             .filter(Enemy.class::isInstance)
             .map(Enemy.class::cast)
             .filter(LivingEntity.class::isInstance)
             .map(LivingEntity.class::cast)
             .filter(target -> validTarget(companion, owner, target))
-            .min(Comparator.comparingDouble(target -> target.getLocation().distanceSquared(owner.getLocation())))
+            .min(Comparator.comparingDouble(target -> target.getLocation().distanceSquared(center)))
             .orElse(null);
     }
 
@@ -460,13 +476,17 @@ public final class CompanionService {
     public void followOwner(Mob companion, Player owner) {
         Location target = formationLocation(owner, companion);
         if (companion.getWorld() != owner.getWorld()) {
-            teleportManaged(companion, target);
+            if (owner.isOnGround()) {
+                teleportManaged(companion, target);
+            }
             return;
         }
 
         double distanceSquared = companion.getLocation().distanceSquared(owner.getLocation());
         if (distanceSquared > TELEPORT_DISTANCE * TELEPORT_DISTANCE) {
-            teleportManaged(companion, target);
+            if (owner.isOnGround()) {
+                teleportManaged(companion, target);
+            }
             return;
         }
 
@@ -483,6 +503,9 @@ public final class CompanionService {
     }
 
     public void teleportFollowers(Player owner) {
+        if (!owner.isOnGround()) {
+            return;
+        }
         for (Mob companion : loadedCompanions()) {
             if (mode(companion) != CompanionMode.FOLLOW || !isOwner(owner, companion)) {
                 continue;
@@ -506,7 +529,7 @@ public final class CompanionService {
         UUID id = companionId(companion).orElse(companion.getUniqueId());
         long bits = id.getLeastSignificantBits();
         double angle = ((bits & 0xFFFFL) / 65535.0) * Math.PI * 2.0;
-        double radius = FOLLOW_DISTANCE + (((bits >>> 16) & 0x3L) * 0.45);
+        double radius = FOLLOW_DISTANCE + (((bits >>> 16) & 0x3L) * 0.6);
         return owner.getLocation().clone().add(
             Math.cos(angle) * radius,
             0.0,

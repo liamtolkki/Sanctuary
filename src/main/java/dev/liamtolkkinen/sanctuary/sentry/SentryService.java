@@ -195,6 +195,41 @@ public final class SentryService {
             Optional.empty(), SentryState.DOWN, Optional.of(now.plus(RESPAWN_COOLDOWN)), Optional.empty(), record.createdAt(), now));
     }
 
+    public void suspendForInactiveSanctuary(SentryRecord record) throws SQLException {
+        clearCooldownVisual(record);
+        removeVexCompanions(record);
+        entity(record).ifPresent(Entity::remove);
+        authorizedTargets.remove(record.id());
+        if (record.entityId().isEmpty()) return;
+
+        Instant now = Instant.now();
+        repository.save(new SentryRecord(
+            record.id(), record.sanctuaryId(), record.itemId(), record.world(), record.x(), record.y(), record.z(),
+            Optional.empty(), record.state(), record.respawnAt(), record.recallDeadline(), record.createdAt(), now
+        ));
+    }
+
+    public void restoreForActiveSanctuary(SentryRecord record, Sanctuary sanctuary, Instant now) throws SQLException {
+        if (record.state() == SentryState.DOWN || record.entityId().isPresent()) return;
+        SentryDefinition definition = definition(record).orElse(null);
+        if (definition == null) return;
+
+        boolean restoreDisabled = record.state() == SentryState.DISABLED;
+        SentryRecord spawnRecord = record;
+        if (record.state() == SentryState.RECALLING) {
+            spawnRecord = new SentryRecord(
+                record.id(), record.sanctuaryId(), record.itemId(), record.world(), record.x(), record.y(), record.z(),
+                Optional.empty(), SentryState.ACTIVE, Optional.empty(), Optional.empty(), record.createdAt(), now
+            );
+            repository.save(spawnRecord);
+        }
+
+        SentryRecord restored = spawn(spawnRecord, definition, sanctuary, now);
+        if (restoreDisabled && restored.entityId().isPresent()) {
+            setDisabled(restored, true);
+        }
+    }
+
     public void setDisabled(SentryRecord record, boolean disabled) throws SQLException {
         Instant now = Instant.now();
         SentryState state = disabled ? SentryState.DISABLED : SentryState.ACTIVE;

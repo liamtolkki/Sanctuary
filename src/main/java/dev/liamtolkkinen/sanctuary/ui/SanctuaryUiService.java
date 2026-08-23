@@ -701,11 +701,11 @@ public final class SanctuaryUiService {
                 SanctuaryEffect.SPEED
             };
             SanctuaryEffect[] hostile = {
-                SanctuaryEffect.ELYTRA_DISABLED,
-                SanctuaryEffect.MINING_FATIGUE,
-                SanctuaryEffect.WEAKNESS,
+                SanctuaryEffect.WITHER,
                 SanctuaryEffect.BLINDNESS,
-                SanctuaryEffect.WITHER
+                SanctuaryEffect.WEAKNESS,
+                SanctuaryEffect.MINING_FATIGUE,
+                SanctuaryEffect.ELYTRA_DISABLED
             };
 
             for (int index = 0; index < positive.length; index++) {

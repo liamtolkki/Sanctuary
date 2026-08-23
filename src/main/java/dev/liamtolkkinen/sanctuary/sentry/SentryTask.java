@@ -2,6 +2,7 @@ package dev.liamtolkkinen.sanctuary.sentry;
 
 import dev.liamtolkkinen.sanctuary.sanctuary.Sanctuary;
 import dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryRepository;
+import dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryState;
 import dev.liamtolkkinen.sanctuary.territory.TerritoryCalculator;
 import java.sql.SQLException;
 import java.time.Duration;
@@ -79,7 +80,18 @@ public final class SentryTask implements Runnable {
 
     private void tickSentry(SentryRecord sentry, Instant now) throws SQLException {
         Sanctuary sanctuary = sanctuaryRepository.findById(sentry.sanctuaryId()).orElse(null);
-        if (sanctuary == null || sanctuary.position().isEmpty()) return;
+        if (sanctuary == null) {
+            clearWardenCombatState(sentry.id());
+            service.entity(sentry).ifPresent(Entity::remove);
+            return;
+        }
+
+        if (sanctuary.state() != SanctuaryState.ACTIVE || sanctuary.position().isEmpty()) {
+            clearWardenCombatState(sentry.id());
+            service.suspendForInactiveSanctuary(sentry);
+            return;
+        }
+
         var homeWorld = Bukkit.getWorld(sentry.world());
         if (homeWorld == null || !homeWorld.isChunkLoaded(sentry.x() >> 4, sentry.z() >> 4)) return;
 
@@ -97,7 +109,17 @@ public final class SentryTask implements Runnable {
         Entity entity = service.entity(sentry).orElse(null);
         if (!(entity instanceof Mob mob) || entity.isDead()) {
             clearWardenCombatState(sentry.id());
-            if (sentry.state() != SentryState.DISABLED) service.markDown(sentry);
+            if (sentry.entityId().isEmpty()) {
+                service.restoreForActiveSanctuary(sentry, sanctuary, now);
+                return;
+            }
+            if (sentry.state() == SentryState.DISABLED) {
+                service.suspendForInactiveSanctuary(sentry);
+                SentryRecord suspended = repository.findById(sentry.id()).orElse(sentry);
+                service.restoreForActiveSanctuary(suspended, sanctuary, now);
+                return;
+            }
+            service.markDown(sentry);
             return;
         }
 
@@ -255,8 +277,7 @@ public final class SentryTask implements Runnable {
     private void scanTriggers() throws SQLException {
         Set<String> current = new HashSet<>();
         for (Sanctuary sanctuary : sanctuaryRepository.findAll()) {
-            if (sanctuary.position().isEmpty()
-                || sanctuary.state() != dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryState.ACTIVE) continue;
+            if (sanctuary.position().isEmpty() || sanctuary.state() != SanctuaryState.ACTIVE) continue;
             var world = Bukkit.getWorld(sanctuary.position().orElseThrow().world());
             if (world == null) continue;
 

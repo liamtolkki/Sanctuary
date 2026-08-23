@@ -268,7 +268,13 @@ public final class SentryTask implements Runnable {
                     sanctuary.position().orElseThrow(), sanctuary.territoryRadius(), world.getName(),
                     location.getX(), location.getZ())) continue;
 
+                String key = sanctuary.id() + ":" + entity.getUniqueId();
+                current.add(key);
+
                 if (entity instanceof Player player) {
+                    if (!mobPresence.contains(key)) {
+                        service.trigger(sanctuary, SentryTrigger.UNAUTHORIZED_PLAYER_ENTERED, player);
+                    }
                     double dx = location.getX() - (sanctuary.position().orElseThrow().x() + 0.5);
                     double dz = location.getZ() - (sanctuary.position().orElseThrow().z() + 0.5);
                     if (dx * dx + dz * dz <= SentryService.BEACON_PROXIMITY_RADIUS * SentryService.BEACON_PROXIMITY_RADIUS) {
@@ -277,8 +283,6 @@ public final class SentryTask implements Runnable {
                     continue;
                 }
 
-                String key = sanctuary.id() + ":" + entity.getUniqueId();
-                current.add(key);
                 if (NEUTRAL_TYPES.contains(entity.getType())) {
                     service.trigger(sanctuary, SentryTrigger.NEUTRAL_MOB_ENTERED, living);
                 } else if (entity instanceof Enemy) {

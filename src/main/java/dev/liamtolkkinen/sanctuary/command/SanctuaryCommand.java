@@ -629,6 +629,7 @@ public final class SanctuaryCommand implements CommandExecutor, TabCompleter {
             case "baby_zombie" -> ExtendedItemIds.SENTRY_BABY_ZOMBIE;
             case "blaze" -> ExtendedItemIds.SENTRY_BLAZE;
             case "warden" -> ExtendedItemIds.SENTRY_WARDEN;
+            case "creeper" -> ExtendedItemIds.SENTRY_CREEPER;
             case "wither" -> ExtendedItemIds.SENTRY_WITHER;
             case "drowned" -> ExtendedItemIds.SENTRY_DROWNED;
             case "guardian" -> ExtendedItemIds.SENTRY_GUARDIAN;
@@ -656,6 +657,7 @@ public final class SanctuaryCommand implements CommandExecutor, TabCompleter {
             "baby_zombie",
             "blaze",
             "warden",
+            "creeper",
             "wither",
             "drowned",
             "guardian",

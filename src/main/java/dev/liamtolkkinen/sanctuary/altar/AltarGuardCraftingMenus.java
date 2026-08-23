@@ -1,6 +1,7 @@
 package dev.liamtolkkinen.sanctuary.altar;
 
 import dev.liamtolkkinen.extendeditems.ExtendedItemId;
+import dev.liamtolkkinen.extendeditems.ExtendedItemIds;
 import dev.liamtolkkinen.extendeditems.ExtendedItems;
 import dev.liamtolkkinen.extendedui.ExtendedButton;
 import dev.liamtolkkinen.extendedui.ExtendedInventoryMenu;
@@ -35,6 +36,9 @@ final class AltarGuardCraftingMenus {
         20, 21, 22,
         29, 30, 31
     };
+    private static final int SENTRY_SHARD_INDEX = 1;
+    private static final int SENTRY_COMPANION_INDEX = 4;
+    private static final int SENTRY_POST_INDEX = 7;
 
     private final SanctuaryAdvancementService advancementService;
     private final SentryCraftingItemService craftingItems;
@@ -61,6 +65,14 @@ final class AltarGuardCraftingMenus {
 
     static int[] craftingGridSlots() {
         return CRAFTING_GRID_SLOTS.clone();
+    }
+
+    static int[] sentryIngredientIndexes() {
+        return new int[] {
+            SENTRY_SHARD_INDEX,
+            SENTRY_COMPANION_INDEX,
+            SENTRY_POST_INDEX
+        };
     }
 
     private final class CompanionRecipesMenu extends ExtendedInventoryMenu {
@@ -133,10 +145,15 @@ final class AltarGuardCraftingMenus {
             menu.fillBackground();
             Player player = context.player();
 
-            for (int index = 0; index < recipe.ingredients().size(); index++) {
+            GuardIngredient[] grid = recipe.grid();
+            for (int index = 0; index < grid.length; index++) {
+                GuardIngredient ingredient = grid[index];
+                if (ingredient == null) {
+                    continue;
+                }
                 menu.set(
                     CRAFTING_GRID_SLOTS[index],
-                    ExtendedButton.builder(ingredientIcon(recipe.ingredients().get(index)))
+                    ExtendedButton.builder(ingredientIcon(ingredient))
                         .enabled(false)
                         .build()
                 );
@@ -167,27 +184,38 @@ final class AltarGuardCraftingMenus {
     }
 
     private GuardRecipe companionRecipe(SentryRecipeCatalog.CompanionRecipe definition) {
-        List<GuardIngredient> ingredients = new ArrayList<>(definition.slotCount());
-        for (SentryRecipeCatalog.Ingredient ingredient : definition.ingredients()) {
-            GuardIngredient converted = ingredient.material() != null
-                ? GuardIngredient.material(ingredient.material())
-                : GuardIngredient.special(ingredient.special());
-            for (int count = 0; count < ingredient.count(); count++) {
-                ingredients.add(converted);
+        GuardIngredient[] grid = new GuardIngredient[9];
+        for (int index = 0; index < grid.length; index++) {
+            SentryRecipeCatalog.Ingredient ingredient = definition.ingredientAt(index);
+            if (ingredient != null) {
+                grid[index] = guardIngredient(ingredient);
             }
         }
-        return new GuardRecipe(definition.result(), List.copyOf(ingredients), false);
+        return new GuardRecipe(definition.result(), grid, false);
     }
 
     private GuardRecipe sentryRecipe(SentryRecipeCatalog.SentryConversion definition) {
-        return new GuardRecipe(
-            definition.sentry(),
-            List.of(
-                GuardIngredient.extended(definition.companion()),
-                GuardIngredient.material(definition.postMaterial())
-            ),
-            true
+        GuardIngredient[] grid = new GuardIngredient[9];
+        grid[SENTRY_SHARD_INDEX] = GuardIngredient.extended(
+            ExtendedItemIds.CONSECRATED_SHARD
         );
+        grid[SENTRY_COMPANION_INDEX] = GuardIngredient.extended(
+            definition.companion()
+        );
+        grid[SENTRY_POST_INDEX] = GuardIngredient.material(
+            definition.postMaterial()
+        );
+        return new GuardRecipe(definition.sentry(), grid, true);
+    }
+
+    private GuardIngredient guardIngredient(SentryRecipeCatalog.Ingredient ingredient) {
+        if (ingredient.extendedItem() != null) {
+            return GuardIngredient.extended(ingredient.extendedItem());
+        }
+        if (ingredient.special() != null) {
+            return GuardIngredient.special(ingredient.special());
+        }
+        return GuardIngredient.material(ingredient.material());
     }
 
     private ItemStack recipeResultIcon(GuardRecipe recipe) {
@@ -237,7 +265,10 @@ final class AltarGuardCraftingMenus {
     ) {
         Map<String, Integer> needed = new LinkedHashMap<>();
         Map<String, GuardIngredient> definitions = new LinkedHashMap<>();
-        for (GuardIngredient ingredient : recipe.ingredients()) {
+        for (GuardIngredient ingredient : recipe.grid()) {
+            if (ingredient == null) {
+                continue;
+            }
             String key = ingredientKey(ingredient);
             needed.merge(key, 1, Integer::sum);
             definitions.putIfAbsent(key, ingredient);
@@ -273,7 +304,10 @@ final class AltarGuardCraftingMenus {
     private boolean hasAllIngredients(Player player, GuardRecipe recipe) {
         Map<String, Integer> required = new LinkedHashMap<>();
         Map<String, GuardIngredient> definitions = new LinkedHashMap<>();
-        for (GuardIngredient ingredient : recipe.ingredients()) {
+        for (GuardIngredient ingredient : recipe.grid()) {
+            if (ingredient == null) {
+                continue;
+            }
             String key = ingredientKey(ingredient);
             required.merge(key, 1, Integer::sum);
             definitions.putIfAbsent(key, ingredient);
@@ -327,7 +361,10 @@ final class AltarGuardCraftingMenus {
         }
 
         List<ItemStack> consumed = new ArrayList<>();
-        for (GuardIngredient ingredient : recipe.ingredients()) {
+        for (GuardIngredient ingredient : recipe.grid()) {
+            if (ingredient == null) {
+                continue;
+            }
             ItemStack taken = takeIngredient(player.getInventory(), ingredient);
             if (taken == null) {
                 rollbackIngredients(player, consumed);
@@ -403,6 +440,8 @@ final class AltarGuardCraftingMenus {
         if (ingredient.special() != null) {
             return switch (ingredient.special()) {
                 case OMINOUS_BOTTLE_V -> "Ominous Bottle V";
+                case OMINOUS_BANNER -> "Ominous Banner";
+                case SPEED_II_POTION -> "Potion of Swiftness II";
                 case CREEPER_TROPHY_HEAD -> "Creeper Head";
                 case ZOMBIE_TROPHY_HEAD -> "Zombie Head";
                 case PIGLIN_BRUTE_TROPHY_HEAD -> "Piglin Brute Head";
@@ -425,17 +464,23 @@ final class AltarGuardCraftingMenus {
 
     private record GuardRecipe(
         ExtendedItemId result,
-        List<GuardIngredient> ingredients,
+        GuardIngredient[] grid,
         boolean sentry
     ) {
         private GuardRecipe {
             Objects.requireNonNull(result, "result");
-            ingredients = List.copyOf(Objects.requireNonNull(ingredients, "ingredients"));
-            if (ingredients.isEmpty() || ingredients.size() > 9) {
+            Objects.requireNonNull(grid, "grid");
+            if (grid.length != 9) {
                 throw new IllegalArgumentException(
-                    "Guard altar recipe must use between one and nine crafting slots"
+                    "Guard altar recipe grid must contain exactly nine slots"
                 );
             }
+            grid = grid.clone();
+        }
+
+        @Override
+        public GuardIngredient[] grid() {
+            return grid.clone();
         }
     }
 

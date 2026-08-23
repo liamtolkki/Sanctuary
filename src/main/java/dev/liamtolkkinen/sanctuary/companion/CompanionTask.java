@@ -79,10 +79,6 @@ public final class CompanionTask implements Runnable {
             return;
         }
 
-        if (service.mode(companion) == CompanionMode.FOLLOW) {
-            service.followOwner(companion, owner);
-        }
-
         LivingEntity target = service.findTarget(companion, owner, now);
         if (target == null) {
             clearSpecialCombat(companionId);

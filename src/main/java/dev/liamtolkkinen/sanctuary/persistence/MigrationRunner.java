@@ -19,7 +19,8 @@ public final class MigrationRunner {
         new DatabaseMigration(6, "security_policy", "/db/migration/V006__security_policy.sql"),
         new DatabaseMigration(7, "beacon_effect_levels", "/db/migration/V007__beacon_effect_levels.sql"),
         new DatabaseMigration(8, "sentries", "/db/migration/V008__sentries.sql"),
-        new DatabaseMigration(9, "altar_offerings", "/db/migration/V009__altar_offerings.sql")
+        new DatabaseMigration(9, "altar_offerings", "/db/migration/V009__altar_offerings.sql"),
+        new DatabaseMigration(10, "sanctuary_anchor_graph", "/db/migration/V010__sanctuary_anchor_graph.sql")
     );
 
     private final DatabaseManager databaseManager;

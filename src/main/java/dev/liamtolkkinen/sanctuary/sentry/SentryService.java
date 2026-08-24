@@ -6,6 +6,7 @@ import dev.liamtolkkinen.sanctuary.sanctuary.Sanctuary;
 import dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryRepository;
 import dev.liamtolkkinen.sanctuary.security.SanctuaryRelationship;
 import dev.liamtolkkinen.sanctuary.security.SanctuarySecurityService;
+import dev.liamtolkkinen.sanctuary.territory.AnchorTerritoryService;
 import dev.liamtolkkinen.sanctuary.territory.TerritoryCalculator;
 import dev.liamtolkkinen.sanctuary.territory.TerritoryPresenceService;
 import java.sql.SQLException;
@@ -56,6 +57,7 @@ public final class SentryService {
     private final SentryRepository repository;
     private final SanctuarySecurityService securityService;
     private final TerritoryPresenceService presenceService;
+    private final AnchorTerritoryService anchorTerritoryService;
     private final Logger logger;
     private final NamespacedKey sentryIdKey;
     private final NamespacedKey vexParentKey;
@@ -74,11 +76,24 @@ public final class SentryService {
         TerritoryPresenceService presenceService,
         Logger logger
     ) {
+        this(plugin, sanctuaryRepository, repository, securityService, presenceService, null, logger);
+    }
+
+    public SentryService(
+        JavaPlugin plugin,
+        SanctuaryRepository sanctuaryRepository,
+        SentryRepository repository,
+        SanctuarySecurityService securityService,
+        TerritoryPresenceService presenceService,
+        AnchorTerritoryService anchorTerritoryService,
+        Logger logger
+    ) {
         this.plugin = Objects.requireNonNull(plugin, "plugin");
         this.sanctuaryRepository = Objects.requireNonNull(sanctuaryRepository, "sanctuaryRepository");
         this.repository = Objects.requireNonNull(repository, "repository");
         this.securityService = Objects.requireNonNull(securityService, "securityService");
         this.presenceService = Objects.requireNonNull(presenceService, "presenceService");
+        this.anchorTerritoryService = anchorTerritoryService;
         this.logger = Objects.requireNonNull(logger, "logger");
         this.sentryIdKey = new NamespacedKey(plugin, "sentry_id");
         this.vexParentKey = new NamespacedKey(plugin, "sentry_vex_parent");
@@ -91,8 +106,20 @@ public final class SentryService {
     }
 
     public Optional<Sanctuary> sanctuaryAt(Location location) throws SQLException {
+        if (anchorTerritoryService != null) {
+            return anchorTerritoryService.findCurrentSanctuary(
+                location.getWorld().getName(),
+                location.getX(),
+                location.getZ()
+            );
+        }
         List<Sanctuary> candidates = sanctuaryRepository.findActiveInWorld(location.getWorld().getName());
-        return presenceService.findCurrentSanctuary(candidates, location.getWorld().getName(), location.getX(), location.getZ());
+        return presenceService.findCurrentSanctuary(
+            candidates,
+            location.getWorld().getName(),
+            location.getX(),
+            location.getZ()
+        );
     }
 
     public SentryRecord register(Sanctuary sanctuary, SentryDefinition definition, Location post) throws SQLException {
@@ -116,9 +143,9 @@ public final class SentryService {
     public SentryRecord spawn(SentryRecord record, SentryDefinition definition, Sanctuary sanctuary, Instant now) throws SQLException {
         clearCooldownVisual(record);
         World world = Bukkit.getWorld(record.world());
-        if (world == null || sanctuary.position().isEmpty()) return record;
+        if (world == null) return record;
         Location home = home(record);
-        if (!TerritoryCalculator.contains(sanctuary.position().orElseThrow(), sanctuary.territoryRadius(), record.world(), home.getX(), home.getZ())) return record;
+        if (!containsSanctuary(sanctuary, record.world(), home.getX(), home.getZ())) return record;
         if (!world.isChunkLoaded(record.x() >> 4, record.z() >> 4)) return record;
         if (world.getBlockAt(record.x(), record.y(), record.z()).getType() != ExtendedItems.create(definition.itemId()).getType()) return record;
 
@@ -486,12 +513,15 @@ public final class SentryService {
         if (stand.getWorld() == null) return;
         try {
             Sanctuary sanctuary = sanctuaryRepository.findById(record.sanctuaryId()).orElse(null);
-            if (sanctuary == null || sanctuary.position().isEmpty()) return;
+            if (sanctuary == null) return;
             var path = mob.getPathfinder().findPath(stand);
             if (path == null) return;
-            boolean exits = path.getPoints().stream().anyMatch(point ->
-                !TerritoryCalculator.contains(sanctuary.position().orElseThrow(), sanctuary.territoryRadius(), record.world(), point.getX(), point.getZ()));
-            if (!exits) mob.getPathfinder().moveTo(path, 1.0);
+            for (var point : path.getPoints()) {
+                if (!containsSanctuary(sanctuary, record.world(), point.getX(), point.getZ())) {
+                    return;
+                }
+            }
+            mob.getPathfinder().moveTo(path, 1.0);
         } catch (SQLException exception) {
             logger.warning("Failed to validate sentry home path: " + exception.getMessage());
         }
@@ -530,9 +560,9 @@ public final class SentryService {
     private boolean locationAllowedForCombat(SentryRecord record, Location destination) throws SQLException {
         Sanctuary sanctuary = sanctuaryRepository.findById(record.sanctuaryId()).orElse(null);
         SentryDefinition definition = definition(record).orElse(null);
-        if (sanctuary == null || sanctuary.position().isEmpty() || definition == null) return false;
+        if (sanctuary == null || definition == null) return false;
         if (destination.getWorld() == null || !destination.getWorld().getName().equals(record.world())) return false;
-        if (!TerritoryCalculator.contains(sanctuary.position().orElseThrow(), sanctuary.territoryRadius(), record.world(), destination.getX(), destination.getZ())) return false;
+        if (!containsSanctuary(sanctuary, record.world(), destination.getX(), destination.getZ())) return false;
         Location home = home(record);
         double dx = destination.getX() - home.getX();
         double dz = destination.getZ() - home.getZ();
@@ -545,7 +575,7 @@ public final class SentryService {
     }
 
     public boolean validTarget(Sanctuary sanctuary, SentryRecord sentry, SentryDefinition definition, LivingEntity target) {
-        if (target.getWorld() != Bukkit.getWorld(sentry.world()) || sanctuary.position().isEmpty() || isDefenseEntity(target)) return false;
+        if (target.getWorld() != Bukkit.getWorld(sentry.world()) || isDefenseEntity(target)) return false;
         if (target instanceof Player player) {
             try {
                 SanctuaryRelationship relationship = securityService.relationship(sanctuary, player.getUniqueId());
@@ -556,7 +586,7 @@ public final class SentryService {
             }
         }
         Location t = target.getLocation();
-        if (!TerritoryCalculator.contains(sanctuary.position().orElseThrow(), sanctuary.territoryRadius(), sentry.world(), t.getX(), t.getZ())) return false;
+        if (!containsSanctuary(sanctuary, sentry.world(), t.getX(), t.getZ())) return false;
         Location h = home(sentry);
         double dx = t.getX() - h.getX();
         double dz = t.getZ() - h.getZ();
@@ -612,6 +642,30 @@ public final class SentryService {
             Entity entity = Bukkit.getEntity(id);
             if (entity != null) entity.remove();
         }
+    }
+
+    private boolean containsSanctuary(
+        Sanctuary sanctuary,
+        String world,
+        double x,
+        double z
+    ) {
+        if (anchorTerritoryService != null) {
+            try {
+                return anchorTerritoryService.contains(sanctuary.id(), world, x, z);
+            } catch (SQLException exception) {
+                logger.warning("Failed graph Sanctuary containment check: " + exception.getMessage());
+                return false;
+            }
+        }
+        return sanctuary.position().isPresent()
+            && TerritoryCalculator.contains(
+                sanctuary.position().orElseThrow(),
+                sanctuary.territoryRadius(),
+                world,
+                x,
+                z
+            );
     }
 
     private boolean isEvoker(SentryRecord record) {

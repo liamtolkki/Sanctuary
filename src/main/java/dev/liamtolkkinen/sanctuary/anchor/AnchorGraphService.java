@@ -102,20 +102,15 @@ public final class AnchorGraphService {
         }
 
         UUID sanctuaryId = metadata.anchorId();
-        Sanctuary sanctuary = new Sanctuary(
+        Sanctuary sanctuary = createFreshSanctuary(
             sanctuaryId,
             ownerId,
+            ownerName,
             type,
-            ownerName + "'s Sanctuary",
-            Optional.of(position),
+            position,
             metadata.tier(),
             metadata.generation(),
             initialRadius,
-            SanctuaryState.ACTIVE,
-            Optional.empty(),
-            Optional.empty(),
-            false,
-            now,
             now
         );
         sanctuaryRepository.save(sanctuary);
@@ -161,9 +156,8 @@ public final class AnchorGraphService {
 
         SanctuaryAnchor existing = requireMatchingAnchor(metadata);
         Sanctuary source = requireSanctuary(existing.sanctuaryId());
-        boolean debugOverride = source.debugEphemeral() && adminOverride;
-        if (!source.ownerId().equals(placerId) && !debugOverride) {
-            throw new AnchorPlacementException("Only the Sanctuary owner may place this bound anchor");
+        if (source.debugEphemeral() && !adminOverride) {
+            throw new AnchorPlacementException("Only an administrator may place an ephemeral debug anchor");
         }
         if (existing.type() != itemType) {
             throw new AnchorPlacementException("This anchor item type does not match its registered anchor");
@@ -175,8 +169,10 @@ public final class AnchorGraphService {
             throw new AnchorPlacementException("This Sanctuary anchor is already active");
         }
 
+        // Anchor item provenance is intentionally ignored here. The placer determines which
+        // Sanctuary the physical anchor joins, while the anchor keeps its own identity/upgrades.
         List<SanctuaryAnchor> neighbors = joinCandidates(
-            source.ownerId(),
+            placerId,
             position,
             maximumRadius,
             Optional.of(existing.id())
@@ -216,44 +212,25 @@ public final class AnchorGraphService {
             Optional.of(existing.id())
         );
 
-        List<SanctuaryAnchor> sourceRemainder = remainingNonDestroyed(source.id(), existing.id());
-        anchorRepository.deleteEdgesForAnchor(existing.id());
-        if (sourceRemainder.isEmpty()) {
-            SanctuaryAnchor activated = copyAnchor(
-                existing,
-                source.id(),
-                Optional.empty(),
-                Optional.of(position),
-                SanctuaryState.ACTIVE,
-                Optional.empty(),
-                Optional.empty(),
-                now
-            );
-            anchorRepository.save(activated);
-            Sanctuary updatedSource = copySanctuaryRoot(source, activated, now);
-            sanctuaryRepository.save(updatedSource);
-            return new AnchorPlacementOutcome(updatedSource, activated, false, false);
-        }
-
-        UUID newSanctuaryId = UUID.randomUUID();
+        // A detached/re-homed physical anchor always starts a fresh Sanctuary. This deliberately
+        // prevents trust, blacklist, lockdown, naming, sentry defaults, or other shared state from
+        // following the item. Only the physical anchor's own upgrades persist.
         String ownerName = placerName == null || placerName.isBlank() ? "Owner" : placerName;
-        Sanctuary newSanctuary = new Sanctuary(
+        UUID newSanctuaryId = UUID.randomUUID();
+        Sanctuary newSanctuary = createFreshSanctuary(
             newSanctuaryId,
-            source.ownerId(),
+            placerId,
+            ownerName,
             existing.type(),
-            ownerName + "'s Sanctuary",
-            Optional.of(position),
+            position,
             existing.tier(),
             existing.generation(),
             existing.territoryRadius(),
-            SanctuaryState.ACTIVE,
-            Optional.empty(),
-            Optional.empty(),
-            false,
-            now,
             now
         );
         sanctuaryRepository.save(newSanctuary);
+
+        anchorRepository.deleteEdgesForAnchor(existing.id());
         SanctuaryAnchor activated = copyAnchor(
             existing,
             newSanctuaryId,
@@ -270,7 +247,13 @@ public final class AnchorGraphService {
             sanctuaryRepository.delete(newSanctuaryId);
             throw exception;
         }
-        return new AnchorPlacementOutcome(newSanctuary, activated, false, false);
+
+        boolean deletedSource = false;
+        if (remainingNonDestroyed(source.id(), existing.id()).isEmpty()) {
+            sanctuaryRepository.delete(source.id());
+            deletedSource = true;
+        }
+        return new AnchorPlacementOutcome(newSanctuary, activated, false, deletedSource);
     }
 
     public GraphAnchorBreakResult breakAnchor(
@@ -539,15 +522,11 @@ public final class AnchorGraphService {
         return anchor;
     }
 
-    private boolean matches(SanctuaryAnchor anchor, AnchorMetadata metadata) throws SQLException {
-        Sanctuary sanctuary = sanctuaryRepository.findById(anchor.sanctuaryId()).orElse(null);
-        if (sanctuary == null
-            || metadata.tier() != anchor.tier()
-            || metadata.generation() != anchor.generation()) {
-            return false;
-        }
-        return metadata.ownerId().isEmpty()
-            || metadata.ownerId().orElseThrow().equals(sanctuary.ownerId());
+    private boolean matches(SanctuaryAnchor anchor, AnchorMetadata metadata) {
+        // Owner UUID is intentionally not part of physical anchor identity. An anchor may be
+        // traded, gifted, stolen, or otherwise re-homed by whoever actually places the item.
+        return metadata.tier() == anchor.tier()
+            && metadata.generation() == anchor.generation();
     }
 
     private static void requireActiveAt(SanctuaryAnchor anchor, SanctuaryPosition position)
@@ -573,6 +552,35 @@ public final class AnchorGraphService {
             .toList();
     }
 
+    private static Sanctuary createFreshSanctuary(
+        UUID sanctuaryId,
+        UUID ownerId,
+        String ownerName,
+        SanctuaryType type,
+        SanctuaryPosition position,
+        int tier,
+        int generation,
+        double territoryRadius,
+        Instant now
+    ) {
+        return new Sanctuary(
+            sanctuaryId,
+            ownerId,
+            type,
+            ownerName + "'s Sanctuary",
+            Optional.of(position),
+            tier,
+            generation,
+            territoryRadius,
+            SanctuaryState.ACTIVE,
+            Optional.empty(),
+            Optional.empty(),
+            false,
+            now,
+            now
+        );
+    }
+
     private static SanctuaryAnchor copyAnchor(
         SanctuaryAnchor anchor,
         UUID sanctuaryId,
@@ -587,18 +595,6 @@ public final class AnchorGraphService {
             anchor.id(), sanctuaryId, parentAnchorId, anchor.type(), position,
             anchor.tier(), anchor.generation(), anchor.territoryRadius(), state,
             destroyedAt, destructionReason, anchor.createdAt(), updatedAt
-        );
-    }
-
-    private static Sanctuary copySanctuaryRoot(
-        Sanctuary sanctuary,
-        SanctuaryAnchor anchor,
-        Instant updatedAt
-    ) {
-        return new Sanctuary(
-            sanctuary.id(), sanctuary.ownerId(), anchor.type(), sanctuary.name(), anchor.position(),
-            anchor.tier(), anchor.generation(), anchor.territoryRadius(), anchor.state(),
-            Optional.empty(), Optional.empty(), sanctuary.debugEphemeral(), sanctuary.createdAt(), updatedAt
         );
     }
 

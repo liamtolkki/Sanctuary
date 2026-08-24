@@ -14,20 +14,28 @@ class SanctuaryLootProfileTest {
 
     @Test
     void topTierStructuresHaveHighestFragmentRates() {
-        assertRate(SanctuaryLootProfile.BASTION_TREASURE, 0.85, 2, 4, 0.25);
-        assertRate(SanctuaryLootProfile.ANCIENT_CITY, 0.45, 1, 3, 0.20);
-        assertRate(SanctuaryLootProfile.END_CITY, 0.35, 1, 3, 0.15);
+        assertRate(SanctuaryLootProfile.BASTION_TREASURE, 1.00, 3, 6, 0.40);
+        assertRate(SanctuaryLootProfile.ANCIENT_CITY, 0.80, 2, 5, 0.30);
+        assertRate(SanctuaryLootProfile.END_CITY, 0.65, 2, 4, 0.20);
     }
 
     @Test
-    void buriedTreasureAlwaysAwardsTwoToFourFragmentsWhenFragmentRollHits() {
-        assertRate(SanctuaryLootProfile.BURIED_TREASURE, 0.65, 2, 4, 0.10);
+    void buriedTreasureAlwaysAwardsTwoToFourFragments() {
+        assertRate(SanctuaryLootProfile.BURIED_TREASURE, 1.00, 2, 4, 0.15);
     }
 
     @Test
     void strongholdLibraryIsAboveMineshaftButBelowPremiumStructures() {
-        assertRate(SanctuaryLootProfile.MINESHAFT, 0.10, 1, 1, 0.02);
-        assertRate(SanctuaryLootProfile.STRONGHOLD_LIBRARY, 0.25, 1, 2, 0.07);
+        assertRate(SanctuaryLootProfile.MINESHAFT, 0.20, 1, 2, 0.03);
+        assertRate(SanctuaryLootProfile.STRONGHOLD_LIBRARY, 0.50, 2, 3, 0.10);
+    }
+
+    @Test
+    void onlyEndCityCanAwardEndermanCompanionEgg() {
+        for (SanctuaryLootProfile profile : SanctuaryLootProfile.all()) {
+            double expected = profile == SanctuaryLootProfile.END_CITY ? 0.10 : 0.0;
+            assertEquals(expected, profile.endermanCompanionChance());
+        }
     }
 
     @Test
@@ -43,6 +51,10 @@ class SanctuaryLootProfileTest {
         for (SanctuaryLootProfile profile : SanctuaryLootProfile.all()) {
             assertTrue(profile.fragmentChance() >= 0.0 && profile.fragmentChance() <= 1.0);
             assertTrue(profile.shardChance() >= 0.0 && profile.shardChance() <= 1.0);
+            assertTrue(
+                profile.endermanCompanionChance() >= 0.0
+                    && profile.endermanCompanionChance() <= 1.0
+            );
             assertTrue(profile.minimumFragments() >= 1);
             assertTrue(profile.maximumFragments() >= profile.minimumFragments());
             assertEquals(profile.lootTableType().getKey(), profile.lootTableKey());

@@ -9,7 +9,6 @@ import dev.liamtolkkinen.sanctuary.territory.TerritoryCalculator;
 import java.sql.SQLException;
 import java.time.Clock;
 import java.time.Instant;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -221,8 +220,9 @@ public final class AnchorGraphService {
                 now
             );
             anchorRepository.save(activated);
-            sanctuaryRepository.save(copySanctuaryRoot(source, activated, now));
-            return new AnchorPlacementOutcome(source, activated, false, false);
+            Sanctuary updatedSource = copySanctuaryRoot(source, activated, now);
+            sanctuaryRepository.save(updatedSource);
+            return new AnchorPlacementOutcome(updatedSource, activated, false, false);
         }
 
         UUID newSanctuaryId = UUID.randomUUID();
@@ -346,22 +346,32 @@ public final class AnchorGraphService {
         double maximumRadius,
         Optional<UUID> excludedAnchorId
     ) throws SQLException {
-        return anchorRepository.findActiveInWorld(candidate.world()).stream()
-            .filter(anchor -> excludedAnchorId.isEmpty() || !anchor.id().equals(excludedAnchorId.orElseThrow()))
-            .filter(anchor -> anchor.position().isPresent())
-            .filter(anchor -> sanctuaryRepository.findById(anchor.sanctuaryId())
-                .map(sanctuary -> sanctuary.ownerId().equals(ownerId))
-                .orElse(false))
-            .filter(anchor -> TerritoryCalculator.horizontalDistance(
-                candidate,
-                anchor.position().orElseThrow()
-            ) <= maximumRadius)
-            .min(Comparator
-                .comparingDouble((SanctuaryAnchor anchor) -> TerritoryCalculator.horizontalDistance(
-                    candidate,
-                    anchor.position().orElseThrow()
-                ))
-                .thenComparing(anchor -> anchor.id().toString()));
+        SanctuaryAnchor best = null;
+        double bestDistance = Double.POSITIVE_INFINITY;
+        for (SanctuaryAnchor anchor : anchorRepository.findActiveInWorld(candidate.world())) {
+            if (excludedAnchorId.isPresent() && anchor.id().equals(excludedAnchorId.orElseThrow())) {
+                continue;
+            }
+            if (anchor.position().isEmpty()) {
+                continue;
+            }
+            Sanctuary sanctuary = sanctuaryRepository.findById(anchor.sanctuaryId()).orElse(null);
+            if (sanctuary == null || !sanctuary.ownerId().equals(ownerId)) {
+                continue;
+            }
+            double distance = TerritoryCalculator.horizontalDistance(candidate, anchor.position().orElseThrow());
+            if (distance > maximumRadius) {
+                continue;
+            }
+            if (best == null
+                || distance < bestDistance
+                || (Double.compare(distance, bestDistance) == 0
+                    && anchor.id().toString().compareTo(best.id().toString()) < 0)) {
+                best = anchor;
+                bestDistance = distance;
+            }
+        }
+        return Optional.ofNullable(best);
     }
 
     public void validateIndependentPlacement(

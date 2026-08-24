@@ -79,6 +79,66 @@ public final class SqliteSanctuaryAnchorRepository implements SanctuaryAnchorRep
     }
 
     @Override
+    public List<UUID> findNeighborIds(UUID anchorId) throws SQLException {
+        try (Connection connection = databaseManager.openConnection();
+             var statement = connection.prepareStatement("""
+                 SELECT CASE
+                     WHEN anchor_a_id = ? THEN anchor_b_id
+                     ELSE anchor_a_id
+                 END AS neighbor_id
+                 FROM sanctuary_anchor_edges
+                 WHERE anchor_a_id = ? OR anchor_b_id = ?
+                 ORDER BY neighbor_id ASC
+                 """)) {
+            String id = anchorId.toString();
+            statement.setString(1, id);
+            statement.setString(2, id);
+            statement.setString(3, id);
+            try (ResultSet result = statement.executeQuery()) {
+                List<UUID> neighbors = new ArrayList<>();
+                while (result.next()) {
+                    neighbors.add(UUID.fromString(result.getString("neighbor_id")));
+                }
+                return List.copyOf(neighbors);
+            }
+        }
+    }
+
+    @Override
+    public void saveEdge(UUID firstAnchorId, UUID secondAnchorId) throws SQLException {
+        if (firstAnchorId.equals(secondAnchorId)) {
+            throw new IllegalArgumentException("An anchor cannot connect to itself");
+        }
+        String first = firstAnchorId.toString();
+        String second = secondAnchorId.toString();
+        String a = first.compareTo(second) < 0 ? first : second;
+        String b = first.compareTo(second) < 0 ? second : first;
+        try (Connection connection = databaseManager.openConnection();
+             var statement = connection.prepareStatement("""
+                 INSERT OR IGNORE INTO sanctuary_anchor_edges(anchor_a_id, anchor_b_id)
+                 VALUES (?, ?)
+                 """)) {
+            statement.setString(1, a);
+            statement.setString(2, b);
+            statement.executeUpdate();
+        }
+    }
+
+    @Override
+    public void deleteEdgesForAnchor(UUID anchorId) throws SQLException {
+        try (Connection connection = databaseManager.openConnection();
+             var statement = connection.prepareStatement("""
+                 DELETE FROM sanctuary_anchor_edges
+                 WHERE anchor_a_id = ? OR anchor_b_id = ?
+                 """)) {
+            String id = anchorId.toString();
+            statement.setString(1, id);
+            statement.setString(2, id);
+            statement.executeUpdate();
+        }
+    }
+
+    @Override
     public void save(SanctuaryAnchor anchor) throws SQLException {
         try (Connection connection = databaseManager.openConnection();
              var statement = connection.prepareStatement("""

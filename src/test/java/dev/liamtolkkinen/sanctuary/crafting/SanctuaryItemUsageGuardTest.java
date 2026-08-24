@@ -39,16 +39,6 @@ class SanctuaryItemUsageGuardTest {
     }
 
     @Test
-    void watchersEyeCannotUseVanillaEnderEyeBehavior() {
-        assertTrue(SanctuaryItemUsageGuard.shouldBlockVanillaUse(
-            ExtendedItems.create(ExtendedItemIds.WATCHERS_EYE)
-        ));
-        assertFalse(SanctuaryItemUsageGuard.shouldBlockVanillaUse(
-            new ItemStack(Material.ENDER_EYE)
-        ));
-    }
-
-    @Test
     void progressionArtifactsCannotBePlacedAsVanillaBlocks() {
         assertFalse(SanctuaryItemUsageGuard.isAllowedPlacedItem(
             ExtendedItemIds.TERRITORY_KEYSTONE

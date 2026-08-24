@@ -1,6 +1,5 @@
 package dev.liamtolkkinen.sanctuary.anchor;
 
-import dev.liamtolkkinen.sanctuary.sanctuary.Sanctuary;
 import java.sql.SQLException;
 import java.util.Optional;
 import java.util.logging.Level;
@@ -13,16 +12,16 @@ import org.bukkit.event.entity.EntityRemoveEvent;
 
 public final class AnchorItemRemovalListener implements Listener {
     private final AnchorItemService anchorItemService;
-    private final AnchorLifecycleService lifecycleService;
+    private final AnchorGraphService graphService;
     private final Logger logger;
 
     public AnchorItemRemovalListener(
         AnchorItemService anchorItemService,
-        AnchorLifecycleService lifecycleService,
+        AnchorGraphService graphService,
         Logger logger
     ) {
         this.anchorItemService = anchorItemService;
-        this.lifecycleService = lifecycleService;
+        this.graphService = graphService;
         this.logger = logger;
     }
 
@@ -37,27 +36,23 @@ public final class AnchorItemRemovalListener implements Listener {
             return;
         }
 
-        Optional<AnchorMetadata> metadataResult = anchorItemService.readBeacon(item.getItemStack());
+        Optional<AnchorMetadata> metadataResult = anchorItemService.readAnchor(item.getItemStack());
         if (metadataResult.isEmpty() || !metadataResult.orElseThrow().isBound()) {
             return;
         }
 
         AnchorMetadata metadata = metadataResult.orElseThrow();
         try {
-            Optional<Sanctuary> destroyed = lifecycleService.recordDestruction(
-                metadata,
-                destructionReason.orElseThrow()
-            );
-            destroyed.ifPresent(sanctuary -> logger.warning(
-                "Sanctuary Beacon "
-                    + sanctuary.id()
-                    + " was permanently destroyed: "
-                    + sanctuary.destructionReason().orElse("unknown")
-            ));
+            graphService.recordDestruction(metadata, destructionReason.orElseThrow())
+                .ifPresent(anchor -> logger.warning(
+                    "Sanctuary " + anchor.type().name().toLowerCase(java.util.Locale.ROOT)
+                        + " anchor " + anchor.id() + " was permanently destroyed: "
+                        + anchor.destructionReason().orElse("unknown")
+                ));
         } catch (SQLException exception) {
             logger.log(
                 Level.SEVERE,
-                "Failed to record destruction of Sanctuary Beacon " + metadata.anchorId(),
+                "Failed to record destruction of Sanctuary anchor " + metadata.anchorId(),
                 exception
             );
         }

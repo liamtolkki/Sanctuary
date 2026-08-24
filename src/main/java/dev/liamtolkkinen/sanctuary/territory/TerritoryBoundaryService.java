@@ -104,6 +104,25 @@ public final class TerritoryBoundaryService {
         }
     }
 
+    public boolean isWithinRenderDistance(
+        Sanctuary sanctuary,
+        String world,
+        double x,
+        double z,
+        double maximumDistance
+    ) throws SQLException {
+        Objects.requireNonNull(sanctuary, "sanctuary");
+        Objects.requireNonNull(world, "world");
+        if (!Double.isFinite(maximumDistance) || maximumDistance <= 0.0) {
+            throw new IllegalArgumentException("maximumDistance must be finite and greater than zero");
+        }
+        return boundaryCircles(sanctuary).stream().anyMatch(circle ->
+            circle.position().world().equals(world)
+                && TerritoryCalculator.distanceToBoundary(circle.position(), circle.radius(), x, z)
+                    < maximumDistance
+        );
+    }
+
     static int pointCount(double radius, double particleSpacing) {
         validateSpacing(radius, "radius");
         validateSpacing(particleSpacing, "particleSpacing");

@@ -71,25 +71,23 @@ public final class TerritoryBoundaryProximityTask implements Runnable {
         try {
             for (Player player : Bukkit.getOnlinePlayers()) {
                 for (Sanctuary sanctuary : repository.findActiveInWorld(player.getWorld().getName())) {
-                    if (sanctuary.position().isEmpty()) {
+                    if (!boundaryService.isWithinRenderDistance(
+                        sanctuary,
+                        player.getWorld().getName(),
+                        player.getLocation().getX(),
+                        player.getLocation().getZ(),
+                        maximum
+                    )) {
                         continue;
                     }
-                    double distance = TerritoryCalculator.distanceToBoundary(
-                        sanctuary.position().orElseThrow(),
-                        sanctuary.territoryRadius(),
-                        player.getLocation().getX(),
-                        player.getLocation().getZ()
+                    boundaryService.showProximity(
+                        player,
+                        sanctuary,
+                        horizontalSpacing.getAsDouble(),
+                        verticalSpacing.getAsDouble(),
+                        minimum,
+                        maximum
                     );
-                    if (distance < maximum) {
-                        boundaryService.showProximity(
-                            player,
-                            sanctuary,
-                            horizontalSpacing.getAsDouble(),
-                            verticalSpacing.getAsDouble(),
-                            minimum,
-                            maximum
-                        );
-                    }
                 }
             }
         } catch (SQLException exception) {

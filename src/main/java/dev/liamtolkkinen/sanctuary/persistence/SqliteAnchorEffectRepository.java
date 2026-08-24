@@ -1,7 +1,7 @@
 package dev.liamtolkkinen.sanctuary.persistence;
 
+import dev.liamtolkkinen.sanctuary.effect.AnchorEffect;
 import dev.liamtolkkinen.sanctuary.effect.AnchorEffectRepository;
-import dev.liamtolkkinen.sanctuary.effect.SanctuaryEffect;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -16,7 +16,7 @@ public final class SqliteAnchorEffectRepository implements AnchorEffectRepositor
     }
 
     @Override
-    public int getLevel(UUID anchorId, SanctuaryEffect effect) throws SQLException {
+    public int getLevel(UUID anchorId, AnchorEffect effect) throws SQLException {
         try (Connection connection = databaseManager.openConnection();
              var statement = connection.prepareStatement("""
                  SELECT level FROM anchor_effect_levels
@@ -31,7 +31,7 @@ public final class SqliteAnchorEffectRepository implements AnchorEffectRepositor
     }
 
     @Override
-    public void setLevel(UUID anchorId, SanctuaryEffect effect, int level) throws SQLException {
+    public void setLevel(UUID anchorId, AnchorEffect effect, int level) throws SQLException {
         Objects.requireNonNull(anchorId, "anchorId");
         Objects.requireNonNull(effect, "effect");
         if (level < 1 || level > effect.maximumLevel()) {

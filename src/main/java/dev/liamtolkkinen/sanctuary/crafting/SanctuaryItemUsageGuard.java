@@ -124,6 +124,7 @@ final class SanctuaryItemUsageGuard implements Listener {
 
     static boolean isAllowedPlacedItem(ExtendedItemId id) {
         if (id.equals(ExtendedItemIds.SANCTUARY_BEACON)
+            || id.equals(ExtendedItemIds.SANCTUARY_CONDUIT)
             || id.equals(ExtendedItemIds.DIVINE_ALTAR)) {
             return true;
         }

@@ -1,8 +1,10 @@
 package dev.liamtolkkinen.sanctuary.effect;
 
+import dev.liamtolkkinen.sanctuary.anchor.SanctuaryAnchor;
 import dev.liamtolkkinen.sanctuary.sanctuary.Sanctuary;
 import dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryPosition;
 import dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryRepository;
+import dev.liamtolkkinen.sanctuary.territory.AnchorTerritoryService;
 import dev.liamtolkkinen.sanctuary.territory.TerritoryPresenceService;
 import java.sql.SQLException;
 import java.util.List;
@@ -20,7 +22,8 @@ import org.bukkit.event.entity.EntityToggleGlideEvent;
 
 public final class ElytraSuppressionListener implements Listener {
     private final SanctuaryRepository repository;
-    private final TerritoryPresenceService presenceService;
+    private final TerritoryPresenceService legacyPresenceService;
+    private final AnchorTerritoryService anchorTerritoryService;
     private final SanctuaryEffectService effectService;
     private final DoubleSupplier maximumRadiusSupplier;
     private final Logger logger;
@@ -33,7 +36,23 @@ public final class ElytraSuppressionListener implements Listener {
         Logger logger
     ) {
         this.repository = Objects.requireNonNull(repository, "repository");
-        this.presenceService = Objects.requireNonNull(presenceService, "presenceService");
+        this.legacyPresenceService = Objects.requireNonNull(presenceService, "presenceService");
+        this.anchorTerritoryService = null;
+        this.effectService = Objects.requireNonNull(effectService, "effectService");
+        this.maximumRadiusSupplier = Objects.requireNonNull(maximumRadiusSupplier, "maximumRadiusSupplier");
+        this.logger = Objects.requireNonNull(logger, "logger");
+    }
+
+    public ElytraSuppressionListener(
+        SanctuaryRepository repository,
+        AnchorTerritoryService anchorTerritoryService,
+        SanctuaryEffectService effectService,
+        DoubleSupplier maximumRadiusSupplier,
+        Logger logger
+    ) {
+        this.repository = Objects.requireNonNull(repository, "repository");
+        this.legacyPresenceService = null;
+        this.anchorTerritoryService = Objects.requireNonNull(anchorTerritoryService, "anchorTerritoryService");
         this.effectService = Objects.requireNonNull(effectService, "effectService");
         this.maximumRadiusSupplier = Objects.requireNonNull(maximumRadiusSupplier, "maximumRadiusSupplier");
         this.logger = Objects.requireNonNull(logger, "logger");
@@ -64,8 +83,47 @@ public final class ElytraSuppressionListener implements Listener {
     }
 
     private boolean isElytraSuppressed(Player player) throws SQLException {
+        if (anchorTerritoryService != null) {
+            return isGraphElytraSuppressed(player);
+        }
+        return isLegacyElytraSuppressed(player);
+    }
+
+    private boolean isGraphElytraSuppressed(Player player) throws SQLException {
+        for (SanctuaryAnchor anchor : anchorTerritoryService.coveringAnchors(
+            player.getWorld().getName(),
+            player.getLocation().getX(),
+            player.getLocation().getZ()
+        )) {
+            if (anchor.type() != dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryType.BEACON
+                || anchor.position().isEmpty()) {
+                continue;
+            }
+            Sanctuary sanctuary = repository.findById(anchor.sanctuaryId()).orElse(null);
+            if (sanctuary == null) {
+                continue;
+            }
+            SanctuaryPosition position = anchor.position().orElseThrow();
+            double horizontalDistance = Math.hypot(
+                player.getLocation().getX() - (position.x() + 0.5),
+                player.getLocation().getZ() - (position.z() + 0.5)
+            );
+            if (effectService.activeAnchorEffects(
+                sanctuary,
+                anchor,
+                player.getUniqueId(),
+                horizontalDistance,
+                maximumRadiusSupplier.getAsDouble()
+            ).stream().anyMatch(active -> active.effect() == AnchorEffect.ELYTRA_DISABLED)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean isLegacyElytraSuppressed(Player player) throws SQLException {
         List<Sanctuary> sanctuaries = repository.findActiveInWorld(player.getWorld().getName());
-        Sanctuary sanctuary = presenceService.findCurrentSanctuary(
+        Sanctuary sanctuary = legacyPresenceService.findCurrentSanctuary(
             sanctuaries,
             player.getWorld().getName(),
             player.getLocation().getX(),
@@ -76,9 +134,10 @@ public final class ElytraSuppressionListener implements Listener {
         }
 
         SanctuaryPosition position = sanctuary.position().orElseThrow();
-        double deltaX = player.getLocation().getX() - (position.x() + 0.5);
-        double deltaZ = player.getLocation().getZ() - (position.z() + 0.5);
-        double horizontalDistance = Math.hypot(deltaX, deltaZ);
+        double horizontalDistance = Math.hypot(
+            player.getLocation().getX() - (position.x() + 0.5),
+            player.getLocation().getZ() - (position.z() + 0.5)
+        );
 
         return effectService.activeEffects(
             sanctuary,

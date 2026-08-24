@@ -27,9 +27,6 @@ CREATE TABLE sanctuary_anchors (
 CREATE INDEX idx_sanctuary_anchors_sanctuary
     ON sanctuary_anchors(sanctuary_id);
 
-CREATE INDEX idx_sanctuary_anchors_parent
-    ON sanctuary_anchors(parent_anchor_id);
-
 CREATE INDEX idx_sanctuary_anchors_world_state
     ON sanctuary_anchors(world, state);
 
@@ -73,6 +70,21 @@ SELECT
     created_at,
     updated_at
 FROM sanctuaries;
+
+CREATE TABLE sanctuary_anchor_edges (
+    anchor_a_id TEXT NOT NULL,
+    anchor_b_id TEXT NOT NULL,
+    PRIMARY KEY (anchor_a_id, anchor_b_id),
+    CHECK (anchor_a_id < anchor_b_id),
+    FOREIGN KEY (anchor_a_id) REFERENCES sanctuary_anchors(id) ON DELETE CASCADE,
+    FOREIGN KEY (anchor_b_id) REFERENCES sanctuary_anchors(id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_sanctuary_anchor_edges_a
+    ON sanctuary_anchor_edges(anchor_a_id);
+
+CREATE INDEX idx_sanctuary_anchor_edges_b
+    ON sanctuary_anchor_edges(anchor_b_id);
 
 CREATE TABLE anchor_effect_levels (
     anchor_id TEXT NOT NULL,

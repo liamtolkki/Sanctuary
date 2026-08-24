@@ -39,11 +39,21 @@ public final class SanctuaryLootService implements Listener {
             return;
         }
 
-        ThreadLocalRandom random = ThreadLocalRandom.current();
         List<ItemStack> loot = event.getLoot();
+        if (profile == SanctuaryLootProfile.ANCIENT_CITY) {
+            loot.removeIf(item -> item != null && item.getType() == Material.AMETHYST_SHARD);
+        }
 
+        ThreadLocalRandom random = ThreadLocalRandom.current();
         if (random.nextDouble() < profile.fragmentChance()) {
-            loot.add(ExtendedItems.create(ExtendedItemIds.CONSECRATED_SHARD_FRAGMENT));
+            ItemStack fragments = ExtendedItems.create(
+                ExtendedItemIds.CONSECRATED_SHARD_FRAGMENT
+            );
+            fragments.setAmount(random.nextInt(
+                profile.minimumFragments(),
+                profile.maximumFragments() + 1
+            ));
+            loot.add(fragments);
         }
         if (random.nextDouble() < profile.shardChance()) {
             loot.add(ExtendedItems.create(ExtendedItemIds.CONSECRATED_SHARD));
@@ -81,8 +91,10 @@ public final class SanctuaryLootService implements Listener {
         ));
         event.getPlayer().sendMessage(Component.text(
             String.format(
-                "Fragment %.1f%% | Shard %.1f%%",
+                "Fragment %.1f%% (%d-%d) | Shard %.1f%%",
                 profile.fragmentChance() * 100.0,
+                profile.minimumFragments(),
+                profile.maximumFragments(),
                 profile.shardChance() * 100.0
             ),
             NamedTextColor.GRAY
@@ -99,7 +111,12 @@ public final class SanctuaryLootService implements Listener {
             ));
             meta.lore(List.of(
                 Component.text(
-                    String.format("Fragment chance: %.1f%%", profile.fragmentChance() * 100.0),
+                    String.format(
+                        "Fragment chance: %.1f%% (%d-%d)",
+                        profile.fragmentChance() * 100.0,
+                        profile.minimumFragments(),
+                        profile.maximumFragments()
+                    ),
                     NamedTextColor.AQUA
                 ),
                 Component.text(

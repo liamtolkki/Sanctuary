@@ -3,6 +3,7 @@ package dev.liamtolkkinen.sanctuary.ui;
 import dev.liamtolkkinen.extendedui.ExtendedButton;
 import dev.liamtolkkinen.extendedui.ExtendedInventoryMenu;
 import dev.liamtolkkinen.extendedui.ExtendedItemBuilder;
+import dev.liamtolkkinen.extendedui.ExtendedItemProvider;
 import dev.liamtolkkinen.extendedui.ExtendedMenuBuilder;
 import dev.liamtolkkinen.extendedui.ExtendedMenuContext;
 import dev.liamtolkkinen.extendedui.ExtendedUI;
@@ -10,7 +11,7 @@ import dev.liamtolkkinen.extendedui.StandardButtons;
 import dev.liamtolkkinen.sanctuary.SanctuaryPlugin;
 import dev.liamtolkkinen.sanctuary.anchor.SanctuaryAnchor;
 import dev.liamtolkkinen.sanctuary.anchor.SanctuaryAnchorRepository;
-import dev.liamtolkkinen.sanctuary.effect.SanctuaryEffect;
+import dev.liamtolkkinen.sanctuary.effect.AnchorEffect;
 import dev.liamtolkkinen.sanctuary.effect.SanctuaryEffectService;
 import dev.liamtolkkinen.sanctuary.sanctuary.Sanctuary;
 import dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryRepository;
@@ -19,8 +20,8 @@ import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.function.Consumer;
 import java.util.logging.Level;
-import net.kyori.adventure.text.Component;
 import org.bukkit.ChatColor;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
@@ -122,9 +123,9 @@ public final class AnchorUiService {
                 ));
 
                 List<SanctuaryEffectService.AnchorEffectDefinition> safe = effectService.definitions(
-                    anchor.type(), SanctuaryEffect.EffectTarget.SAFE);
+                    anchor.type(), AnchorEffect.Target.SAFE);
                 List<SanctuaryEffectService.AnchorEffectDefinition> hostile = effectService.definitions(
-                    anchor.type(), SanctuaryEffect.EffectTarget.HOSTILE);
+                    anchor.type(), AnchorEffect.Target.HOSTILE);
 
                 menu.set(18, button(Material.LIME_DYE, "<green>Safe Effects", List.of(
                     "<gray>Owner and trusted players receive these effects."
@@ -150,7 +151,7 @@ public final class AnchorUiService {
         SanctuaryAnchor anchor,
         SanctuaryEffectService.AnchorEffectDefinition definition
     ) {
-        SanctuaryEffect effect = definition.effect();
+        AnchorEffect effect = definition.effect();
         boolean unlocked = anchor.tier() >= definition.tier();
         int level = 1;
         if (unlocked) {
@@ -182,7 +183,7 @@ public final class AnchorUiService {
         int currentLevel = level;
         return button(
             effectMaterial(effect),
-            (effect.target() == SanctuaryEffect.EffectTarget.SAFE ? "<green>" : "<red>")
+            (effect.target() == AnchorEffect.Target.SAFE ? "<green>" : "<red>")
                 + effectDisplayName(effect),
             lore,
             unlocked && effect.maximumLevel() > 1
@@ -194,7 +195,7 @@ public final class AnchorUiService {
     private void cycle(
         Player player,
         UUID anchorId,
-        SanctuaryEffect effect,
+        AnchorEffect effect,
         int currentLevel,
         ExtendedMenuContext context
     ) {
@@ -202,7 +203,7 @@ public final class AnchorUiService {
             SanctuaryAnchor anchor = anchorRepository.findById(anchorId).orElse(null);
             if (anchor == null) {
                 player.sendMessage(ChatColor.RED + "That anchor no longer exists.");
-                context.close();
+                ui.close(player);
                 return;
             }
             int nextLevel = currentLevel >= effect.maximumLevel() ? 1 : currentLevel + 1;
@@ -214,17 +215,27 @@ public final class AnchorUiService {
         }
     }
 
-    private static ExtendedButton button(Material material, String name, List<String> lore, dev.liamtolkkinen.extendedui.ExtendedClickHandler handler) {
-        return ExtendedButton.of(
-            ExtendedItemBuilder.of(material)
-                .name(name)
-                .lore(lore)
-                .build(),
-            handler
-        );
+    private static ExtendedButton button(
+        Material material,
+        String name,
+        List<String> lore,
+        Consumer<dev.liamtolkkinen.extendedui.ExtendedClickContext> onClick
+    ) {
+        ExtendedItemProvider provider = () -> {
+            ExtendedItemBuilder builder = ExtendedItemBuilder.of(material).name(name);
+            if (!lore.isEmpty()) {
+                builder.lore(lore.toArray(String[]::new));
+            }
+            return builder.build();
+        };
+        ExtendedButton.Builder button = ExtendedButton.builder(provider);
+        if (onClick != null) {
+            button.onClick(onClick);
+        }
+        return button.build();
     }
 
-    private static Material effectMaterial(SanctuaryEffect effect) {
+    private static Material effectMaterial(AnchorEffect effect) {
         return switch (effect) {
             case REGENERATION -> Material.GLISTERING_MELON_SLICE;
             case RESISTANCE -> Material.SHIELD;
@@ -242,7 +253,7 @@ public final class AnchorUiService {
         };
     }
 
-    private static String effectDisplayName(SanctuaryEffect effect) {
+    private static String effectDisplayName(AnchorEffect effect) {
         String[] words = effect.name().toLowerCase(java.util.Locale.ROOT).split("_");
         StringBuilder result = new StringBuilder();
         for (String word : words) {
@@ -268,6 +279,6 @@ public final class AnchorUiService {
     }
 
     private static String mini(String value) {
-        return value.replace("<", "").replace(">", "");
+        return value.replace("\\", "\\\\").replace("<", "\\<");
     }
 }

@@ -278,7 +278,7 @@ public final class SentryListener implements Listener {
             if (record.isEmpty()) return;
             event.getDrops().clear();
             event.setDroppedExp(0);
-            service.markDown(record.orElseThrow());
+            service.markDown(SentryDeathTransition.withoutEntity(record.orElseThrow()));
         } catch (SQLException exception) {
             logger.log(Level.SEVERE, "Failed to put sentry on respawn cooldown", exception);
         }

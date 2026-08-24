@@ -15,55 +15,55 @@ public enum SanctuaryLootProfile {
         "mineshaft",
         "Abandoned Mineshaft",
         LootTables.ABANDONED_MINESHAFT,
-        0.10,
+        0.20,
         1,
-        1,
-        0.02
+        2,
+        0.03
     ),
     STRONGHOLD_LIBRARY(
         "stronghold_library",
         "Stronghold Library",
         LootTables.STRONGHOLD_LIBRARY,
-        0.25,
-        1,
+        0.50,
         2,
-        0.07
+        3,
+        0.10
     ),
     BURIED_TREASURE(
         "buried_treasure",
         "Buried Treasure",
         LootTables.BURIED_TREASURE,
-        0.65,
+        1.00,
         2,
         4,
-        0.10
+        0.15
     ),
     BASTION_TREASURE(
         "bastion_treasure",
         "Bastion Treasure",
         LootTables.BASTION_TREASURE,
-        0.85,
-        2,
-        4,
-        0.25
+        1.00,
+        3,
+        6,
+        0.40
     ),
     ANCIENT_CITY(
         "ancient_city",
         "Ancient City",
         LootTables.ANCIENT_CITY,
-        0.45,
-        1,
-        3,
-        0.20
+        0.80,
+        2,
+        5,
+        0.30
     ),
     END_CITY(
         "end_city",
         "End City Treasure",
         LootTables.END_CITY_TREASURE,
-        0.35,
-        1,
-        3,
-        0.15
+        0.65,
+        2,
+        4,
+        0.20
     );
 
     private static final List<SanctuaryLootProfile> ALL = List.of(values());

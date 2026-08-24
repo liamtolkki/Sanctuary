@@ -62,8 +62,16 @@ public final class AnchorTerritoryService {
         double x,
         double z
     ) throws SQLException {
-        return coveringAnchors(world, x, z).stream()
-            .filter(anchor -> anchor.sanctuaryId().equals(sanctuaryId))
+        Objects.requireNonNull(sanctuaryId, "sanctuaryId");
+        Objects.requireNonNull(world, "world");
+        return activeAnchors(sanctuaryId).stream()
+            .filter(anchor -> TerritoryCalculator.contains(
+                anchor.position().orElseThrow(),
+                anchor.territoryRadius(),
+                world,
+                x,
+                z
+            ))
             .toList();
     }
 

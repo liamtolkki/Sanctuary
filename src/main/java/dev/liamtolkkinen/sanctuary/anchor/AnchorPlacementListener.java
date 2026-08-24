@@ -47,7 +47,7 @@ public final class AnchorPlacementListener implements Listener {
             return;
         }
 
-        Optional<AnchorMetadata> metadataResult = anchorItemService.readAnchor(item);
+        Optional<AnchorMetadata> metadataResult = anchorItemService.readOrInitializeUnboundAnchor(item);
         if (metadataResult.isEmpty()) {
             reject(event, "This Sanctuary anchor has invalid or incomplete metadata.");
             return;
@@ -59,6 +59,9 @@ public final class AnchorPlacementListener implements Listener {
 
         SanctuaryType type = typeResult.orElseThrow();
         AnchorMetadata metadata = metadataResult.orElseThrow();
+        AnchorMetadata blockMetadata = metadata.isBound()
+            ? metadata
+            : metadata.bind(event.getPlayer().getUniqueId());
         SanctuaryPosition position = new SanctuaryPosition(
             event.getBlockPlaced().getWorld().getName(),
             event.getBlockPlaced().getX(),
@@ -67,8 +70,11 @@ public final class AnchorPlacementListener implements Listener {
         );
 
         try {
+            // Persist block identity before the graph mutation. If this fails, the database is
+            // untouched and Bukkit can safely roll the placement back.
+            anchorItemService.writeBlockMetadata(tileState, blockMetadata);
+
             AnchorPlacementOutcome outcome;
-            AnchorMetadata blockMetadata = metadata;
             if (metadata.isBound()) {
                 outcome = graphService.placeBound(
                     metadata,
@@ -81,7 +87,6 @@ public final class AnchorPlacementListener implements Listener {
                     event.getPlayer().hasPermission("sanctuary.admin")
                 );
             } else {
-                blockMetadata = metadata.bind(event.getPlayer().getUniqueId());
                 outcome = graphService.placeNew(
                     blockMetadata,
                     type,
@@ -94,7 +99,6 @@ public final class AnchorPlacementListener implements Listener {
                 );
             }
 
-            anchorItemService.writeBlockMetadata(tileState, blockMetadata);
             String anchorName = displayName(type);
             if (outcome.joinedExistingSanctuary()) {
                 event.getPlayer().sendMessage(

@@ -68,16 +68,22 @@ public final class AnchorPlacementListener implements Listener {
 
         try {
             boolean registeredAnchor = graphService.isRegisteredAnchor(metadata.anchorId());
-            AnchorMetadata blockMetadata = metadata.isBound()
-                ? metadata
-                : metadata.bind(event.getPlayer().getUniqueId());
+
+            // Anchor ownership follows placement, not item provenance. The physical anchor keeps
+            // its identity and upgrades, while the placer determines the Sanctuary it joins.
+            AnchorMetadata blockMetadata = new AnchorMetadata(
+                metadata.anchorId(),
+                Optional.of(event.getPlayer().getUniqueId()),
+                metadata.tier(),
+                metadata.generation()
+            );
 
             // Persist block identity before the graph mutation. If this fails, the database is
             // untouched and Bukkit can safely roll the placement back.
             anchorItemService.writeBlockMetadata(tileState, blockMetadata);
 
             AnchorPlacementOutcome outcome;
-            if (metadata.isBound() || registeredAnchor) {
+            if (registeredAnchor) {
                 outcome = graphService.placeBound(
                     blockMetadata,
                     type,
@@ -116,8 +122,7 @@ public final class AnchorPlacementListener implements Listener {
             }
             if (outcome.sourceSanctuaryDeleted()) {
                 event.getPlayer().sendMessage(
-                    ChatColor.GRAY + "The anchor's previous empty Sanctuary was absorbed into "
-                        + outcome.sanctuary().name() + "."
+                    ChatColor.GRAY + "The anchor's previous empty Sanctuary was removed."
                 );
             }
         } catch (SQLException exception) {

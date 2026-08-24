@@ -1,15 +1,19 @@
 package dev.liamtolkkinen.sanctuary.ui;
 
+import dev.liamtolkkinen.extendedui.ExtendedTextInputDialog;
 import dev.liamtolkkinen.sanctuary.anchor.AnchorItemService;
 import dev.liamtolkkinen.sanctuary.anchor.AnchorMetadata;
 import dev.liamtolkkinen.sanctuary.anchor.SanctuaryAnchor;
 import dev.liamtolkkinen.sanctuary.anchor.SanctuaryAnchorRepository;
+import dev.liamtolkkinen.sanctuary.anchor.SanctuaryCreatedEvent;
 import dev.liamtolkkinen.sanctuary.sanctuary.Sanctuary;
 import dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryRepository;
 import java.sql.SQLException;
+import java.time.Instant;
 import java.util.Optional;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import net.kyori.adventure.text.Component;
 import org.bukkit.ChatColor;
 import org.bukkit.block.TileState;
 import org.bukkit.entity.Player;
@@ -39,6 +43,27 @@ public final class SanctuaryUiListener implements Listener {
         this.sanctuaryRepository = sanctuaryRepository;
         this.anchorUiService = anchorUiService;
         this.logger = logger;
+    }
+
+    @EventHandler
+    public void onSanctuaryCreated(SanctuaryCreatedEvent event) {
+        Player player = event.player();
+        Sanctuary sanctuary = event.sanctuary();
+        if (!sanctuary.ownerId().equals(player.getUniqueId())) {
+            return;
+        }
+
+        ExtendedTextInputDialog dialog = ExtendedTextInputDialog.builder(
+                Component.text("Set Sanctuary Name"),
+                Component.text("Sanctuary name")
+            )
+            .initialValue(sanctuary.name())
+            .maxLength(32)
+            .confirmText(Component.text("Set Name"))
+            .cancelText(Component.text("Cancel"))
+            .onConfirm((callbackPlayer, value) -> setInitialName(callbackPlayer, sanctuary.id(), value))
+            .build();
+        dialog.show(player);
     }
 
     @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = false)
@@ -89,6 +114,49 @@ public final class SanctuaryUiListener implements Listener {
         } catch (SQLException exception) {
             player.sendMessage(ChatColor.RED + "Sanctuary could not open this anchor UI.");
             logger.log(Level.SEVERE, "Failed to resolve clicked Sanctuary anchor", exception);
+        }
+    }
+
+    private void setInitialName(Player player, java.util.UUID sanctuaryId, String requestedName) {
+        final String name;
+        try {
+            name = SanctuaryUiService.normalizeSanctuaryName(requestedName);
+        } catch (IllegalArgumentException exception) {
+            player.sendMessage(ChatColor.RED + exception.getMessage());
+            return;
+        }
+
+        try {
+            Sanctuary current = sanctuaryRepository.findById(sanctuaryId).orElse(null);
+            if (current == null) {
+                player.sendMessage(ChatColor.RED + "That Sanctuary no longer exists.");
+                return;
+            }
+            if (!current.ownerId().equals(player.getUniqueId())) {
+                player.sendMessage(ChatColor.RED + "Only the Sanctuary owner can rename it.");
+                return;
+            }
+
+            sanctuaryRepository.save(new Sanctuary(
+                current.id(),
+                current.ownerId(),
+                current.type(),
+                name,
+                current.position(),
+                current.tier(),
+                current.anchorGeneration(),
+                current.territoryRadius(),
+                current.state(),
+                current.destroyedAt(),
+                current.destructionReason(),
+                current.debugEphemeral(),
+                current.createdAt(),
+                Instant.now()
+            ));
+            player.sendMessage(ChatColor.GREEN + "Sanctuary named " + name + ".");
+        } catch (SQLException | IllegalArgumentException exception) {
+            player.sendMessage(ChatColor.RED + "Sanctuary could not save that name.");
+            logger.log(Level.SEVERE, "Failed to set initial Sanctuary name " + sanctuaryId, exception);
         }
     }
 }

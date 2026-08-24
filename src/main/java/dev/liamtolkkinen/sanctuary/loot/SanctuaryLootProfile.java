@@ -11,144 +11,58 @@ import org.bukkit.loot.LootTables;
 
 /** Defines the vanilla structure loot tables that can receive Sanctuary materials. */
 public enum SanctuaryLootProfile {
-    DUNGEON(
-        "dungeon",
-        "Dungeon",
-        LootTables.SIMPLE_DUNGEON,
-        0.10,
-        0.02
-    ),
     MINESHAFT(
         "mineshaft",
         "Abandoned Mineshaft",
         LootTables.ABANDONED_MINESHAFT,
         0.10,
+        1,
+        1,
         0.02
-    ),
-    SHIPWRECK_TREASURE(
-        "shipwreck_treasure",
-        "Shipwreck Treasure",
-        LootTables.SHIPWRECK_TREASURE,
-        0.12,
-        0.03
-    ),
-    RUINED_PORTAL(
-        "ruined_portal",
-        "Ruined Portal",
-        LootTables.RUINED_PORTAL,
-        0.12,
-        0.03
-    ),
-    BURIED_TREASURE(
-        "buried_treasure",
-        "Buried Treasure",
-        LootTables.BURIED_TREASURE,
-        0.15,
-        0.04
-    ),
-    DESERT_PYRAMID(
-        "desert_pyramid",
-        "Desert Pyramid",
-        LootTables.DESERT_PYRAMID,
-        0.15,
-        0.04
-    ),
-    JUNGLE_TEMPLE(
-        "jungle_temple",
-        "Jungle Temple",
-        LootTables.JUNGLE_TEMPLE,
-        0.15,
-        0.04
-    ),
-    PILLAGER_OUTPOST(
-        "pillager_outpost",
-        "Pillager Outpost",
-        LootTables.PILLAGER_OUTPOST,
-        0.15,
-        0.04
-    ),
-    STRONGHOLD_CORRIDOR(
-        "stronghold_corridor",
-        "Stronghold Corridor",
-        LootTables.STRONGHOLD_CORRIDOR,
-        0.15,
-        0.04
-    ),
-    STRONGHOLD_CROSSING(
-        "stronghold_crossing",
-        "Stronghold Crossing",
-        LootTables.STRONGHOLD_CROSSING,
-        0.15,
-        0.04
     ),
     STRONGHOLD_LIBRARY(
         "stronghold_library",
         "Stronghold Library",
         LootTables.STRONGHOLD_LIBRARY,
-        0.20,
-        0.06
+        0.25,
+        1,
+        2,
+        0.07
     ),
-    TRIAL_CHAMBER_REWARD(
-        "trial_chamber_reward",
-        "Trial Chamber Reward",
-        LootTables.TRIAL_CHAMBERS_REWARD,
-        0.20,
-        0.06
-    ),
-    NETHER_FORTRESS(
-        "nether_fortress",
-        "Nether Fortress",
-        LootTables.NETHER_BRIDGE,
-        0.20,
-        0.06
-    ),
-    WOODLAND_MANSION(
-        "woodland_mansion",
-        "Woodland Mansion",
-        LootTables.WOODLAND_MANSION,
-        0.20,
-        0.06
-    ),
-    BASTION_OTHER(
-        "bastion_other",
-        "Bastion Generic",
-        LootTables.BASTION_OTHER,
-        0.135,
-        0.045
-    ),
-    BASTION_BRIDGE(
-        "bastion_bridge",
-        "Bastion Bridge",
-        LootTables.BASTION_BRIDGE,
-        0.135,
-        0.045
-    ),
-    BASTION_HOGLIN_STABLE(
-        "bastion_hoglin_stable",
-        "Bastion Hoglin Stable",
-        LootTables.BASTION_HOGLIN_STABLE,
-        0.12,
-        0.09
+    BURIED_TREASURE(
+        "buried_treasure",
+        "Buried Treasure",
+        LootTables.BURIED_TREASURE,
+        0.65,
+        2,
+        4,
+        0.10
     ),
     BASTION_TREASURE(
         "bastion_treasure",
         "Bastion Treasure",
         LootTables.BASTION_TREASURE,
-        0.27,
-        0.217
+        0.85,
+        2,
+        4,
+        0.25
     ),
     ANCIENT_CITY(
         "ancient_city",
         "Ancient City",
         LootTables.ANCIENT_CITY,
-        0.30,
-        0.15
+        0.45,
+        1,
+        3,
+        0.20
     ),
     END_CITY(
         "end_city",
         "End City Treasure",
         LootTables.END_CITY_TREASURE,
-        0.30,
+        0.35,
+        1,
+        3,
         0.15
     );
 
@@ -158,6 +72,8 @@ public enum SanctuaryLootProfile {
     private final String displayName;
     private final LootTables lootTable;
     private final double fragmentChance;
+    private final int minimumFragments;
+    private final int maximumFragments;
     private final double shardChance;
 
     SanctuaryLootProfile(
@@ -165,12 +81,21 @@ public enum SanctuaryLootProfile {
         String displayName,
         LootTables lootTable,
         double fragmentChance,
+        int minimumFragments,
+        int maximumFragments,
         double shardChance
     ) {
         this.id = Objects.requireNonNull(id, "id");
         this.displayName = Objects.requireNonNull(displayName, "displayName");
         this.lootTable = Objects.requireNonNull(lootTable, "lootTable");
         this.fragmentChance = validateChance(fragmentChance, "fragmentChance");
+        if (minimumFragments < 1 || maximumFragments < minimumFragments) {
+            throw new IllegalArgumentException(
+                "Fragment quantity must be at least one and maximum must be >= minimum"
+            );
+        }
+        this.minimumFragments = minimumFragments;
+        this.maximumFragments = maximumFragments;
         this.shardChance = validateChance(shardChance, "shardChance");
     }
 
@@ -196,6 +121,14 @@ public enum SanctuaryLootProfile {
 
     public double fragmentChance() {
         return fragmentChance;
+    }
+
+    public int minimumFragments() {
+        return minimumFragments;
+    }
+
+    public int maximumFragments() {
+        return maximumFragments;
     }
 
     public double shardChance() {

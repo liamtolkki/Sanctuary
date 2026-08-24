@@ -21,6 +21,10 @@ commands:
     description: Gives every Divine Altar offering item and the Divine Relic for testing.
     usage: /sanctuarydebugrelics [player]
     permission: sanctuary.admin
+  sanctuarydebugloot:
+    description: Gives tagged structure loot chests for Sanctuary loot testing.
+    usage: /sanctuarydebugloot <profile|all> [player]
+    permission: sanctuary.admin
 permissions:
   sanctuary.use:
     description: Allows normal Sanctuary commands.

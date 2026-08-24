@@ -49,13 +49,14 @@ class MigrationRunnerTest {
                       'sentry_overrides',
                       'altar_offering_progress',
                       'sanctuary_anchors',
+                      'sanctuary_anchor_edges',
                       'anchor_effect_levels'
                   )
                 """);
             var result = statement.executeQuery()
         ) {
             assertTrue(result.next());
-            assertEquals(12, result.getInt(1));
+            assertEquals(13, result.getInt(1));
         }
     }
 }

@@ -92,8 +92,8 @@ public final class SanctuaryEffectTask implements Runnable {
             return;
         }
 
-        Map<SanctuaryEffect, SanctuaryEffectService.ActiveSanctuaryEffect> strongest =
-            new EnumMap<>(SanctuaryEffect.class);
+        Map<AnchorEffect, SanctuaryEffectService.ActiveAnchorEffect> strongest =
+            new EnumMap<>(AnchorEffect.class);
         for (SanctuaryAnchor anchor : anchors) {
             Sanctuary sanctuary = repository.findById(anchor.sanctuaryId()).orElse(null);
             if (sanctuary == null || anchor.position().isEmpty()) {
@@ -104,7 +104,7 @@ public final class SanctuaryEffectTask implements Runnable {
                 player.getLocation().getX() - (position.x() + 0.5),
                 player.getLocation().getZ() - (position.z() + 0.5)
             );
-            for (SanctuaryEffectService.ActiveSanctuaryEffect active : effectService.activeEffects(
+            for (SanctuaryEffectService.ActiveAnchorEffect active : effectService.activeAnchorEffects(
                 sanctuary,
                 anchor,
                 player.getUniqueId(),
@@ -118,7 +118,7 @@ public final class SanctuaryEffectTask implements Runnable {
                 );
             }
         }
-        applyMerged(player, strongest.values());
+        applyAnchorEffects(player, strongest.values());
     }
 
     private void applyLegacy(Player player) throws SQLException {
@@ -138,7 +138,7 @@ public final class SanctuaryEffectTask implements Runnable {
             player.getLocation().getX() - (position.x() + 0.5),
             player.getLocation().getZ() - (position.z() + 0.5)
         );
-        applyMerged(player, effectService.activeEffects(
+        applyLegacyEffects(player, effectService.activeEffects(
             sanctuary,
             player.getUniqueId(),
             horizontalDistance,
@@ -146,35 +146,44 @@ public final class SanctuaryEffectTask implements Runnable {
         ));
     }
 
-    private static void applyMerged(
+    private static void applyAnchorEffects(
         Player player,
-        java.util.Collection<SanctuaryEffectService.ActiveSanctuaryEffect> activeEffects
+        java.util.Collection<SanctuaryEffectService.ActiveAnchorEffect> effects
     ) {
         boolean elytraSuppressed = false;
-        for (SanctuaryEffectService.ActiveSanctuaryEffect active : activeEffects) {
-            if (active.effect() == SanctuaryEffect.ELYTRA_DISABLED) {
+        for (SanctuaryEffectService.ActiveAnchorEffect active : effects) {
+            if (active.effect() == AnchorEffect.ELYTRA_DISABLED) {
                 elytraSuppressed = true;
             }
-            apply(player, active);
+            applyAnchor(player, active);
         }
         if (elytraSuppressed) {
-            player.sendActionBar(
-                Component.text("Sanctuary defenses active", NamedTextColor.RED)
-                    .append(Component.text(" | ", NamedTextColor.DARK_GRAY))
-                    .append(Component.text("Elytra Disabled", NamedTextColor.GOLD))
-            );
+            showElytraSuppressed(player);
         }
     }
 
-    private static void apply(Player player, SanctuaryEffectService.ActiveSanctuaryEffect active) {
-        SanctuaryEffect effect = active.effect();
-        if (effect == SanctuaryEffect.ELYTRA_DISABLED) {
-            if (player.isGliding()) {
-                player.setGliding(false);
+    private static void applyLegacyEffects(
+        Player player,
+        java.util.Collection<SanctuaryEffectService.ActiveSanctuaryEffect> effects
+    ) {
+        boolean elytraSuppressed = false;
+        for (SanctuaryEffectService.ActiveSanctuaryEffect active : effects) {
+            if (active.effect() == SanctuaryEffect.ELYTRA_DISABLED) {
+                elytraSuppressed = true;
             }
+            applyLegacy(player, active);
+        }
+        if (elytraSuppressed) {
+            showElytraSuppressed(player);
+        }
+    }
+
+    private static void applyAnchor(Player player, SanctuaryEffectService.ActiveAnchorEffect active) {
+        AnchorEffect effect = active.effect();
+        if (effect == AnchorEffect.ELYTRA_DISABLED) {
+            if (player.isGliding()) player.setGliding(false);
             return;
         }
-
         PotionEffectType type = switch (effect) {
             case REGENERATION -> PotionEffectType.REGENERATION;
             case RESISTANCE -> PotionEffectType.RESISTANCE;
@@ -190,13 +199,46 @@ public final class SanctuaryEffectTask implements Runnable {
             case SLOWNESS -> PotionEffectType.SLOWNESS;
             case ELYTRA_DISABLED -> throw new IllegalStateException("Elytra suppression is not a potion effect");
         };
+        addPotion(player, type, active.amplifier());
+    }
+
+    private static void applyLegacy(Player player, SanctuaryEffectService.ActiveSanctuaryEffect active) {
+        SanctuaryEffect effect = active.effect();
+        if (effect == SanctuaryEffect.ELYTRA_DISABLED) {
+            if (player.isGliding()) player.setGliding(false);
+            return;
+        }
+        PotionEffectType type = switch (effect) {
+            case REGENERATION -> PotionEffectType.REGENERATION;
+            case RESISTANCE -> PotionEffectType.RESISTANCE;
+            case STRENGTH -> PotionEffectType.STRENGTH;
+            case HASTE -> PotionEffectType.HASTE;
+            case SPEED -> PotionEffectType.SPEED;
+            case MINING_FATIGUE -> PotionEffectType.MINING_FATIGUE;
+            case WEAKNESS -> PotionEffectType.WEAKNESS;
+            case BLINDNESS -> PotionEffectType.BLINDNESS;
+            case WITHER -> PotionEffectType.WITHER;
+            case ELYTRA_DISABLED -> throw new IllegalStateException("Elytra suppression is not a potion effect");
+        };
+        addPotion(player, type, active.amplifier());
+    }
+
+    private static void addPotion(Player player, PotionEffectType type, int amplifier) {
         player.addPotionEffect(new PotionEffect(
             type,
             EFFECT_DURATION_TICKS,
-            active.amplifier(),
+            amplifier,
             true,
             false,
             true
         ));
+    }
+
+    private static void showElytraSuppressed(Player player) {
+        player.sendActionBar(
+            Component.text("Sanctuary defenses active", NamedTextColor.RED)
+                .append(Component.text(" | ", NamedTextColor.DARK_GRAY))
+                .append(Component.text("Elytra Disabled", NamedTextColor.GOLD))
+        );
     }
 }

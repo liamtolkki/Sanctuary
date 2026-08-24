@@ -185,10 +185,11 @@ public final class SentryTask implements Runnable {
 
         Location loc = entity.getLocation();
         if (!containsTerritory(activeAnchors, sentry.world(), loc.getX(), loc.getZ())) {
-            // Leaving the entire Sanctuary is still fatal. Crossing from one anchor circle into
-            // another circle belonging to this same Sanctuary is allowed.
+            // Crossing between anchor circles in the same Sanctuary is allowed. Leaving the true
+            // union is a real sentry death, so use Minecraft's normal death sequence rather than
+            // removing the entity immediately. EntityDeathEvent records the respawn cooldown.
             clearWardenCombatState(sentry.id());
-            service.markDown(sentry);
+            mob.setHealth(0.0);
             return;
         }
 

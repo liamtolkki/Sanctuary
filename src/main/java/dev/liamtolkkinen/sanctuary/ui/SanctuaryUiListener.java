@@ -2,6 +2,8 @@ package dev.liamtolkkinen.sanctuary.ui;
 
 import dev.liamtolkkinen.sanctuary.anchor.AnchorItemService;
 import dev.liamtolkkinen.sanctuary.anchor.AnchorMetadata;
+import dev.liamtolkkinen.sanctuary.anchor.SanctuaryAnchor;
+import dev.liamtolkkinen.sanctuary.anchor.SanctuaryAnchorRepository;
 import dev.liamtolkkinen.sanctuary.sanctuary.Sanctuary;
 import dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryRepository;
 import java.sql.SQLException;
@@ -17,22 +19,25 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.block.Action;
 import org.bukkit.event.player.PlayerInteractEvent;
 
-/** Opens Sanctuary management through ExtendedUI when a registered anchor is clicked. */
+/** Opens anchor-specific management while preserving shared Sanctuary state. */
 public final class SanctuaryUiListener implements Listener {
     private final AnchorItemService anchorItemService;
-    private final SanctuaryRepository repository;
-    private final SanctuaryUiService uiService;
+    private final SanctuaryAnchorRepository anchorRepository;
+    private final SanctuaryRepository sanctuaryRepository;
+    private final AnchorUiService anchorUiService;
     private final Logger logger;
 
     public SanctuaryUiListener(
         AnchorItemService anchorItemService,
-        SanctuaryRepository repository,
-        SanctuaryUiService uiService,
+        SanctuaryAnchorRepository anchorRepository,
+        SanctuaryRepository sanctuaryRepository,
+        AnchorUiService anchorUiService,
         Logger logger
     ) {
         this.anchorItemService = anchorItemService;
-        this.repository = repository;
-        this.uiService = uiService;
+        this.anchorRepository = anchorRepository;
+        this.sanctuaryRepository = sanctuaryRepository;
+        this.anchorUiService = anchorUiService;
         this.logger = logger;
     }
 
@@ -52,13 +57,22 @@ public final class SanctuaryUiListener implements Listener {
 
         Player player = event.getPlayer();
         try {
-            Sanctuary sanctuary = repository.findById(metadataResult.orElseThrow().anchorId()).orElse(null);
-            if (sanctuary == null) {
+            SanctuaryAnchor anchor = anchorRepository.findById(
+                metadataResult.orElseThrow().anchorId()
+            ).orElse(null);
+            if (anchor == null) {
                 if (player.hasPermission("sanctuary.admin")) {
                     player.sendMessage(
-                        ChatColor.RED
-                            + "This Sanctuary anchor has no matching database record. Break it to clean up the orphan."
+                        ChatColor.RED + "This Sanctuary anchor has no matching graph record. "
+                            + "Break it to clean up the orphan."
                     );
+                }
+                return;
+            }
+            Sanctuary sanctuary = sanctuaryRepository.findById(anchor.sanctuaryId()).orElse(null);
+            if (sanctuary == null) {
+                if (player.hasPermission("sanctuary.admin")) {
+                    player.sendMessage(ChatColor.RED + "This anchor's Sanctuary record is missing.");
                 }
                 return;
             }
@@ -70,11 +84,8 @@ public final class SanctuaryUiListener implements Listener {
             }
 
             event.setCancelled(true);
-            if (admin && (!owner || player.isSneaking())) {
-                uiService.openAdmin(player, sanctuary);
-            } else {
-                uiService.openPersonal(player, sanctuary);
-            }
+            boolean adminMode = admin && (!owner || player.isSneaking());
+            anchorUiService.open(player, sanctuary, anchor, adminMode);
         } catch (SQLException exception) {
             player.sendMessage(ChatColor.RED + "Sanctuary could not open this anchor UI.");
             logger.log(Level.SEVERE, "Failed to resolve clicked Sanctuary anchor", exception);

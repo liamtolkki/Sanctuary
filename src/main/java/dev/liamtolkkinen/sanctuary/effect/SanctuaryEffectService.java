@@ -15,32 +15,32 @@ public final class SanctuaryEffectService {
     public static final int EFFECT_TIER_COUNT = 5;
 
     private static final List<AnchorEffectDefinition> BEACON_SAFE = List.of(
-        definition(SanctuaryEffect.REGENERATION, 1),
-        definition(SanctuaryEffect.RESISTANCE, 2),
-        definition(SanctuaryEffect.STRENGTH, 3),
-        definition(SanctuaryEffect.HASTE, 4),
-        definition(SanctuaryEffect.SPEED, 5)
+        definition(AnchorEffect.REGENERATION, 1),
+        definition(AnchorEffect.RESISTANCE, 2),
+        definition(AnchorEffect.STRENGTH, 3),
+        definition(AnchorEffect.HASTE, 4),
+        definition(AnchorEffect.SPEED, 5)
     );
     private static final List<AnchorEffectDefinition> BEACON_HOSTILE = List.of(
-        definition(SanctuaryEffect.WITHER, 1),
-        definition(SanctuaryEffect.BLINDNESS, 2),
-        definition(SanctuaryEffect.WEAKNESS, 3),
-        definition(SanctuaryEffect.MINING_FATIGUE, 4),
-        definition(SanctuaryEffect.ELYTRA_DISABLED, 5)
+        definition(AnchorEffect.WITHER, 1),
+        definition(AnchorEffect.BLINDNESS, 2),
+        definition(AnchorEffect.WEAKNESS, 3),
+        definition(AnchorEffect.MINING_FATIGUE, 4),
+        definition(AnchorEffect.ELYTRA_DISABLED, 5)
     );
     private static final List<AnchorEffectDefinition> CONDUIT_SAFE = List.of(
-        definition(SanctuaryEffect.REGENERATION, 1),
-        definition(SanctuaryEffect.NIGHT_VISION, 2),
-        definition(SanctuaryEffect.HASTE, 3),
-        definition(SanctuaryEffect.DOLPHINS_GRACE, 4),
-        definition(SanctuaryEffect.RESISTANCE, 5)
+        definition(AnchorEffect.REGENERATION, 1),
+        definition(AnchorEffect.NIGHT_VISION, 2),
+        definition(AnchorEffect.HASTE, 3),
+        definition(AnchorEffect.DOLPHINS_GRACE, 4),
+        definition(AnchorEffect.RESISTANCE, 5)
     );
     private static final List<AnchorEffectDefinition> CONDUIT_HOSTILE = List.of(
-        definition(SanctuaryEffect.WITHER, 1),
-        definition(SanctuaryEffect.BLINDNESS, 2),
-        definition(SanctuaryEffect.MINING_FATIGUE, 3),
-        definition(SanctuaryEffect.SLOWNESS, 4),
-        definition(SanctuaryEffect.WEAKNESS, 5)
+        definition(AnchorEffect.WITHER, 1),
+        definition(AnchorEffect.BLINDNESS, 2),
+        definition(AnchorEffect.MINING_FATIGUE, 3),
+        definition(AnchorEffect.SLOWNESS, 4),
+        definition(AnchorEffect.WEAKNESS, 5)
     );
 
     private final SanctuaryEffectRepository legacyRepository;
@@ -76,31 +76,27 @@ public final class SanctuaryEffectService {
         return segmentDelta(maximumRadius) * effectTier;
     }
 
-    public List<AnchorEffectDefinition> definitions(
-        SanctuaryType type,
-        SanctuaryEffect.EffectTarget target
-    ) {
+    public List<AnchorEffectDefinition> definitions(SanctuaryType type, AnchorEffect.Target target) {
         Objects.requireNonNull(type, "type");
         Objects.requireNonNull(target, "target");
         return switch (type) {
-            case BEACON -> target == SanctuaryEffect.EffectTarget.SAFE ? BEACON_SAFE : BEACON_HOSTILE;
-            case CONDUIT -> target == SanctuaryEffect.EffectTarget.SAFE ? CONDUIT_SAFE : CONDUIT_HOSTILE;
+            case BEACON -> target == AnchorEffect.Target.SAFE ? BEACON_SAFE : BEACON_HOSTILE;
+            case CONDUIT -> target == AnchorEffect.Target.SAFE ? CONDUIT_SAFE : CONDUIT_HOSTILE;
         };
     }
 
-    public int tierFor(SanctuaryType type, SanctuaryEffect effect) {
+    public int tierFor(SanctuaryType type, AnchorEffect effect) {
         return definitions(type, effect.target()).stream()
             .filter(definition -> definition.effect() == effect)
             .mapToInt(AnchorEffectDefinition::tier)
             .findFirst()
             .orElseThrow(() -> new IllegalArgumentException(
-                effect.name() + " is not available for " + type.name().toLowerCase(java.util.Locale.ROOT) + " anchors"
+                effect.name() + " is not available for "
+                    + type.name().toLowerCase(java.util.Locale.ROOT) + " anchors"
             ));
     }
 
-    public boolean isUnlocked(SanctuaryAnchor anchor, SanctuaryEffect effect) {
-        Objects.requireNonNull(anchor, "anchor");
-        Objects.requireNonNull(effect, "effect");
+    public boolean isUnlocked(SanctuaryAnchor anchor, AnchorEffect effect) {
         try {
             return anchor.tier() >= tierFor(anchor.type(), effect);
         } catch (IllegalArgumentException exception) {
@@ -110,12 +106,10 @@ public final class SanctuaryEffectService {
 
     public boolean isWithinEffectRadius(
         SanctuaryAnchor anchor,
-        SanctuaryEffect effect,
+        AnchorEffect effect,
         double horizontalDistance,
         double maximumRadius
     ) {
-        Objects.requireNonNull(anchor, "anchor");
-        Objects.requireNonNull(effect, "effect");
         if (!Double.isFinite(horizontalDistance) || horizontalDistance < 0.0) {
             throw new IllegalArgumentException("horizontalDistance must be finite and zero or greater");
         }
@@ -129,16 +123,13 @@ public final class SanctuaryEffectService {
         return horizontalDistance <= effectiveRadius;
     }
 
-    public int level(SanctuaryAnchor anchor, SanctuaryEffect effect) throws SQLException {
+    public int level(SanctuaryAnchor anchor, AnchorEffect effect) throws SQLException {
         requireAnchorRepository();
         int level = anchorRepository.getLevel(anchor.id(), effect);
-        if (level < 1) {
-            return 1;
-        }
-        return Math.min(level, effect.maximumLevel());
+        return Math.max(1, Math.min(level, effect.maximumLevel()));
     }
 
-    public void setLevel(SanctuaryAnchor anchor, SanctuaryEffect effect, int level) throws SQLException {
+    public void setLevel(SanctuaryAnchor anchor, AnchorEffect effect, int level) throws SQLException {
         requireAnchorRepository();
         if (!isUnlocked(anchor, effect)) {
             throw new IllegalStateException("That effect is not unlocked at this anchor tier.");
@@ -146,41 +137,31 @@ public final class SanctuaryEffectService {
         anchorRepository.setLevel(anchor.id(), effect, level);
     }
 
-    public List<ActiveSanctuaryEffect> activeEffects(
+    public List<ActiveAnchorEffect> activeAnchorEffects(
         Sanctuary sanctuary,
         SanctuaryAnchor anchor,
         UUID playerId,
         double horizontalDistance,
         double maximumRadius
     ) throws SQLException {
-        Objects.requireNonNull(sanctuary, "sanctuary");
-        Objects.requireNonNull(anchor, "anchor");
-        Objects.requireNonNull(playerId, "playerId");
-        SanctuaryEffect.EffectTarget target = targetFor(sanctuary, playerId);
+        AnchorEffect.Target target = anchorTargetFor(sanctuary, playerId);
         if (target == null) {
             return List.of();
         }
-
-        List<ActiveSanctuaryEffect> active = new ArrayList<>();
+        List<ActiveAnchorEffect> active = new ArrayList<>();
         for (AnchorEffectDefinition definition : definitions(anchor.type(), target)) {
-            SanctuaryEffect effect = definition.effect();
-            if (!isWithinEffectRadius(anchor, effect, horizontalDistance, maximumRadius)) {
-                continue;
+            if (isWithinEffectRadius(anchor, definition.effect(), horizontalDistance, maximumRadius)) {
+                active.add(new ActiveAnchorEffect(definition.effect(), level(anchor, definition.effect())));
             }
-            active.add(new ActiveSanctuaryEffect(effect, level(anchor, effect)));
         }
         return List.copyOf(active);
     }
 
-    // Legacy single-anchor API kept for existing callers/tests until every UI path is anchor-aware.
+    // Existing Beacon API remains unchanged for compatibility with the current shared UI/tests.
     public boolean isUnlocked(Sanctuary sanctuary, SanctuaryEffect effect) {
         Objects.requireNonNull(sanctuary, "sanctuary");
         Objects.requireNonNull(effect, "effect");
-        try {
-            return sanctuary.tier() >= tierFor(SanctuaryType.BEACON, effect);
-        } catch (IllegalArgumentException exception) {
-            return false;
-        }
+        return sanctuary.tier() >= effect.tier();
     }
 
     public boolean isWithinEffectRadius(
@@ -189,19 +170,27 @@ public final class SanctuaryEffectService {
         double horizontalDistance,
         double maximumRadius
     ) {
+        Objects.requireNonNull(sanctuary, "sanctuary");
+        Objects.requireNonNull(effect, "effect");
+        if (!Double.isFinite(horizontalDistance) || horizontalDistance < 0.0) {
+            throw new IllegalArgumentException("horizontalDistance must be finite and zero or greater");
+        }
         if (!isUnlocked(sanctuary, effect)) {
             return false;
         }
         double effectiveRadius = Math.min(
             sanctuary.territoryRadius(),
-            radiusForTier(maximumRadius, tierFor(SanctuaryType.BEACON, effect))
+            radiusForTier(maximumRadius, effect.tier())
         );
         return horizontalDistance <= effectiveRadius;
     }
 
     public int level(Sanctuary sanctuary, SanctuaryEffect effect) throws SQLException {
         int level = legacyRepository.getLevel(sanctuary.id(), effect);
-        return Math.max(1, Math.min(level, effect.maximumLevel()));
+        if (level < 1) {
+            return 1;
+        }
+        return Math.min(level, effect.maximumLevel());
     }
 
     public void setLevel(Sanctuary sanctuary, SanctuaryEffect effect, int level) throws SQLException {
@@ -217,21 +206,33 @@ public final class SanctuaryEffectService {
         double horizontalDistance,
         double maximumRadius
     ) throws SQLException {
-        SanctuaryEffect.EffectTarget target = targetFor(sanctuary, playerId);
+        SanctuaryEffect.EffectTarget target = legacyTargetFor(sanctuary, playerId);
         if (target == null) {
             return List.of();
         }
         List<ActiveSanctuaryEffect> active = new ArrayList<>();
-        for (AnchorEffectDefinition definition : definitions(SanctuaryType.BEACON, target)) {
-            SanctuaryEffect effect = definition.effect();
-            if (isWithinEffectRadius(sanctuary, effect, horizontalDistance, maximumRadius)) {
-                active.add(new ActiveSanctuaryEffect(effect, level(sanctuary, effect)));
+        for (SanctuaryEffect effect : SanctuaryEffect.values()) {
+            if (effect.target() != target) {
+                continue;
             }
+            if (!isWithinEffectRadius(sanctuary, effect, horizontalDistance, maximumRadius)) {
+                continue;
+            }
+            active.add(new ActiveSanctuaryEffect(effect, level(sanctuary, effect)));
         }
         return List.copyOf(active);
     }
 
-    private SanctuaryEffect.EffectTarget targetFor(Sanctuary sanctuary, UUID playerId)
+    private AnchorEffect.Target anchorTargetFor(Sanctuary sanctuary, UUID playerId)
+        throws SQLException {
+        return switch (securityService.threat(sanctuary, playerId)) {
+            case SAFE -> AnchorEffect.Target.SAFE;
+            case HOSTILE -> AnchorEffect.Target.HOSTILE;
+            case NEUTRAL -> null;
+        };
+    }
+
+    private SanctuaryEffect.EffectTarget legacyTargetFor(Sanctuary sanctuary, UUID playerId)
         throws SQLException {
         SanctuaryThreat threat = securityService.threat(sanctuary, playerId);
         return switch (threat) {
@@ -247,7 +248,7 @@ public final class SanctuaryEffectService {
         }
     }
 
-    private static AnchorEffectDefinition definition(SanctuaryEffect effect, int tier) {
+    private static AnchorEffectDefinition definition(AnchorEffect effect, int tier) {
         return new AnchorEffectDefinition(effect, tier);
     }
 
@@ -257,12 +258,25 @@ public final class SanctuaryEffectService {
         }
     }
 
-    public record AnchorEffectDefinition(SanctuaryEffect effect, int tier) {
+    public record AnchorEffectDefinition(AnchorEffect effect, int tier) {
         public AnchorEffectDefinition {
             Objects.requireNonNull(effect, "effect");
             if (tier < 1 || tier > EFFECT_TIER_COUNT) {
                 throw new IllegalArgumentException("tier must be between 1 and 5");
             }
+        }
+    }
+
+    public record ActiveAnchorEffect(AnchorEffect effect, int level) {
+        public ActiveAnchorEffect {
+            Objects.requireNonNull(effect, "effect");
+            if (level < 1 || level > effect.maximumLevel()) {
+                throw new IllegalArgumentException("level is outside the effect maximum");
+            }
+        }
+
+        public int amplifier() {
+            return level - 1;
         }
     }
 

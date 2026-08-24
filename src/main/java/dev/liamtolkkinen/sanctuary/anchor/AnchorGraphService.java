@@ -9,9 +9,12 @@ import dev.liamtolkkinen.sanctuary.territory.TerritoryCalculator;
 import java.sql.SQLException;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.ArrayDeque;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 public final class AnchorGraphService {
@@ -36,6 +39,10 @@ public final class AnchorGraphService {
         this.clock = Objects.requireNonNull(clock, "clock");
     }
 
+    public boolean isRegisteredAnchor(UUID anchorId) throws SQLException {
+        return anchorRepository.findById(anchorId).isPresent();
+    }
+
     public AnchorPlacementOutcome placeNew(
         AnchorMetadata metadata,
         SanctuaryType type,
@@ -58,7 +65,7 @@ public final class AnchorGraphService {
             throw new AnchorPlacementException("A Sanctuary anchor already exists with this ID");
         }
 
-        Optional<SanctuaryAnchor> parent = nearestJoinParent(
+        List<SanctuaryAnchor> neighbors = joinCandidates(
             ownerId,
             position,
             maximumRadius,
@@ -66,13 +73,13 @@ public final class AnchorGraphService {
         );
         Instant now = clock.instant();
 
-        if (parent.isPresent()) {
-            SanctuaryAnchor parentAnchor = parent.orElseThrow();
-            Sanctuary sanctuary = requireSanctuary(parentAnchor.sanctuaryId());
+        if (!neighbors.isEmpty()) {
+            UUID sanctuaryId = requireSingleJoinSanctuary(neighbors);
+            Sanctuary sanctuary = requireSanctuary(sanctuaryId);
             SanctuaryAnchor anchor = new SanctuaryAnchor(
                 metadata.anchorId(),
                 sanctuary.id(),
-                Optional.of(parentAnchor.id()),
+                Optional.empty(),
                 type,
                 Optional.of(position),
                 metadata.tier(),
@@ -85,6 +92,7 @@ public final class AnchorGraphService {
                 now
             );
             anchorRepository.save(anchor);
+            connectToNeighbors(anchor.id(), neighbors);
             return new AnchorPlacementOutcome(sanctuary, anchor, true, false);
         }
 
@@ -166,9 +174,8 @@ public final class AnchorGraphService {
         if (existing.state() != SanctuaryState.INACTIVE) {
             throw new AnchorPlacementException("This Sanctuary anchor is already active");
         }
-        requireLeaf(existing.id());
 
-        Optional<SanctuaryAnchor> parent = nearestJoinParent(
+        List<SanctuaryAnchor> neighbors = joinCandidates(
             source.ownerId(),
             position,
             maximumRadius,
@@ -176,14 +183,15 @@ public final class AnchorGraphService {
         );
         Instant now = clock.instant();
 
-        if (parent.isPresent()) {
-            SanctuaryAnchor parentAnchor = parent.orElseThrow();
-            Sanctuary target = requireSanctuary(parentAnchor.sanctuaryId());
+        if (!neighbors.isEmpty()) {
+            UUID targetSanctuaryId = requireSingleJoinSanctuary(neighbors);
+            Sanctuary target = requireSanctuary(targetSanctuaryId);
             boolean movingSanctuaries = !target.id().equals(source.id());
+            anchorRepository.deleteEdgesForAnchor(existing.id());
             SanctuaryAnchor activated = copyAnchor(
                 existing,
                 target.id(),
-                Optional.of(parentAnchor.id()),
+                Optional.empty(),
                 Optional.of(position),
                 SanctuaryState.ACTIVE,
                 Optional.empty(),
@@ -191,6 +199,7 @@ public final class AnchorGraphService {
                 now
             );
             anchorRepository.save(activated);
+            connectToNeighbors(activated.id(), neighbors);
 
             boolean deletedSource = false;
             if (movingSanctuaries && remainingNonDestroyed(source.id(), existing.id()).isEmpty()) {
@@ -208,6 +217,7 @@ public final class AnchorGraphService {
         );
 
         List<SanctuaryAnchor> sourceRemainder = remainingNonDestroyed(source.id(), existing.id());
+        anchorRepository.deleteEdgesForAnchor(existing.id());
         if (sourceRemainder.isEmpty()) {
             SanctuaryAnchor activated = copyAnchor(
                 existing,
@@ -275,7 +285,7 @@ public final class AnchorGraphService {
             throw new AnchorPlacementException("Only the Sanctuary owner may break this anchor");
         }
         requireActiveAt(anchor, currentPosition);
-        requireLeaf(anchor.id());
+        requireRemovable(anchor.id());
         return deactivate(anchor, sanctuary);
     }
 
@@ -285,7 +295,7 @@ public final class AnchorGraphService {
     ) throws SQLException, AnchorPlacementException {
         SanctuaryAnchor anchor = requireMatchingAnchor(metadata);
         requireActiveAt(anchor, currentPosition);
-        requireLeaf(anchor.id());
+        requireRemovable(anchor.id());
         return deactivate(anchor, requireSanctuary(anchor.sanctuaryId()));
     }
 
@@ -303,10 +313,11 @@ public final class AnchorGraphService {
             return Optional.empty();
         }
         Instant now = clock.instant();
+        anchorRepository.deleteEdgesForAnchor(anchor.id());
         SanctuaryAnchor destroyed = copyAnchor(
             anchor,
             anchor.sanctuaryId(),
-            anchor.parentAnchorId(),
+            Optional.empty(),
             Optional.empty(),
             SanctuaryState.DESTROYED,
             Optional.of(now),
@@ -327,14 +338,52 @@ public final class AnchorGraphService {
         return Optional.of(destroyed);
     }
 
+    /**
+     * Compatibility name retained for callers/tests. In the undirected graph model this
+     * means "removable without disconnecting the remaining active graph", not tree leaf.
+     */
     public SanctuaryAnchor requireLeaf(UUID anchorId) throws SQLException, AnchorPlacementException {
+        return requireRemovable(anchorId);
+    }
+
+    public SanctuaryAnchor requireRemovable(UUID anchorId) throws SQLException, AnchorPlacementException {
         SanctuaryAnchor anchor = anchorRepository.findById(anchorId)
             .orElseThrow(() -> new AnchorPlacementException("No registered Sanctuary anchor exists with this ID"));
-        List<SanctuaryAnchor> children = anchorRepository.findChildren(anchorId);
-        if (!children.isEmpty()) {
+        if (anchor.state() != SanctuaryState.ACTIVE) {
+            return anchor;
+        }
+
+        List<SanctuaryAnchor> remaining = anchorRepository.findBySanctuary(anchor.sanctuaryId()).stream()
+            .filter(value -> value.state() == SanctuaryState.ACTIVE)
+            .filter(value -> !value.id().equals(anchorId))
+            .toList();
+        if (remaining.size() <= 1) {
+            return anchor;
+        }
+
+        Set<UUID> remainingIds = new HashSet<>();
+        for (SanctuaryAnchor value : remaining) {
+            remainingIds.add(value.id());
+        }
+
+        UUID start = remaining.getFirst().id();
+        Set<UUID> visited = new HashSet<>();
+        ArrayDeque<UUID> queue = new ArrayDeque<>();
+        visited.add(start);
+        queue.add(start);
+        while (!queue.isEmpty()) {
+            UUID current = queue.removeFirst();
+            for (UUID neighbor : anchorRepository.findNeighborIds(current)) {
+                if (neighbor.equals(anchorId) || !remainingIds.contains(neighbor) || !visited.add(neighbor)) {
+                    continue;
+                }
+                queue.addLast(neighbor);
+            }
+        }
+
+        if (visited.size() != remainingIds.size()) {
             throw new AnchorPlacementException(
-                "This anchor cannot be removed because " + children.size()
-                    + " connected anchor" + (children.size() == 1 ? " depends" : "s depend") + " on it"
+                "This anchor cannot be removed because doing so would disconnect the Sanctuary anchor graph."
             );
         }
         return anchor;
@@ -346,32 +395,13 @@ public final class AnchorGraphService {
         double maximumRadius,
         Optional<UUID> excludedAnchorId
     ) throws SQLException {
-        SanctuaryAnchor best = null;
-        double bestDistance = Double.POSITIVE_INFINITY;
-        for (SanctuaryAnchor anchor : anchorRepository.findActiveInWorld(candidate.world())) {
-            if (excludedAnchorId.isPresent() && anchor.id().equals(excludedAnchorId.orElseThrow())) {
-                continue;
-            }
-            if (anchor.position().isEmpty()) {
-                continue;
-            }
-            Sanctuary sanctuary = sanctuaryRepository.findById(anchor.sanctuaryId()).orElse(null);
-            if (sanctuary == null || !sanctuary.ownerId().equals(ownerId)) {
-                continue;
-            }
-            double distance = TerritoryCalculator.horizontalDistance(candidate, anchor.position().orElseThrow());
-            if (distance > maximumRadius) {
-                continue;
-            }
-            if (best == null
-                || distance < bestDistance
-                || (Double.compare(distance, bestDistance) == 0
-                    && anchor.id().toString().compareTo(best.id().toString()) < 0)) {
-                best = anchor;
-                bestDistance = distance;
-            }
-        }
-        return Optional.ofNullable(best);
+        return joinCandidates(ownerId, candidate, maximumRadius, excludedAnchorId).stream()
+            .min(java.util.Comparator
+                .comparingDouble((SanctuaryAnchor anchor) -> TerritoryCalculator.horizontalDistance(
+                    candidate,
+                    anchor.position().orElseThrow()
+                ))
+                .thenComparing(anchor -> anchor.id().toString()));
     }
 
     public void validateIndependentPlacement(
@@ -399,6 +429,50 @@ public final class AnchorGraphService {
         }
     }
 
+    private List<SanctuaryAnchor> joinCandidates(
+        UUID ownerId,
+        SanctuaryPosition candidate,
+        double maximumRadius,
+        Optional<UUID> excludedAnchorId
+    ) throws SQLException {
+        java.util.ArrayList<SanctuaryAnchor> result = new java.util.ArrayList<>();
+        for (SanctuaryAnchor anchor : anchorRepository.findActiveInWorld(candidate.world())) {
+            if (excludedAnchorId.isPresent() && anchor.id().equals(excludedAnchorId.orElseThrow())) {
+                continue;
+            }
+            if (anchor.position().isEmpty()) {
+                continue;
+            }
+            Sanctuary sanctuary = sanctuaryRepository.findById(anchor.sanctuaryId()).orElse(null);
+            if (sanctuary == null || !sanctuary.ownerId().equals(ownerId)) {
+                continue;
+            }
+            double distance = TerritoryCalculator.horizontalDistance(candidate, anchor.position().orElseThrow());
+            if (distance <= maximumRadius) {
+                result.add(anchor);
+            }
+        }
+        return List.copyOf(result);
+    }
+
+    private UUID requireSingleJoinSanctuary(List<SanctuaryAnchor> neighbors)
+        throws AnchorPlacementException {
+        UUID sanctuaryId = neighbors.getFirst().sanctuaryId();
+        boolean ambiguous = neighbors.stream().anyMatch(anchor -> !anchor.sanctuaryId().equals(sanctuaryId));
+        if (ambiguous) {
+            throw new AnchorPlacementException(
+                "This anchor is within joining range of multiple separate Sanctuaries. Move it before placing."
+            );
+        }
+        return sanctuaryId;
+    }
+
+    private void connectToNeighbors(UUID anchorId, List<SanctuaryAnchor> neighbors) throws SQLException {
+        for (SanctuaryAnchor neighbor : neighbors) {
+            anchorRepository.saveEdge(anchorId, neighbor.id());
+        }
+    }
+
     private GraphAnchorBreakResult deactivate(
         SanctuaryAnchor anchor,
         Sanctuary sanctuary
@@ -407,12 +481,13 @@ public final class AnchorGraphService {
             throw new AnchorPlacementException("This anchor cannot advance to another generation");
         }
         Instant now = clock.instant();
+        anchorRepository.deleteEdgesForAnchor(anchor.id());
 
         if (sanctuary.debugEphemeral()) {
             SanctuaryAnchor destroyed = copyAnchor(
                 anchor,
                 anchor.sanctuaryId(),
-                anchor.parentAnchorId(),
+                Optional.empty(),
                 Optional.empty(),
                 SanctuaryState.DESTROYED,
                 Optional.of(now),
@@ -431,7 +506,7 @@ public final class AnchorGraphService {
         }
 
         SanctuaryAnchor inactive = new SanctuaryAnchor(
-            anchor.id(), anchor.sanctuaryId(), anchor.parentAnchorId(), anchor.type(), Optional.empty(),
+            anchor.id(), anchor.sanctuaryId(), Optional.empty(), anchor.type(), Optional.empty(),
             anchor.tier(), anchor.generation() + 1, anchor.territoryRadius(), SanctuaryState.INACTIVE,
             Optional.empty(), Optional.empty(), anchor.createdAt(), now
         );
@@ -453,9 +528,6 @@ public final class AnchorGraphService {
 
     private SanctuaryAnchor requireMatchingAnchor(AnchorMetadata metadata)
         throws SQLException, AnchorPlacementException {
-        if (!metadata.isBound()) {
-            throw new AnchorPlacementException("Sanctuary anchor is not bound to an owner");
-        }
         SanctuaryAnchor anchor = anchorRepository.findById(metadata.anchorId())
             .orElseThrow(() -> new AnchorPlacementException("No registered Sanctuary exists for this bound anchor"));
         if (!matches(anchor, metadata)) {
@@ -469,10 +541,13 @@ public final class AnchorGraphService {
 
     private boolean matches(SanctuaryAnchor anchor, AnchorMetadata metadata) throws SQLException {
         Sanctuary sanctuary = sanctuaryRepository.findById(anchor.sanctuaryId()).orElse(null);
-        return sanctuary != null
-            && metadata.ownerId().orElseThrow().equals(sanctuary.ownerId())
-            && metadata.tier() == anchor.tier()
-            && metadata.generation() == anchor.generation();
+        if (sanctuary == null
+            || metadata.tier() != anchor.tier()
+            || metadata.generation() != anchor.generation()) {
+            return false;
+        }
+        return metadata.ownerId().isEmpty()
+            || metadata.ownerId().orElseThrow().equals(sanctuary.ownerId());
     }
 
     private static void requireActiveAt(SanctuaryAnchor anchor, SanctuaryPosition position)

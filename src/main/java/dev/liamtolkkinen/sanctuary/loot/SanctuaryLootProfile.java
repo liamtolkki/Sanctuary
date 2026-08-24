@@ -69,7 +69,7 @@ public enum SanctuaryLootProfile {
         2,
         4,
         0.20,
-        0.05
+        0.08
     );
 
     private static final List<SanctuaryLootProfile> ALL = List.of(values());

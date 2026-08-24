@@ -21,7 +21,7 @@ import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.java.JavaPlugin;
 
-/** Adds Consecrated Shard materials to selected vanilla structure loot tables. */
+/** Adds Sanctuary progression materials to selected vanilla structure loot tables. */
 public final class SanctuaryLootService implements Listener {
     private final NamespacedKey debugProfileKey;
 
@@ -58,6 +58,9 @@ public final class SanctuaryLootService implements Listener {
         if (random.nextDouble() < profile.shardChance()) {
             loot.add(ExtendedItems.create(ExtendedItemIds.CONSECRATED_SHARD));
         }
+        if (random.nextDouble() < profile.endermanCompanionChance()) {
+            loot.add(ExtendedItems.create(ExtendedItemIds.COMPANION_ENDERMAN));
+        }
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
@@ -90,13 +93,7 @@ public final class SanctuaryLootService implements Listener {
             NamedTextColor.GOLD
         ));
         event.getPlayer().sendMessage(Component.text(
-            String.format(
-                "Fragment %.1f%% (%d-%d) | Shard %.1f%%",
-                profile.fragmentChance() * 100.0,
-                profile.minimumFragments(),
-                profile.maximumFragments(),
-                profile.shardChance() * 100.0
-            ),
+            debugRateSummary(profile),
             NamedTextColor.GRAY
         ));
     }
@@ -109,25 +106,34 @@ public final class SanctuaryLootService implements Listener {
                 "Debug Loot: " + profile.displayName(),
                 NamedTextColor.GOLD
             ));
-            meta.lore(List.of(
-                Component.text(
-                    String.format(
-                        "Fragment chance: %.1f%% (%d-%d)",
-                        profile.fragmentChance() * 100.0,
-                        profile.minimumFragments(),
-                        profile.maximumFragments()
-                    ),
-                    NamedTextColor.AQUA
+            List<Component> lore = new ArrayList<>();
+            lore.add(Component.text(
+                String.format(
+                    "Fragment chance: %.1f%% (%d-%d)",
+                    profile.fragmentChance() * 100.0,
+                    profile.minimumFragments(),
+                    profile.maximumFragments()
                 ),
-                Component.text(
-                    String.format("Full shard chance: %.1f%%", profile.shardChance() * 100.0),
-                    NamedTextColor.LIGHT_PURPLE
-                ),
-                Component.text(
-                    "Place and open to roll the real loot table.",
-                    NamedTextColor.GRAY
-                )
+                NamedTextColor.AQUA
             ));
+            lore.add(Component.text(
+                String.format("Full shard chance: %.1f%%", profile.shardChance() * 100.0),
+                NamedTextColor.LIGHT_PURPLE
+            ));
+            if (profile.endermanCompanionChance() > 0.0) {
+                lore.add(Component.text(
+                    String.format(
+                        "Enderman Companion Egg: %.1f%%",
+                        profile.endermanCompanionChance() * 100.0
+                    ),
+                    NamedTextColor.DARK_PURPLE
+                ));
+            }
+            lore.add(Component.text(
+                "Place and open to roll the real loot table.",
+                NamedTextColor.GRAY
+            ));
+            meta.lore(List.copyOf(lore));
             meta.setEnchantmentGlintOverride(true);
             meta.getPersistentDataContainer().set(
                 debugProfileKey,
@@ -144,5 +150,22 @@ public final class SanctuaryLootService implements Listener {
             result.add(createDebugChest(profile));
         }
         return List.copyOf(result);
+    }
+
+    private static String debugRateSummary(SanctuaryLootProfile profile) {
+        String summary = String.format(
+            "Fragment %.1f%% (%d-%d) | Shard %.1f%%",
+            profile.fragmentChance() * 100.0,
+            profile.minimumFragments(),
+            profile.maximumFragments(),
+            profile.shardChance() * 100.0
+        );
+        if (profile.endermanCompanionChance() <= 0.0) {
+            return summary;
+        }
+        return summary + String.format(
+            " | Enderman Egg %.1f%%",
+            profile.endermanCompanionChance() * 100.0
+        );
     }
 }

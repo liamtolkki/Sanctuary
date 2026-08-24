@@ -5,7 +5,6 @@ import java.util.Objects;
 import net.kyori.adventure.text.Component;
 import org.bukkit.DyeColor;
 import org.bukkit.Material;
-import org.bukkit.NamespacedKey;
 import org.bukkit.block.banner.Pattern;
 import org.bukkit.block.banner.PatternType;
 import org.bukkit.inventory.ItemStack;
@@ -13,7 +12,6 @@ import org.bukkit.inventory.meta.BannerMeta;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.inventory.meta.OminousBottleMeta;
 import org.bukkit.inventory.meta.PotionMeta;
-import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.potion.PotionType;
 
@@ -29,11 +27,8 @@ public final class SentryCraftingItemService {
         new Pattern(DyeColor.BLACK, PatternType.BORDER)
     );
 
-    private final NamespacedKey trophyTypeKey;
-
     public SentryCraftingItemService(JavaPlugin plugin) {
         Objects.requireNonNull(plugin, "plugin");
-        this.trophyTypeKey = new NamespacedKey(plugin, "sentry_trophy_type");
     }
 
     public ItemStack createSpecialIngredient(
@@ -45,12 +40,9 @@ public final class SentryCraftingItemService {
             case OMINOUS_BOTTLE_V -> createOminousBottleV();
             case OMINOUS_BANNER -> createOminousBanner();
             case SPEED_II_POTION -> createSpeedIiPotion();
-            case CREEPER_TROPHY_HEAD ->
-                createTrophyHead(Material.CREEPER_HEAD, "creeper", "Creeper Head");
-            case ZOMBIE_TROPHY_HEAD ->
-                createTrophyHead(Material.ZOMBIE_HEAD, "zombie", "Zombie Head");
-            case PIGLIN_BRUTE_TROPHY_HEAD ->
-                createTrophyHead(Material.PIGLIN_HEAD, "piglin_brute", "Piglin Brute Head");
+            case CREEPER_TROPHY_HEAD -> new ItemStack(Material.CREEPER_HEAD);
+            case ZOMBIE_TROPHY_HEAD -> new ItemStack(Material.ZOMBIE_HEAD);
+            case PIGLIN_BRUTE_TROPHY_HEAD -> new ItemStack(Material.PIGLIN_HEAD);
         };
     }
 
@@ -67,42 +59,10 @@ public final class SentryCraftingItemService {
             case OMINOUS_BOTTLE_V -> isOminousBottleV(item);
             case OMINOUS_BANNER -> isOminousBanner(item);
             case SPEED_II_POTION -> isSpeedIiPotion(item);
-            case CREEPER_TROPHY_HEAD,
-                 ZOMBIE_TROPHY_HEAD,
-                 PIGLIN_BRUTE_TROPHY_HEAD -> isTrophyHead(item, ingredient);
+            case CREEPER_TROPHY_HEAD -> item.getType() == Material.CREEPER_HEAD;
+            case ZOMBIE_TROPHY_HEAD -> item.getType() == Material.ZOMBIE_HEAD;
+            case PIGLIN_BRUTE_TROPHY_HEAD -> item.getType() == Material.PIGLIN_HEAD;
         };
-    }
-
-    public boolean isTrophyHead(
-        ItemStack item,
-        SentryRecipeCatalog.SpecialIngredient ingredient
-    ) {
-        if (item == null || item.getType().isAir()) {
-            return false;
-        }
-
-        String expected = switch (ingredient) {
-            case CREEPER_TROPHY_HEAD -> "creeper";
-            case ZOMBIE_TROPHY_HEAD -> "zombie";
-            case PIGLIN_BRUTE_TROPHY_HEAD -> "piglin_brute";
-            case OMINOUS_BOTTLE_V,
-                 OMINOUS_BANNER,
-                 SPEED_II_POTION -> null;
-        };
-        if (expected == null) {
-            return false;
-        }
-
-        ItemMeta meta = item.getItemMeta();
-        if (meta == null) {
-            return false;
-        }
-
-        String actual = meta.getPersistentDataContainer().get(
-            trophyTypeKey,
-            PersistentDataType.STRING
-        );
-        return expected.equals(actual);
     }
 
     private boolean isOminousBottleV(ItemStack item) {
@@ -164,28 +124,6 @@ public final class SentryCraftingItemService {
             throw new IllegalStateException("Potion did not provide PotionMeta");
         }
         meta.setBasePotionType(PotionType.STRONG_SWIFTNESS);
-        item.setItemMeta(meta);
-        return item;
-    }
-
-    private ItemStack createTrophyHead(
-        Material material,
-        String trophyType,
-        String displayName
-    ) {
-        ItemStack item = new ItemStack(material);
-        ItemMeta meta = item.getItemMeta();
-        if (meta == null) {
-            throw new IllegalStateException(material + " did not provide ItemMeta");
-        }
-
-        meta.displayName(Component.text(displayName));
-        meta.setEnchantmentGlintOverride(true);
-        meta.getPersistentDataContainer().set(
-            trophyTypeKey,
-            PersistentDataType.STRING,
-            trophyType
-        );
         item.setItemMeta(meta);
         return item;
     }

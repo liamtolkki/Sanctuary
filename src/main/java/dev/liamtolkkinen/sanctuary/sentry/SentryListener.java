@@ -5,8 +5,6 @@ import com.destroystokyo.paper.event.entity.EntityPathfindEvent;
 import dev.liamtolkkinen.sanctuary.anchor.AnchorItemService;
 import dev.liamtolkkinen.sanctuary.sanctuary.Sanctuary;
 import dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryRepository;
-import dev.liamtolkkinen.sanctuary.territory.TerritoryCalculator;
-import io.papermc.paper.event.entity.EntityMoveEvent;
 import io.papermc.paper.event.entity.WardenAngerChangeEvent;
 import java.sql.SQLException;
 import java.util.Optional;
@@ -101,26 +99,6 @@ public final class SentryListener implements Listener {
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
-    public void onManagedMove(EntityMoveEvent event) {
-        if (!service.isManaged(event.getEntity())) return;
-        try {
-            SentryRecord record = service.record(event.getEntity()).orElse(null);
-            if (record == null) return;
-            Sanctuary sanctuary = sanctuaryRepository.findById(record.sanctuaryId()).orElse(null);
-            if (sanctuary == null || sanctuary.position().isEmpty()) return;
-            if (!TerritoryCalculator.contains(
-                sanctuary.position().orElseThrow(), sanctuary.territoryRadius(), event.getTo().getWorld().getName(),
-                event.getTo().getX(), event.getTo().getZ())) {
-                event.setCancelled(true);
-                service.markDown(record);
-            }
-        } catch (SQLException exception) {
-            event.setCancelled(true);
-            logger.log(Level.WARNING, "Failed sentry movement boundary validation", exception);
-        }
-    }
-
-    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onPlace(BlockPlaceEvent event) {
         Optional<SentryDefinition> definition = service.definition(event.getItemInHand());
         if (definition.isEmpty()) return;
@@ -159,7 +137,9 @@ public final class SentryListener implements Listener {
         var metadata = anchorItemService.readBlockMetadata(tileState);
         if (metadata.isEmpty()) return;
         try {
-            Sanctuary sanctuary = sanctuaryRepository.findById(metadata.orElseThrow().anchorId()).orElse(null);
+            // Resolve through current territory rather than assuming anchor UUID == Sanctuary UUID.
+            // Extender anchors deliberately have their own UUID while remaining part of the same Sanctuary.
+            Sanctuary sanctuary = service.sanctuaryAt(event.getBlock().getLocation()).orElse(null);
             if (sanctuary != null) service.trigger(sanctuary, SentryTrigger.BEACON_ATTACKED, event.getPlayer());
         } catch (SQLException exception) {
             logger.log(Level.WARNING, "Failed sentry Beacon-attack trigger", exception);

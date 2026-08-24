@@ -203,6 +203,20 @@ public final class SanctuaryCommand implements CommandExecutor, TabCompleter {
                 return true;
             }
 
+            if (args.length == 3 && args[1].equalsIgnoreCase("giveconduit")) {
+                Player target = Bukkit.getPlayerExact(args[2]);
+                if (target == null) {
+                    sender.sendMessage(ChatColor.RED + "That player is not online.");
+                    return true;
+                }
+                giveOrDrop(target, anchorItemService.createUnboundConduit());
+                sender.sendMessage(ChatColor.GREEN + "Gave an unbound Sanctuary Conduit to " + target.getName() + ".");
+                if (!target.equals(sender)) {
+                    target.sendMessage(ChatColor.GOLD + "You received an unbound Sanctuary Conduit.");
+                }
+                return true;
+            }
+
             if (args.length == 4 && args[1].equalsIgnoreCase("givesentry")) {
                 Player target = Bukkit.getPlayerExact(args[2]);
                 if (target == null) {
@@ -779,7 +793,7 @@ public final class SanctuaryCommand implements CommandExecutor, TabCompleter {
         }
 
         if (args.length == 2 && args[0].equalsIgnoreCase("admin") && sender.hasPermission("sanctuary.admin")) {
-            return filter(List.of("reload", "beacons", "ui", "givebeacon", "givesentry", "debugbeacon", "debugtrust", "permissions"), args[1]);
+            return filter(List.of("reload", "beacons", "ui", "givebeacon", "giveconduit", "givesentry", "debugbeacon", "debugtrust", "permissions"), args[1]);
         }
 
         if (args.length == 3 && args[0].equalsIgnoreCase("admin") && args[1].equalsIgnoreCase("ui") && sender.hasPermission("sanctuary.admin")) {
@@ -833,8 +847,8 @@ public final class SanctuaryCommand implements CommandExecutor, TabCompleter {
         }
 
         if (args.length == 3 && args[0].equalsIgnoreCase("admin")
-            && (args[1].equalsIgnoreCase("givebeacon") || args[1].equalsIgnoreCase("debugbeacon")
-                || args[1].equalsIgnoreCase("givesentry"))
+            && (args[1].equalsIgnoreCase("givebeacon") || args[1].equalsIgnoreCase("giveconduit")
+                || args[1].equalsIgnoreCase("debugbeacon") || args[1].equalsIgnoreCase("givesentry"))
             && sender.hasPermission("sanctuary.admin")) {
             return filter(Bukkit.getOnlinePlayers().stream().map(Player::getName).sorted(String.CASE_INSENSITIVE_ORDER).toList(), args[2]);
         }

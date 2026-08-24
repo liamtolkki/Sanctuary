@@ -15,7 +15,9 @@ import dev.liamtolkkinen.sanctuary.effect.AnchorEffect;
 import dev.liamtolkkinen.sanctuary.effect.SanctuaryEffectService;
 import dev.liamtolkkinen.sanctuary.sanctuary.Sanctuary;
 import dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryRepository;
+import dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryState;
 import dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryType;
+import dev.liamtolkkinen.sanctuary.territory.TerritoryAreaCalculator;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
@@ -95,6 +97,12 @@ public final class AnchorUiService {
                 }
 
                 int connections = anchorRepository.findNeighborIds(anchor.id()).size();
+                List<SanctuaryAnchor> activeAnchors = anchorRepository.findBySanctuary(sanctuary.id()).stream()
+                    .filter(value -> value.state() == SanctuaryState.ACTIVE)
+                    .filter(value -> value.position().isPresent())
+                    .toList();
+                double currentTerritoryArea = TerritoryAreaCalculator.currentUnionArea(activeAnchors);
+
                 menu.set(4, button(
                     anchor.type() == SanctuaryType.CONDUIT ? Material.CONDUIT : Material.BEACON,
                     anchor.type() == SanctuaryType.CONDUIT ? "<aqua>Sanctuary Conduit" : "<gold>Sanctuary Beacon",
@@ -103,7 +111,9 @@ public final class AnchorUiService {
                         "<gray>Anchor tier: <white>" + roman(anchor.tier()),
                         "<gray>Current radius: <white>" + formatRadius(anchor.territoryRadius()),
                         "<gray>Generation: <white>" + anchor.generation(),
-                        "<gray>Graph connections: <white>" + connections
+                        "<gray>Graph connections: <white>" + connections,
+                        "<gray>Active anchors: <white>" + activeAnchors.size(),
+                        "<gray>Current territory: <white>" + formatArea(currentTerritoryArea)
                     ),
                     null
                 ));
@@ -275,6 +285,10 @@ public final class AnchorUiService {
 
     private static String formatRadius(double radius) {
         return String.format(java.util.Locale.ROOT, "%.1f blocks", radius);
+    }
+
+    private static String formatArea(double area) {
+        return String.format(java.util.Locale.ROOT, "%,.0f square blocks", area);
     }
 
     private static String mini(String value) {

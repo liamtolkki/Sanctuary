@@ -2,12 +2,14 @@ package dev.liamtolkkinen.sanctuary.sentry;
 
 import dev.liamtolkkinen.sanctuary.advancement.SanctuaryAdvancementService;
 import dev.liamtolkkinen.sanctuary.crafting.SanctuaryRecipeService;
+import dev.liamtolkkinen.sanctuary.loot.SanctuaryDebugLootCommand;
+import dev.liamtolkkinen.sanctuary.loot.SanctuaryLootService;
 import java.util.Objects;
 import org.bukkit.NamespacedKey;
 import org.bukkit.plugin.java.JavaPlugin;
 
 /**
- * Registers the Sanctuary bootstrap recipes and advancement hooks.
+ * Registers the Sanctuary bootstrap recipes, progression hooks, and shared content services.
  * Companion and sentry recipes are intentionally crafted through the Divine Altar.
  */
 public final class SentryRecipeService {
@@ -37,5 +39,17 @@ public final class SentryRecipeService {
         }
 
         new SanctuaryAdvancementService(plugin).start();
+
+        SanctuaryLootService lootService = new SanctuaryLootService(plugin);
+        plugin.getServer().getPluginManager().registerEvents(lootService, plugin);
+
+        SanctuaryDebugLootCommand debugLootCommand =
+            new SanctuaryDebugLootCommand(lootService);
+        var command = Objects.requireNonNull(
+            plugin.getCommand("sanctuarydebugloot"),
+            "sanctuarydebugloot command is missing from plugin.yml"
+        );
+        command.setExecutor(debugLootCommand);
+        command.setTabCompleter(debugLootCommand);
     }
 }

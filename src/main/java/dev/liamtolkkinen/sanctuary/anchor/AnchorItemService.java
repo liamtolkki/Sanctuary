@@ -3,6 +3,7 @@ package dev.liamtolkkinen.sanctuary.anchor;
 import dev.liamtolkkinen.extendeditems.ExtendedItemIds;
 import dev.liamtolkkinen.extendeditems.ExtendedItems;
 import dev.liamtolkkinen.sanctuary.sanctuary.Sanctuary;
+import dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryType;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
@@ -31,7 +32,15 @@ public final class AnchorItemService {
     }
 
     public ItemStack createUnboundBeacon() {
-        return createBeacon(new AnchorMetadata(
+        return createUnbound(SanctuaryType.BEACON);
+    }
+
+    public ItemStack createUnboundConduit() {
+        return createUnbound(SanctuaryType.CONDUIT);
+    }
+
+    public ItemStack createUnbound(SanctuaryType type) {
+        return createAnchor(type, new AnchorMetadata(
             UUID.randomUUID(),
             Optional.empty(),
             1,
@@ -40,11 +49,33 @@ public final class AnchorItemService {
     }
 
     public ItemStack createBoundBeacon(AnchorMetadata metadata) {
+        return createBound(SanctuaryType.BEACON, metadata);
+    }
+
+    public ItemStack createBoundConduit(AnchorMetadata metadata) {
+        return createBound(SanctuaryType.CONDUIT, metadata);
+    }
+
+    public ItemStack createBound(SanctuaryType type, AnchorMetadata metadata) {
         Objects.requireNonNull(metadata, "metadata");
         if (!metadata.isBound()) {
-            throw new IllegalArgumentException("bound Sanctuary Beacon metadata must have an owner");
+            throw new IllegalArgumentException("bound Sanctuary anchor metadata must have an owner");
         }
-        return createBeacon(metadata);
+        return createAnchor(type, metadata);
+    }
+
+    public ItemStack createBound(Sanctuary sanctuary, SanctuaryAnchor anchor) {
+        Objects.requireNonNull(sanctuary, "sanctuary");
+        Objects.requireNonNull(anchor, "anchor");
+        if (!anchor.sanctuaryId().equals(sanctuary.id())) {
+            throw new IllegalArgumentException("anchor does not belong to Sanctuary");
+        }
+        return createBound(anchor.type(), new AnchorMetadata(
+            anchor.id(),
+            Optional.of(sanctuary.ownerId()),
+            anchor.tier(),
+            anchor.generation()
+        ));
     }
 
     public ItemStack createBoundBeacon(Sanctuary sanctuary) {
@@ -58,29 +89,41 @@ public final class AnchorItemService {
     }
 
     public boolean isSanctuaryBeacon(ItemStack item) {
-        return item != null
-            && ExtendedItems.is(item, ExtendedItemIds.SANCTUARY_BEACON);
+        return item != null && ExtendedItems.is(item, ExtendedItemIds.SANCTUARY_BEACON);
     }
 
     public boolean isSanctuaryConduit(ItemStack item) {
-        return item != null
-            && ExtendedItems.is(item, ExtendedItemIds.SANCTUARY_CONDUIT);
+        return item != null && ExtendedItems.is(item, ExtendedItemIds.SANCTUARY_CONDUIT);
+    }
+
+    public boolean isSanctuaryAnchor(ItemStack item) {
+        return isSanctuaryBeacon(item) || isSanctuaryConduit(item);
+    }
+
+    public Optional<SanctuaryType> anchorType(ItemStack item) {
+        if (isSanctuaryBeacon(item)) {
+            return Optional.of(SanctuaryType.BEACON);
+        }
+        if (isSanctuaryConduit(item)) {
+            return Optional.of(SanctuaryType.CONDUIT);
+        }
+        return Optional.empty();
     }
 
     public Optional<AnchorMetadata> readBeacon(ItemStack item) {
-        if (!isSanctuaryBeacon(item)) {
-            return Optional.empty();
-        }
-        if (!ExtendedItems.validate(item).isValid()) {
-            return Optional.empty();
-        }
+        return isSanctuaryBeacon(item) ? readAnchor(item) : Optional.empty();
+    }
 
+    public Optional<AnchorMetadata> readConduit(ItemStack item) {
+        return isSanctuaryConduit(item) ? readAnchor(item) : Optional.empty();
+    }
+
+    public Optional<AnchorMetadata> readAnchor(ItemStack item) {
+        if (!isSanctuaryAnchor(item) || !ExtendedItems.validate(item).isValid()) {
+            return Optional.empty();
+        }
         ItemMeta meta = item.getItemMeta();
-        if (meta == null) {
-            return Optional.empty();
-        }
-
-        return read(meta.getPersistentDataContainer());
+        return meta == null ? Optional.empty() : read(meta.getPersistentDataContainer());
     }
 
     public void writeItemMetadata(ItemStack item, AnchorMetadata metadata) {
@@ -91,7 +134,6 @@ public final class AnchorItemService {
         if (meta == null) {
             throw new IllegalArgumentException("item has no ItemMeta");
         }
-
         write(meta.getPersistentDataContainer(), metadata);
         item.setItemMeta(meta);
     }
@@ -104,24 +146,28 @@ public final class AnchorItemService {
     public void writeBlockMetadata(TileState tileState, AnchorMetadata metadata) {
         Objects.requireNonNull(tileState, "tileState");
         Objects.requireNonNull(metadata, "metadata");
-
         write(tileState.getPersistentDataContainer(), metadata);
         if (!tileState.update(true, false)) {
             throw new IllegalStateException("failed to persist Sanctuary metadata to placed anchor");
         }
     }
 
-    private ItemStack createBeacon(AnchorMetadata metadata) {
-        ItemStack item = ExtendedItems.create(ExtendedItemIds.SANCTUARY_BEACON);
+    private ItemStack createAnchor(SanctuaryType type, AnchorMetadata metadata) {
+        Objects.requireNonNull(type, "type");
+        Objects.requireNonNull(metadata, "metadata");
+        ItemStack item = switch (type) {
+            case BEACON -> ExtendedItems.create(ExtendedItemIds.SANCTUARY_BEACON);
+            case CONDUIT -> ExtendedItems.create(ExtendedItemIds.SANCTUARY_CONDUIT);
+        };
         item.editMeta(meta -> meta.setEnchantmentGlintOverride(true));
         writeItemMetadata(item, metadata);
 
         if (!ExtendedItems.validate(item).isValid()) {
             throw new IllegalStateException(
-                "ExtendedItems rejected a Sanctuary Beacon after Sanctuary metadata was added"
+                "ExtendedItems rejected a Sanctuary " + type.name().toLowerCase(java.util.Locale.ROOT)
+                    + " after Sanctuary metadata was added"
             );
         }
-
         return item;
     }
 
@@ -160,7 +206,6 @@ public final class AnchorItemService {
             Optional<UUID> ownerId = ownerIdValue == null
                 ? Optional.empty()
                 : Optional.of(UUID.fromString(ownerIdValue));
-
             return Optional.of(new AnchorMetadata(anchorId, ownerId, tierValue, generation));
         } catch (IllegalArgumentException exception) {
             return Optional.empty();
@@ -168,28 +213,11 @@ public final class AnchorItemService {
     }
 
     private void write(PersistentDataContainer data, AnchorMetadata metadata) {
-        data.set(
-            anchorIdKey,
-            PersistentDataType.STRING,
-            metadata.anchorId().toString()
-        );
-        data.set(
-            tierKey,
-            PersistentDataType.INTEGER,
-            metadata.tier()
-        );
-        data.set(
-            generationKey,
-            PersistentDataType.INTEGER,
-            metadata.generation()
-        );
-
+        data.set(anchorIdKey, PersistentDataType.STRING, metadata.anchorId().toString());
+        data.set(tierKey, PersistentDataType.INTEGER, metadata.tier());
+        data.set(generationKey, PersistentDataType.INTEGER, metadata.generation());
         if (metadata.ownerId().isPresent()) {
-            data.set(
-                ownerUuidKey,
-                PersistentDataType.STRING,
-                metadata.ownerId().orElseThrow().toString()
-            );
+            data.set(ownerUuidKey, PersistentDataType.STRING, metadata.ownerId().orElseThrow().toString());
         } else {
             data.remove(ownerUuidKey);
         }

@@ -8,6 +8,7 @@ import dev.liamtolkkinen.sanctuary.anchor.AnchorItemRemovalListener;
 import dev.liamtolkkinen.sanctuary.anchor.AnchorItemService;
 import dev.liamtolkkinen.sanctuary.anchor.AnchorLifecycleService;
 import dev.liamtolkkinen.sanctuary.anchor.AnchorPlacementListener;
+import dev.liamtolkkinen.sanctuary.anchor.AnchorVisualTask;
 import dev.liamtolkkinen.sanctuary.anchor.DebugBeaconRegistrationService;
 import dev.liamtolkkinen.sanctuary.api.DefaultSanctuaryApi;
 import dev.liamtolkkinen.sanctuary.api.SanctuaryApi;
@@ -146,6 +147,7 @@ public final class SanctuaryPlugin extends JavaPlugin {
             TerritoryBoundaryService boundaryService = new TerritoryBoundaryService(
                 this,
                 securityService,
+                anchorTerritoryService,
                 this::getBoundaryOwnerParticle,
                 this::getBoundaryTrustedParticle,
                 this::getBoundaryNeutralParticle,
@@ -202,10 +204,11 @@ public final class SanctuaryPlugin extends JavaPlugin {
                 getLogger()
             ).start(this);
             new AnchorBeamTask(repository, getLogger()).start(this);
+            new AnchorVisualTask(anchorRepository, getLogger()).start(this);
             getServer().getPluginManager().registerEvents(
                 new ElytraSuppressionListener(
                     repository,
-                    territoryPresenceService,
+                    anchorTerritoryService,
                     effectService,
                     this::getMaximumTerritoryRadius,
                     getLogger()

@@ -7,6 +7,7 @@ import java.util.Optional;
 import java.util.function.DoubleSupplier;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.block.TileState;
 import org.bukkit.event.EventHandler;
@@ -118,6 +119,9 @@ public final class AnchorPlacementListener implements Listener {
                 event.getPlayer().sendMessage(
                     ChatColor.GREEN + "Activated " + outcome.sanctuary().name()
                         + ChatColor.GRAY + " with a " + anchorName + "."
+                );
+                Bukkit.getPluginManager().callEvent(
+                    new SanctuaryCreatedEvent(event.getPlayer(), outcome.sanctuary())
                 );
             }
             if (outcome.sourceSanctuaryDeleted()) {

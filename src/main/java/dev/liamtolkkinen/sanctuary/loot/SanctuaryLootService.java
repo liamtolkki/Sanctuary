@@ -17,6 +17,7 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.world.LootGenerateEvent;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.java.JavaPlugin;
 
@@ -51,8 +52,11 @@ public final class SanctuaryLootService implements Listener {
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onDebugChestPlace(BlockPlaceEvent event) {
-        String profileId = event.getItemInHand()
-            .getPersistentDataContainer()
+        ItemMeta itemMeta = event.getItemInHand().getItemMeta();
+        if (itemMeta == null) {
+            return;
+        }
+        String profileId = itemMeta.getPersistentDataContainer()
             .get(debugProfileKey, PersistentDataType.STRING);
         if (profileId == null) {
             return;

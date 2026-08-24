@@ -1,6 +1,7 @@
 package dev.liamtolkkinen.sanctuary.sentry;
 
 import dev.liamtolkkinen.sanctuary.advancement.SanctuaryAdvancementService;
+import dev.liamtolkkinen.sanctuary.altar.DivineRelicListener;
 import dev.liamtolkkinen.sanctuary.crafting.SanctuaryRecipeService;
 import dev.liamtolkkinen.sanctuary.loot.SanctuaryDebugLootCommand;
 import dev.liamtolkkinen.sanctuary.loot.SanctuaryLootService;
@@ -39,6 +40,10 @@ public final class SentryRecipeService {
         }
 
         new SanctuaryAdvancementService(plugin).start();
+        plugin.getServer().getPluginManager().registerEvents(
+            new DivineRelicListener(),
+            plugin
+        );
 
         SanctuaryLootService lootService = new SanctuaryLootService(plugin);
         plugin.getServer().getPluginManager().registerEvents(lootService, plugin);

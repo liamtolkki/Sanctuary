@@ -18,7 +18,8 @@ public enum SanctuaryLootProfile {
         0.20,
         1,
         2,
-        0.03
+        0.03,
+        0.0
     ),
     STRONGHOLD_LIBRARY(
         "stronghold_library",
@@ -27,7 +28,8 @@ public enum SanctuaryLootProfile {
         0.50,
         2,
         3,
-        0.10
+        0.10,
+        0.0
     ),
     BURIED_TREASURE(
         "buried_treasure",
@@ -36,7 +38,8 @@ public enum SanctuaryLootProfile {
         1.00,
         2,
         4,
-        0.15
+        0.15,
+        0.0
     ),
     BASTION_TREASURE(
         "bastion_treasure",
@@ -45,7 +48,8 @@ public enum SanctuaryLootProfile {
         1.00,
         3,
         6,
-        0.40
+        0.40,
+        0.0
     ),
     ANCIENT_CITY(
         "ancient_city",
@@ -54,7 +58,8 @@ public enum SanctuaryLootProfile {
         0.80,
         2,
         5,
-        0.30
+        0.30,
+        0.0
     ),
     END_CITY(
         "end_city",
@@ -63,7 +68,8 @@ public enum SanctuaryLootProfile {
         0.65,
         2,
         4,
-        0.20
+        0.20,
+        0.10
     );
 
     private static final List<SanctuaryLootProfile> ALL = List.of(values());
@@ -75,6 +81,7 @@ public enum SanctuaryLootProfile {
     private final int minimumFragments;
     private final int maximumFragments;
     private final double shardChance;
+    private final double endermanCompanionChance;
 
     SanctuaryLootProfile(
         String id,
@@ -83,7 +90,8 @@ public enum SanctuaryLootProfile {
         double fragmentChance,
         int minimumFragments,
         int maximumFragments,
-        double shardChance
+        double shardChance,
+        double endermanCompanionChance
     ) {
         this.id = Objects.requireNonNull(id, "id");
         this.displayName = Objects.requireNonNull(displayName, "displayName");
@@ -97,6 +105,10 @@ public enum SanctuaryLootProfile {
         this.minimumFragments = minimumFragments;
         this.maximumFragments = maximumFragments;
         this.shardChance = validateChance(shardChance, "shardChance");
+        this.endermanCompanionChance = validateChance(
+            endermanCompanionChance,
+            "endermanCompanionChance"
+        );
     }
 
     public String id() {
@@ -133,6 +145,10 @@ public enum SanctuaryLootProfile {
 
     public double shardChance() {
         return shardChance;
+    }
+
+    public double endermanCompanionChance() {
+        return endermanCompanionChance;
     }
 
     public static List<SanctuaryLootProfile> all() {

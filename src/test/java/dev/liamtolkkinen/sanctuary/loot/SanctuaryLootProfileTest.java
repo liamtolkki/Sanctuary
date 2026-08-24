@@ -33,7 +33,7 @@ class SanctuaryLootProfileTest {
     @Test
     void onlyEndCityCanAwardEndermanCompanionEgg() {
         for (SanctuaryLootProfile profile : SanctuaryLootProfile.all()) {
-            double expected = profile == SanctuaryLootProfile.END_CITY ? 0.10 : 0.0;
+            double expected = profile == SanctuaryLootProfile.END_CITY ? 0.08 : 0.0;
             assertEquals(expected, profile.endermanCompanionChance());
         }
     }

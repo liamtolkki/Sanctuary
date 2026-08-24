@@ -3,47 +3,50 @@ package dev.liamtolkkinen.sanctuary;
 import dev.liamtolkkinen.extendedui.ExtendedUI;
 import dev.liamtolkkinen.sanctuary.anchor.AnchorBeamTask;
 import dev.liamtolkkinen.sanctuary.anchor.AnchorBreakListener;
+import dev.liamtolkkinen.sanctuary.anchor.AnchorGraphService;
 import dev.liamtolkkinen.sanctuary.anchor.AnchorItemRemovalListener;
 import dev.liamtolkkinen.sanctuary.anchor.AnchorItemService;
 import dev.liamtolkkinen.sanctuary.anchor.AnchorLifecycleService;
 import dev.liamtolkkinen.sanctuary.anchor.AnchorPlacementListener;
 import dev.liamtolkkinen.sanctuary.anchor.DebugBeaconRegistrationService;
-import dev.liamtolkkinen.sanctuary.anchor.InitialAnchorPlacementService;
 import dev.liamtolkkinen.sanctuary.api.DefaultSanctuaryApi;
 import dev.liamtolkkinen.sanctuary.api.SanctuaryApi;
 import dev.liamtolkkinen.sanctuary.command.SanctuaryCommand;
 import dev.liamtolkkinen.sanctuary.companion.CompanionRuntime;
+import dev.liamtolkkinen.sanctuary.effect.ElytraSuppressionListener;
+import dev.liamtolkkinen.sanctuary.effect.SanctuaryEffectService;
+import dev.liamtolkkinen.sanctuary.effect.SanctuaryEffectTask;
 import dev.liamtolkkinen.sanctuary.persistence.DatabaseManager;
 import dev.liamtolkkinen.sanctuary.persistence.MigrationRunner;
-import dev.liamtolkkinen.sanctuary.persistence.SqliteSanctuaryRepository;
+import dev.liamtolkkinen.sanctuary.persistence.SqliteAnchorEffectRepository;
+import dev.liamtolkkinen.sanctuary.persistence.SqliteSanctuaryAnchorRepository;
 import dev.liamtolkkinen.sanctuary.persistence.SqliteSanctuaryEffectRepository;
+import dev.liamtolkkinen.sanctuary.persistence.SqliteSanctuaryRepository;
 import dev.liamtolkkinen.sanctuary.persistence.SqliteSanctuarySecurityRepository;
 import dev.liamtolkkinen.sanctuary.persistence.SqliteSanctuaryTrustRepository;
 import dev.liamtolkkinen.sanctuary.persistence.SqliteSentryRepository;
+import dev.liamtolkkinen.sanctuary.protection.SanctuaryProtectionListener;
+import dev.liamtolkkinen.sanctuary.protection.SanctuaryProtectionService;
+import dev.liamtolkkinen.sanctuary.security.SanctuarySecurityService;
 import dev.liamtolkkinen.sanctuary.sentry.SentryListener;
 import dev.liamtolkkinen.sanctuary.sentry.SentryRecipeService;
 import dev.liamtolkkinen.sanctuary.sentry.SentryService;
 import dev.liamtolkkinen.sanctuary.sentry.SentryTask;
 import dev.liamtolkkinen.sanctuary.sentry.SentryUiService;
-import dev.liamtolkkinen.sanctuary.effect.ElytraSuppressionListener;
-import dev.liamtolkkinen.sanctuary.effect.SanctuaryEffectService;
-import dev.liamtolkkinen.sanctuary.effect.SanctuaryEffectTask;
-import dev.liamtolkkinen.sanctuary.protection.SanctuaryProtectionListener;
-import dev.liamtolkkinen.sanctuary.protection.SanctuaryProtectionService;
-import dev.liamtolkkinen.sanctuary.security.SanctuarySecurityService;
+import dev.liamtolkkinen.sanctuary.territory.AnchorTerritoryService;
+import dev.liamtolkkinen.sanctuary.territory.TerritoryAwarenessListener;
+import dev.liamtolkkinen.sanctuary.territory.TerritoryBoundaryProximityTask;
+import dev.liamtolkkinen.sanctuary.territory.TerritoryBoundaryService;
+import dev.liamtolkkinen.sanctuary.territory.TerritoryPresenceService;
+import dev.liamtolkkinen.sanctuary.trust.SanctuaryCapability;
+import dev.liamtolkkinen.sanctuary.trust.SanctuaryPermissionService;
+import dev.liamtolkkinen.sanctuary.ui.SanctuaryUiListener;
+import dev.liamtolkkinen.sanctuary.ui.SanctuaryUiService;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.SQLException;
 import java.util.Objects;
-import dev.liamtolkkinen.sanctuary.territory.TerritoryAwarenessListener;
-import dev.liamtolkkinen.sanctuary.territory.TerritoryBoundaryService;
-import dev.liamtolkkinen.sanctuary.territory.TerritoryBoundaryProximityTask;
-import dev.liamtolkkinen.sanctuary.territory.TerritoryPresenceService;
-import dev.liamtolkkinen.sanctuary.trust.SanctuaryPermissionService;
-import dev.liamtolkkinen.sanctuary.trust.SanctuaryCapability;
-import dev.liamtolkkinen.sanctuary.ui.SanctuaryUiListener;
-import dev.liamtolkkinen.sanctuary.ui.SanctuaryUiService;
 import java.util.logging.Level;
 import org.bukkit.Particle;
 import org.bukkit.plugin.ServicePriority;
@@ -83,13 +86,21 @@ public final class SanctuaryPlugin extends JavaPlugin {
             new MigrationRunner(databaseManager).migrate();
 
             var repository = new SqliteSanctuaryRepository(databaseManager);
+            var anchorRepository = new SqliteSanctuaryAnchorRepository(databaseManager);
             var trustRepository = new SqliteSanctuaryTrustRepository(databaseManager);
             var permissionService = new SanctuaryPermissionService(trustRepository);
             var securityRepository = new SqliteSanctuarySecurityRepository(databaseManager);
             var securityService = new SanctuarySecurityService(securityRepository, permissionService);
             var effectRepository = new SqliteSanctuaryEffectRepository(databaseManager);
-            var effectService = new SanctuaryEffectService(effectRepository, securityService);
+            var anchorEffectRepository = new SqliteAnchorEffectRepository(databaseManager);
+            var effectService = new SanctuaryEffectService(
+                effectRepository,
+                anchorEffectRepository,
+                securityService
+            );
             var sentryRepository = new SqliteSentryRepository(databaseManager);
+            var graphService = new AnchorGraphService(repository, anchorRepository);
+            var anchorTerritoryService = new AnchorTerritoryService(repository, anchorRepository);
             sanctuaryApi = new DefaultSanctuaryApi(repository, getLogger());
 
             getServer().getServicesManager().register(
@@ -100,15 +111,12 @@ public final class SanctuaryPlugin extends JavaPlugin {
             );
 
             AnchorItemService anchorItemService = new AnchorItemService(this);
-            InitialAnchorPlacementService initialPlacementService =
-                new InitialAnchorPlacementService(repository);
             AnchorLifecycleService lifecycleService = new AnchorLifecycleService(repository);
 
             getServer().getPluginManager().registerEvents(
                 new AnchorPlacementListener(
                     anchorItemService,
-                    initialPlacementService,
-                    lifecycleService,
+                    graphService,
                     this::getInitialTerritoryRadius,
                     this::getMaximumTerritoryRadius,
                     this::getTerritorySpacingMargin,
@@ -119,7 +127,8 @@ public final class SanctuaryPlugin extends JavaPlugin {
             getServer().getPluginManager().registerEvents(
                 new AnchorBreakListener(
                     anchorItemService,
-                    lifecycleService,
+                    graphService,
+                    anchorRepository,
                     getLogger()
                 ),
                 this
@@ -127,7 +136,7 @@ public final class SanctuaryPlugin extends JavaPlugin {
             getServer().getPluginManager().registerEvents(
                 new AnchorItemRemovalListener(
                     anchorItemService,
-                    lifecycleService,
+                    graphService,
                     getLogger()
                 ),
                 this
@@ -161,7 +170,7 @@ public final class SanctuaryPlugin extends JavaPlugin {
             );
             getServer().getPluginManager().registerEvents(
                 new SanctuaryProtectionListener(
-                    new SanctuaryProtectionService(repository, territoryPresenceService, permissionService),
+                    new SanctuaryProtectionService(anchorTerritoryService, permissionService),
                     this::isHardProtectionEnabled,
                     getLogger()
                 ),
@@ -180,7 +189,7 @@ public final class SanctuaryPlugin extends JavaPlugin {
             ).start(this);
             new SanctuaryEffectTask(
                 repository,
-                territoryPresenceService,
+                anchorTerritoryService,
                 effectService,
                 this::getMaximumTerritoryRadius,
                 getLogger()
@@ -253,7 +262,7 @@ public final class SanctuaryPlugin extends JavaPlugin {
             validateConfiguration();
 
             getLogger().info("Sanctuary database initialized at " + databasePath.toAbsolutePath());
-            getLogger().info("Sanctuary Beacon lifecycle, territory, awareness, trust, security, layered Beacon effects, player protections, and management UI and sentry defenses loaded.");
+            getLogger().info("Sanctuary anchor graph, Beacon and Conduit effects, territory, trust, security, player protections, management UI, companions, and sentry defenses loaded.");
         } catch (SQLException | IOException | IllegalStateException exception) {
             getLogger().log(Level.SEVERE, "Failed to initialize Sanctuary", exception);
             getServer().getPluginManager().disablePlugin(this);

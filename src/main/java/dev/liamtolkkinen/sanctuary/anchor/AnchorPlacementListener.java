@@ -1,7 +1,7 @@
 package dev.liamtolkkinen.sanctuary.anchor;
 
-import dev.liamtolkkinen.sanctuary.sanctuary.Sanctuary;
 import dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryPosition;
+import dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryType;
 import java.sql.SQLException;
 import java.util.Optional;
 import java.util.function.DoubleSupplier;
@@ -17,8 +17,7 @@ import org.bukkit.inventory.ItemStack;
 
 public final class AnchorPlacementListener implements Listener {
     private final AnchorItemService anchorItemService;
-    private final InitialAnchorPlacementService initialPlacementService;
-    private final AnchorLifecycleService lifecycleService;
+    private final AnchorGraphService graphService;
     private final DoubleSupplier initialTerritoryRadius;
     private final DoubleSupplier maximumTerritoryRadius;
     private final DoubleSupplier spacingMargin;
@@ -26,16 +25,14 @@ public final class AnchorPlacementListener implements Listener {
 
     public AnchorPlacementListener(
         AnchorItemService anchorItemService,
-        InitialAnchorPlacementService initialPlacementService,
-        AnchorLifecycleService lifecycleService,
+        AnchorGraphService graphService,
         DoubleSupplier initialTerritoryRadius,
         DoubleSupplier maximumTerritoryRadius,
         DoubleSupplier spacingMargin,
         Logger logger
     ) {
         this.anchorItemService = anchorItemService;
-        this.initialPlacementService = initialPlacementService;
-        this.lifecycleService = lifecycleService;
+        this.graphService = graphService;
         this.initialTerritoryRadius = initialTerritoryRadius;
         this.maximumTerritoryRadius = maximumTerritoryRadius;
         this.spacingMargin = spacingMargin;
@@ -45,24 +42,22 @@ public final class AnchorPlacementListener implements Listener {
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onBlockPlace(BlockPlaceEvent event) {
         ItemStack item = event.getItemInHand();
-        if (!anchorItemService.isSanctuaryBeacon(item)) {
+        Optional<SanctuaryType> typeResult = anchorItemService.anchorType(item);
+        if (typeResult.isEmpty()) {
             return;
         }
 
-        Optional<AnchorMetadata> metadataResult = anchorItemService.readBeacon(item);
+        Optional<AnchorMetadata> metadataResult = anchorItemService.readAnchor(item);
         if (metadataResult.isEmpty()) {
-            reject(
-                event,
-                "This Sanctuary Beacon has invalid or incomplete metadata."
-            );
+            reject(event, "This Sanctuary anchor has invalid or incomplete metadata.");
             return;
         }
-
         if (!(event.getBlockPlaced().getState() instanceof TileState tileState)) {
-            reject(event, "The placed Sanctuary Beacon cannot store anchor metadata.");
+            reject(event, "The placed Sanctuary anchor cannot store anchor metadata.");
             return;
         }
 
+        SanctuaryType type = typeResult.orElseThrow();
         AnchorMetadata metadata = metadataResult.orElseThrow();
         SanctuaryPosition position = new SanctuaryPosition(
             event.getBlockPlaced().getWorld().getName(),
@@ -72,73 +67,68 @@ public final class AnchorPlacementListener implements Listener {
         );
 
         try {
+            AnchorPlacementOutcome outcome;
+            AnchorMetadata blockMetadata = metadata;
             if (metadata.isBound()) {
-                anchorItemService.writeBlockMetadata(tileState, metadata);
-                Sanctuary sanctuary = lifecycleService.reactivate(
+                outcome = graphService.placeBound(
                     metadata,
+                    type,
                     event.getPlayer().getUniqueId(),
+                    event.getPlayer().getName(),
                     position,
                     maximumTerritoryRadius.getAsDouble(),
                     spacingMargin.getAsDouble(),
                     event.getPlayer().hasPermission("sanctuary.admin")
                 );
-                event.getPlayer().sendMessage(
-                    ChatColor.GREEN
-                        + "Reactivated "
-                        + sanctuary.name()
-                        + ChatColor.GRAY
-                        + " ("
-                        + sanctuary.id()
-                        + ")"
+            } else {
+                blockMetadata = metadata.bind(event.getPlayer().getUniqueId());
+                outcome = graphService.placeNew(
+                    blockMetadata,
+                    type,
+                    event.getPlayer().getUniqueId(),
+                    event.getPlayer().getName(),
+                    position,
+                    initialTerritoryRadius.getAsDouble(),
+                    maximumTerritoryRadius.getAsDouble(),
+                    spacingMargin.getAsDouble()
                 );
-                if (sanctuary.debugEphemeral()) {
-                    event.getPlayer().sendMessage(
-                        ChatColor.YELLOW
-                            + "This is an ephemeral debug Sanctuary. Breaking it deletes it permanently."
-                    );
-                }
-                return;
             }
 
-            AnchorMetadata boundMetadata = metadata.bind(event.getPlayer().getUniqueId());
-            anchorItemService.writeBlockMetadata(tileState, boundMetadata);
-            Sanctuary sanctuary = initialPlacementService.createBeaconSanctuary(
-                boundMetadata,
-                event.getPlayer().getName(),
-                position,
-                initialTerritoryRadius.getAsDouble(),
-                maximumTerritoryRadius.getAsDouble(),
-                spacingMargin.getAsDouble()
-            );
-
-            event.getPlayer().sendMessage(
-                ChatColor.GREEN
-                    + "Created "
-                    + sanctuary.name()
-                    + ChatColor.GRAY
-                    + " ("
-                    + sanctuary.id()
-                    + ")"
-            );
+            anchorItemService.writeBlockMetadata(tileState, blockMetadata);
+            String anchorName = displayName(type);
+            if (outcome.joinedExistingSanctuary()) {
+                event.getPlayer().sendMessage(
+                    ChatColor.AQUA + anchorName + ChatColor.GREEN + " joined "
+                        + outcome.sanctuary().name() + ChatColor.GRAY
+                        + " as a Sanctuary extender."
+                );
+            } else {
+                event.getPlayer().sendMessage(
+                    ChatColor.GREEN + "Activated " + outcome.sanctuary().name()
+                        + ChatColor.GRAY + " with a " + anchorName + "."
+                );
+            }
+            if (outcome.sourceSanctuaryDeleted()) {
+                event.getPlayer().sendMessage(
+                    ChatColor.GRAY + "The anchor's previous empty Sanctuary was absorbed into "
+                        + outcome.sanctuary().name() + "."
+                );
+            }
         } catch (SQLException exception) {
             event.setCancelled(true);
             event.getPlayer().sendMessage(
-                ChatColor.RED + "Sanctuary could not save this Beacon. Placement was cancelled."
+                ChatColor.RED + "Sanctuary could not save this anchor. Placement was cancelled."
             );
-            logger.log(
-                Level.SEVERE,
-                "Failed to persist Sanctuary Beacon " + metadata.anchorId(),
-                exception
-            );
+            logger.log(Level.SEVERE, "Failed to persist Sanctuary anchor " + metadata.anchorId(), exception);
         } catch (AnchorPlacementException | IllegalStateException exception) {
             event.setCancelled(true);
             event.getPlayer().sendMessage(ChatColor.RED + exception.getMessage());
-            logger.log(
-                Level.WARNING,
-                "Rejected Sanctuary Beacon placement " + metadata.anchorId(),
-                exception
-            );
+            logger.log(Level.WARNING, "Rejected Sanctuary anchor placement " + metadata.anchorId(), exception);
         }
+    }
+
+    private static String displayName(SanctuaryType type) {
+        return type == SanctuaryType.CONDUIT ? "Sanctuary Conduit" : "Sanctuary Beacon";
     }
 
     private static void reject(BlockPlaceEvent event, String message) {

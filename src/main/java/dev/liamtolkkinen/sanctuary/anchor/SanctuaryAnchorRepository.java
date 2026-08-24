@@ -14,6 +14,12 @@ public interface SanctuaryAnchorRepository {
 
     List<SanctuaryAnchor> findChildren(UUID anchorId) throws SQLException;
 
+    List<UUID> findNeighborIds(UUID anchorId) throws SQLException;
+
+    void saveEdge(UUID firstAnchorId, UUID secondAnchorId) throws SQLException;
+
+    void deleteEdgesForAnchor(UUID anchorId) throws SQLException;
+
     void save(SanctuaryAnchor anchor) throws SQLException;
 
     void delete(UUID id) throws SQLException;

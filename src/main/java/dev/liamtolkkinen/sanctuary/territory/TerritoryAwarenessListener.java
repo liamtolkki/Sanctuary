@@ -29,7 +29,8 @@ import org.bukkit.event.player.PlayerTeleportEvent;
 
 public final class TerritoryAwarenessListener implements Listener {
     private final SanctuaryRepository repository;
-    private final TerritoryPresenceService presenceService;
+    private final TerritoryPresenceService legacyPresenceService;
+    private final AnchorTerritoryService anchorTerritoryService;
     private final SanctuarySecurityService securityService;
     private final BooleanSupplier entryTitleEnabled;
     private final BooleanSupplier exitMessageEnabled;
@@ -47,7 +48,27 @@ public final class TerritoryAwarenessListener implements Listener {
         Logger logger
     ) {
         this.repository = repository;
-        this.presenceService = presenceService;
+        this.legacyPresenceService = presenceService;
+        this.anchorTerritoryService = null;
+        this.securityService = securityService;
+        this.entryTitleEnabled = entryTitleEnabled;
+        this.exitMessageEnabled = exitMessageEnabled;
+        this.ownerEntryAlertsEnabled = ownerEntryAlertsEnabled;
+        this.logger = logger;
+    }
+
+    public TerritoryAwarenessListener(
+        SanctuaryRepository repository,
+        AnchorTerritoryService anchorTerritoryService,
+        SanctuarySecurityService securityService,
+        BooleanSupplier entryTitleEnabled,
+        BooleanSupplier exitMessageEnabled,
+        BooleanSupplier ownerEntryAlertsEnabled,
+        Logger logger
+    ) {
+        this.repository = repository;
+        this.legacyPresenceService = null;
+        this.anchorTerritoryService = anchorTerritoryService;
         this.securityService = securityService;
         this.entryTitleEnabled = entryTitleEnabled;
         this.exitMessageEnabled = exitMessageEnabled;
@@ -87,12 +108,15 @@ public final class TerritoryAwarenessListener implements Listener {
 
     void updatePresence(Player player, Location location) {
         try {
-            Optional<Sanctuary> current = presenceService.findCurrentSanctuary(
-                repository.findActiveInWorld(location.getWorld().getName()),
-                location.getWorld().getName(),
-                location.getX(),
-                location.getZ()
-            );
+            Optional<Sanctuary> current = anchorTerritoryService != null
+                ? anchorTerritoryService.findCurrentSanctuary(
+                    location.getWorld().getName(), location.getX(), location.getZ())
+                : legacyPresenceService.findCurrentSanctuary(
+                    repository.findActiveInWorld(location.getWorld().getName()),
+                    location.getWorld().getName(),
+                    location.getX(),
+                    location.getZ()
+                );
 
             UUID playerId = player.getUniqueId();
             UUID previousId = currentSanctuaryByPlayer.get(playerId);
@@ -146,13 +170,8 @@ public final class TerritoryAwarenessListener implements Listener {
 
         if (sanctuary.debugEphemeral()) {
             player.sendMessage(
-                ChatColor.LIGHT_PURPLE
-                    + "[Sanctuary Debug] "
-                    + ChatColor.WHITE
-                    + player.getName()
-                    + " entered debug Sanctuary "
-                    + sanctuary.id()
-                    + "."
+                ChatColor.LIGHT_PURPLE + "[Sanctuary Debug] " + ChatColor.WHITE
+                    + player.getName() + " entered debug Sanctuary " + sanctuary.id() + "."
             );
         }
 
@@ -160,23 +179,14 @@ public final class TerritoryAwarenessListener implements Listener {
             Player owner = Bukkit.getPlayer(sanctuary.ownerId());
             if (owner != null && owner.isOnline()) {
                 owner.sendMessage(
-                    ChatColor.GOLD
-                        + "[Sanctuary] "
-                        + ChatColor.WHITE
-                        + player.getName()
-                        + ChatColor.GRAY
-                        + " entered "
-                        + sanctuary.name()
-                        + "."
+                    ChatColor.GOLD + "[Sanctuary] " + ChatColor.WHITE + player.getName()
+                        + ChatColor.GRAY + " entered " + sanctuary.name() + "."
                 );
             }
         }
     }
 
-    static String entrySubtitle(
-        SanctuaryRelationship relationship,
-        SanctuarySecurityMode mode
-    ) {
+    static String entrySubtitle(SanctuaryRelationship relationship, SanctuarySecurityMode mode) {
         return switch (relationship) {
             case OWNER -> ChatColor.AQUA + "Your Sanctuary";
             case TRUSTED -> ChatColor.GREEN + "Trusted Territory";

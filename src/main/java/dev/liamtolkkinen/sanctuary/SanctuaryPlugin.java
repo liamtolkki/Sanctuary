@@ -162,6 +162,7 @@ public final class SanctuaryPlugin extends JavaPlugin {
                 sentryRepository,
                 securityService,
                 territoryPresenceService,
+                anchorTerritoryService,
                 getLogger()
             );
             new SentryRecipeService(this).registerAll();
@@ -255,7 +256,13 @@ public final class SanctuaryPlugin extends JavaPlugin {
                 ),
                 this
             );
-            new SentryTask(sentryService, sentryRepository, repository, getLogger()).start(this);
+            new SentryTask(
+                sentryService,
+                sentryRepository,
+                repository,
+                anchorTerritoryService,
+                getLogger()
+            ).start(this);
             getServer().getPluginManager().registerEvents(
                 new SanctuaryUiListener(
                     anchorItemService,

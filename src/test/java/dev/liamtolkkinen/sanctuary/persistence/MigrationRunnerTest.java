@@ -28,7 +28,7 @@ class MigrationRunnerTest {
             var result = statement.executeQuery("SELECT COUNT(*) FROM schema_migrations")
         ) {
             assertTrue(result.next());
-            assertEquals(9, result.getInt(1));
+            assertEquals(10, result.getInt(1));
         }
 
         try (
@@ -47,13 +47,15 @@ class MigrationRunnerTest {
                       'sanctuary_sentry_defaults',
                       'sentries',
                       'sentry_overrides',
-                      'altar_offering_progress'
+                      'altar_offering_progress',
+                      'sanctuary_anchors',
+                      'anchor_effect_levels'
                   )
                 """);
             var result = statement.executeQuery()
         ) {
             assertTrue(result.next());
-            assertEquals(10, result.getInt(1));
+            assertEquals(12, result.getInt(1));
         }
     }
 }

@@ -40,6 +40,7 @@ import dev.liamtolkkinen.sanctuary.territory.TerritoryBoundaryService;
 import dev.liamtolkkinen.sanctuary.territory.TerritoryPresenceService;
 import dev.liamtolkkinen.sanctuary.trust.SanctuaryCapability;
 import dev.liamtolkkinen.sanctuary.trust.SanctuaryPermissionService;
+import dev.liamtolkkinen.sanctuary.ui.AnchorUiService;
 import dev.liamtolkkinen.sanctuary.ui.SanctuaryUiListener;
 import dev.liamtolkkinen.sanctuary.ui.SanctuaryUiService;
 import java.io.IOException;
@@ -141,6 +142,7 @@ public final class SanctuaryPlugin extends JavaPlugin {
                 ),
                 this
             );
+
             TerritoryBoundaryService boundaryService = new TerritoryBoundaryService(
                 this,
                 securityService,
@@ -153,13 +155,18 @@ public final class SanctuaryPlugin extends JavaPlugin {
 
             TerritoryPresenceService territoryPresenceService = new TerritoryPresenceService();
             SentryService sentryService = new SentryService(
-                this, repository, sentryRepository, securityService, territoryPresenceService, getLogger()
+                this,
+                repository,
+                sentryRepository,
+                securityService,
+                territoryPresenceService,
+                getLogger()
             );
             new SentryRecipeService(this).registerAll();
             getServer().getPluginManager().registerEvents(
                 new TerritoryAwarenessListener(
                     repository,
-                    territoryPresenceService,
+                    anchorTerritoryService,
                     securityService,
                     this::isTerritoryEntryTitleEnabled,
                     this::isTerritoryExitMessageEnabled,
@@ -194,10 +201,7 @@ public final class SanctuaryPlugin extends JavaPlugin {
                 this::getMaximumTerritoryRadius,
                 getLogger()
             ).start(this);
-            new AnchorBeamTask(
-                repository,
-                getLogger()
-            ).start(this);
+            new AnchorBeamTask(repository, getLogger()).start(this);
             getServer().getPluginManager().registerEvents(
                 new ElytraSuppressionListener(
                     repository,
@@ -212,7 +216,12 @@ public final class SanctuaryPlugin extends JavaPlugin {
             extendedUi = new ExtendedUI(this);
             CompanionRuntime.start(this, extendedUi);
             SentryUiService sentryUiService = new SentryUiService(
-                this, extendedUi, repository, sentryRepository, sentryService, getLogger()
+                this,
+                extendedUi,
+                repository,
+                sentryRepository,
+                sentryService,
+                getLogger()
             );
             SanctuaryUiService uiService = new SanctuaryUiService(
                 this,
@@ -224,9 +233,22 @@ public final class SanctuaryPlugin extends JavaPlugin {
                 boundaryService,
                 sentryUiService
             );
+            AnchorUiService anchorUiService = new AnchorUiService(
+                this,
+                extendedUi,
+                repository,
+                anchorRepository,
+                effectService,
+                uiService
+            );
             getServer().getPluginManager().registerEvents(
                 new SentryListener(
-                    sentryService, sentryRepository, repository, anchorItemService, sentryUiService, getLogger()
+                    sentryService,
+                    sentryRepository,
+                    repository,
+                    anchorItemService,
+                    sentryUiService,
+                    getLogger()
                 ),
                 this
             );
@@ -234,8 +256,9 @@ public final class SanctuaryPlugin extends JavaPlugin {
             getServer().getPluginManager().registerEvents(
                 new SanctuaryUiListener(
                     anchorItemService,
+                    anchorRepository,
                     repository,
-                    uiService,
+                    anchorUiService,
                     getLogger()
                 ),
                 this

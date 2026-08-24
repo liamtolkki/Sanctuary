@@ -1,8 +1,10 @@
 package dev.liamtolkkinen.sanctuary.sentry;
 
+import dev.liamtolkkinen.sanctuary.anchor.SanctuaryAnchor;
 import dev.liamtolkkinen.sanctuary.sanctuary.Sanctuary;
 import dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryRepository;
 import dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryState;
+import dev.liamtolkkinen.sanctuary.territory.AnchorTerritoryService;
 import dev.liamtolkkinen.sanctuary.territory.TerritoryCalculator;
 import java.sql.SQLException;
 import java.time.Duration;
@@ -60,16 +62,24 @@ public final class SentryTask implements Runnable {
     private final SentryService service;
     private final SentryRepository repository;
     private final SanctuaryRepository sanctuaryRepository;
+    private final AnchorTerritoryService anchorTerritoryService;
     private final Logger logger;
     private final Set<String> playerPresence = new HashSet<>();
     private final Map<UUID, Instant> wardenLastMeleeAttack = new HashMap<>();
     private final Map<UUID, Instant> wardenSonicChargeStarted = new HashMap<>();
     private final Map<UUID, Instant> wardenSonicCooldownUntil = new HashMap<>();
 
-    public SentryTask(SentryService service, SentryRepository repository, SanctuaryRepository sanctuaryRepository, Logger logger) {
+    public SentryTask(
+        SentryService service,
+        SentryRepository repository,
+        SanctuaryRepository sanctuaryRepository,
+        AnchorTerritoryService anchorTerritoryService,
+        Logger logger
+    ) {
         this.service = service;
         this.repository = repository;
         this.sanctuaryRepository = sanctuaryRepository;
+        this.anchorTerritoryService = anchorTerritoryService;
         this.logger = logger;
     }
 
@@ -84,34 +94,47 @@ public final class SentryTask implements Runnable {
             List<SentryRecord> sentries = repository.findAll();
             List<Sanctuary> sanctuaries = sanctuaryRepository.findAll();
             Map<UUID, Sanctuary> sanctuariesById = new HashMap<>();
-            Map<UUID, List<SentryRecord>> sentriesBySanctuary = new HashMap<>();
+            Map<UUID, List<SanctuaryAnchor>> activeAnchorsBySanctuary = new HashMap<>();
             for (Sanctuary sanctuary : sanctuaries) {
                 sanctuariesById.put(sanctuary.id(), sanctuary);
             }
             for (SentryRecord sentry : sentries) {
-                sentriesBySanctuary
-                    .computeIfAbsent(sentry.sanctuaryId(), ignored -> new ArrayList<>())
-                    .add(sentry);
+                if (!activeAnchorsBySanctuary.containsKey(sentry.sanctuaryId())) {
+                    activeAnchorsBySanctuary.put(
+                        sentry.sanctuaryId(),
+                        anchorTerritoryService.activeAnchors(sentry.sanctuaryId())
+                    );
+                }
             }
 
-            scanTriggers(sanctuaries, sentriesBySanctuary);
+            scanTriggers(sentries, sanctuariesById, activeAnchorsBySanctuary);
 
             for (SentryRecord sentry : sentries) {
-                tickSentry(sentry, sanctuariesById.get(sentry.sanctuaryId()), now);
+                tickSentry(
+                    sentry,
+                    sanctuariesById.get(sentry.sanctuaryId()),
+                    activeAnchorsBySanctuary.getOrDefault(sentry.sanctuaryId(), List.of()),
+                    now
+                );
             }
         } catch (SQLException exception) {
             logger.log(Level.WARNING, "Failed sentry maintenance tick", exception);
         }
     }
 
-    private void tickSentry(SentryRecord sentry, Sanctuary sanctuary, Instant now) throws SQLException {
+    private void tickSentry(
+        SentryRecord sentry,
+        Sanctuary sanctuary,
+        List<SanctuaryAnchor> activeAnchors,
+        Instant now
+    ) throws SQLException {
         if (sanctuary == null) {
             clearWardenCombatState(sentry.id());
             service.entity(sentry).ifPresent(Entity::remove);
             return;
         }
 
-        if (sanctuary.state() != SanctuaryState.ACTIVE || sanctuary.position().isEmpty()) {
+        if (sanctuary.state() != SanctuaryState.ACTIVE || activeAnchors.isEmpty()) {
             clearWardenCombatState(sentry.id());
             service.suspendForInactiveSanctuary(sentry);
             return;
@@ -119,6 +142,16 @@ public final class SentryTask implements Runnable {
 
         var homeWorld = Bukkit.getWorld(sentry.world());
         if (homeWorld == null || !homeWorld.isChunkLoaded(sentry.x() >> 4, sentry.z() >> 4)) return;
+
+        Location home = service.home(sentry);
+        if (!containsTerritory(activeAnchors, sentry.world(), home.getX(), home.getZ())) {
+            // Territory topology changed underneath this post. This is not combat death: keep the
+            // Sanctuary-bound record suspended so it can return if another active anchor covers
+            // the post again later.
+            clearWardenCombatState(sentry.id());
+            service.suspendForInactiveSanctuary(sentry);
+            return;
+        }
 
         if (sentry.state() == SentryState.DOWN) {
             clearWardenCombatState(sentry.id());
@@ -151,8 +184,9 @@ public final class SentryTask implements Runnable {
         if (mob instanceof Creeper creeper) configureCreeperBody(creeper);
 
         Location loc = entity.getLocation();
-        if (!TerritoryCalculator.contains(
-            sanctuary.position().orElseThrow(), sanctuary.territoryRadius(), sentry.world(), loc.getX(), loc.getZ())) {
+        if (!containsTerritory(activeAnchors, sentry.world(), loc.getX(), loc.getZ())) {
+            // Leaving the entire Sanctuary is still fatal. Crossing from one anchor circle into
+            // another circle belonging to this same Sanctuary is allowed.
             clearWardenCombatState(sentry.id());
             service.markDown(sentry);
             return;
@@ -342,32 +376,49 @@ public final class SentryTask implements Runnable {
     }
 
     private void scanTriggers(
-        List<Sanctuary> sanctuaries,
-        Map<UUID, List<SentryRecord>> sentriesBySanctuary
+        List<SentryRecord> sentries,
+        Map<UUID, Sanctuary> sanctuariesById,
+        Map<UUID, List<SanctuaryAnchor>> activeAnchorsBySanctuary
     ) throws SQLException {
         Set<String> currentPlayers = new HashSet<>();
-        for (Sanctuary sanctuary : sanctuaries) {
-            if (sanctuary.position().isEmpty() || sanctuary.state() != SanctuaryState.ACTIVE) continue;
-            var world = Bukkit.getWorld(sanctuary.position().orElseThrow().world());
-            if (world == null) continue;
 
-            double centerY = (world.getMinHeight() + world.getMaxHeight()) * 0.5;
-            double verticalRadius = (world.getMaxHeight() - world.getMinHeight()) * 0.5 + 1.0;
-            double territoryRadius = sanctuary.territoryRadius();
-            Location scanCenter = new Location(
-                world,
-                sanctuary.position().orElseThrow().x() + 0.5,
-                centerY,
-                sanctuary.position().orElseThrow().z() + 0.5
+        for (SentryRecord sentry : sentries) {
+            if (sentry.state() != SentryState.ACTIVE) continue;
+
+            Sanctuary sanctuary = sanctuariesById.get(sentry.sanctuaryId());
+            if (sanctuary == null || sanctuary.state() != SanctuaryState.ACTIVE) continue;
+
+            List<SanctuaryAnchor> activeAnchors = activeAnchorsBySanctuary.getOrDefault(
+                sentry.sanctuaryId(),
+                List.of()
             );
+            if (activeAnchors.isEmpty()) continue;
+
+            SentryDefinition definition = service.definition(sentry).orElse(null);
+            Mob mob = service.entity(sentry)
+                .filter(Mob.class::isInstance)
+                .map(Mob.class::cast)
+                .filter(entity -> !entity.isDead())
+                .orElse(null);
+            if (definition == null || mob == null) continue;
+
+            var world = Bukkit.getWorld(sentry.world());
+            if (world == null) continue;
+            Location home = service.home(sentry);
+            if (!containsTerritory(activeAnchors, sentry.world(), home.getX(), home.getZ())) continue;
+
+            double targetRadius = definition.targetRadius();
+            List<Player> players = new ArrayList<>();
             List<LivingEntity> hostileMobs = new ArrayList<>();
             List<LivingEntity> neutralMobs = new ArrayList<>();
 
+            // Deliberately scan only around this sentry's post. Chaining anchors can make a
+            // Sanctuary arbitrarily large; Sanctuary size must never expand a sentry's watch cost.
             for (Entity entity : world.getNearbyEntities(
-                scanCenter,
-                territoryRadius,
-                verticalRadius,
-                territoryRadius
+                home,
+                targetRadius,
+                targetRadius,
+                targetRadius
             )) {
                 if (entity instanceof Vex vex && !service.isCompanion(vex)) {
                     service.ensureVexCompanion(vex);
@@ -375,70 +426,52 @@ public final class SentryTask implements Runnable {
                 if (!(entity instanceof LivingEntity living)
                     || service.isDefenseEntity(entity)
                     || isPlayerCompanion(entity)) continue;
+
                 Location location = entity.getLocation();
-                if (!TerritoryCalculator.contains(
-                    sanctuary.position().orElseThrow(), sanctuary.territoryRadius(), world.getName(),
-                    location.getX(), location.getZ())) continue;
+                if (horizontalDistanceSquared(home, location) > targetRadius * targetRadius) continue;
+                if (!containsTerritory(
+                    activeAnchors,
+                    world.getName(),
+                    location.getX(),
+                    location.getZ()
+                )) continue;
 
                 if (entity instanceof Player player) {
-                    String key = sanctuary.id() + ":" + player.getUniqueId();
-                    currentPlayers.add(key);
-                    if (!playerPresence.contains(key)) {
-                        service.trigger(sanctuary, SentryTrigger.UNAUTHORIZED_PLAYER_ENTERED, player);
-                    }
-                    double dx = location.getX() - (sanctuary.position().orElseThrow().x() + 0.5);
-                    double dz = location.getZ() - (sanctuary.position().orElseThrow().z() + 0.5);
-                    if (dx * dx + dz * dz <= SentryService.BEACON_PROXIMITY_RADIUS * SentryService.BEACON_PROXIMITY_RADIUS) {
-                        service.trigger(sanctuary, SentryTrigger.BEACON_PROXIMITY, player);
-                    }
-                    continue;
-                }
-
-                if (NEUTRAL_TYPES.contains(entity.getType())) {
+                    players.add(player);
+                } else if (NEUTRAL_TYPES.contains(entity.getType())) {
                     neutralMobs.add(living);
                 } else if (isHostileMob(entity)) {
                     hostileMobs.add(living);
                 }
             }
 
-            engagePresentMobs(
-                sanctuary,
-                sentriesBySanctuary.getOrDefault(sanctuary.id(), List.of()),
-                hostileMobs,
-                neutralMobs
-            );
-        }
-        playerPresence.clear();
-        playerPresence.addAll(currentPlayers);
-    }
+            if (!players.isEmpty()) {
+                boolean unauthorizedEntryEnabled = service.effective(
+                    sentry,
+                    SentryTrigger.UNAUTHORIZED_PLAYER_ENTERED
+                );
+                boolean beaconProximityEnabled = service.effective(
+                    sentry,
+                    SentryTrigger.BEACON_PROXIMITY
+                );
+                for (Player player : players) {
+                    String key = sentry.id() + ":" + player.getUniqueId();
+                    currentPlayers.add(key);
+                    boolean validTarget = service.validTarget(sanctuary, sentry, definition, player);
+                    if (!validTarget) continue;
 
-    private void engagePresentMobs(
-        Sanctuary sanctuary,
-        List<SentryRecord> sentries,
-        List<LivingEntity> hostileMobs,
-        List<LivingEntity> neutralMobs
-    ) throws SQLException {
-        if (hostileMobs.isEmpty() && neutralMobs.isEmpty()) {
-            return;
-        }
-
-        for (SentryRecord sentry : sentries) {
-            if (sentry.state() != SentryState.ACTIVE) {
-                continue;
-            }
-            SentryDefinition definition = service.definition(sentry).orElse(null);
-            Mob mob = service.entity(sentry)
-                .filter(Mob.class::isInstance)
-                .map(Mob.class::cast)
-                .filter(entity -> !entity.isDead())
-                .orElse(null);
-            if (definition == null || mob == null) {
-                continue;
+                    if (unauthorizedEntryEnabled && !playerPresence.contains(key)) {
+                        service.authorizeAndEngage(sanctuary, sentry, definition, mob, player);
+                    }
+                    if (beaconProximityEnabled
+                        && isNearActiveAnchor(activeAnchors, player.getLocation(), SentryService.BEACON_PROXIMITY_RADIUS)) {
+                        service.authorizeAndEngage(sanctuary, sentry, definition, mob, player);
+                    }
+                }
             }
 
             LivingEntity currentTarget = service.authorizedTarget(sentry).orElse(null);
-            if (currentTarget != null
-                && service.validTarget(sanctuary, sentry, definition, currentTarget)) {
+            if (currentTarget != null && service.validTarget(sanctuary, sentry, definition, currentTarget)) {
                 continue;
             }
 
@@ -446,19 +479,13 @@ public final class SentryTask implements Runnable {
                 && service.effective(sentry, SentryTrigger.HOSTILE_MOB_ENTERED);
             boolean neutralEnabled = !neutralMobs.isEmpty()
                 && service.effective(sentry, SentryTrigger.NEUTRAL_MOB_ENTERED);
-            if (!hostileEnabled && !neutralEnabled) {
-                continue;
-            }
+            if (!hostileEnabled && !neutralEnabled) continue;
 
             LivingEntity target = null;
             double bestDistanceSquared = Double.POSITIVE_INFINITY;
-            Location home = service.home(sentry);
 
             if (hostileEnabled) {
                 for (LivingEntity candidate : hostileMobs) {
-                    if (!service.validTarget(sanctuary, sentry, definition, candidate)) {
-                        continue;
-                    }
                     double distanceSquared = horizontalDistanceSquared(home, candidate.getLocation());
                     if (distanceSquared < bestDistanceSquared) {
                         target = candidate;
@@ -468,9 +495,6 @@ public final class SentryTask implements Runnable {
             }
             if (neutralEnabled) {
                 for (LivingEntity candidate : neutralMobs) {
-                    if (!service.validTarget(sanctuary, sentry, definition, candidate)) {
-                        continue;
-                    }
                     double distanceSquared = horizontalDistanceSquared(home, candidate.getLocation());
                     if (distanceSquared < bestDistanceSquared) {
                         target = candidate;
@@ -483,6 +507,47 @@ public final class SentryTask implements Runnable {
                 service.authorizeAndEngage(sanctuary, sentry, definition, mob, target);
             }
         }
+
+        playerPresence.clear();
+        playerPresence.addAll(currentPlayers);
+    }
+
+    private static boolean containsTerritory(
+        List<SanctuaryAnchor> activeAnchors,
+        String world,
+        double x,
+        double z
+    ) {
+        for (SanctuaryAnchor anchor : activeAnchors) {
+            if (anchor.position().isEmpty()) continue;
+            if (TerritoryCalculator.contains(
+                anchor.position().orElseThrow(),
+                anchor.territoryRadius(),
+                world,
+                x,
+                z
+            )) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean isNearActiveAnchor(
+        List<SanctuaryAnchor> activeAnchors,
+        Location location,
+        double radius
+    ) {
+        double radiusSquared = radius * radius;
+        for (SanctuaryAnchor anchor : activeAnchors) {
+            if (anchor.position().isEmpty()) continue;
+            var position = anchor.position().orElseThrow();
+            if (!position.world().equals(location.getWorld().getName())) continue;
+            double dx = location.getX() - (position.x() + 0.5);
+            double dz = location.getZ() - (position.z() + 0.5);
+            if (dx * dx + dz * dz <= radiusSquared) return true;
+        }
+        return false;
     }
 
     private static boolean isHostileMob(Entity entity) {

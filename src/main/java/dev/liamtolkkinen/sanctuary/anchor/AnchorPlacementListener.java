@@ -59,9 +59,6 @@ public final class AnchorPlacementListener implements Listener {
 
         SanctuaryType type = typeResult.orElseThrow();
         AnchorMetadata metadata = metadataResult.orElseThrow();
-        AnchorMetadata blockMetadata = metadata.isBound()
-            ? metadata
-            : metadata.bind(event.getPlayer().getUniqueId());
         SanctuaryPosition position = new SanctuaryPosition(
             event.getBlockPlaced().getWorld().getName(),
             event.getBlockPlaced().getX(),
@@ -70,14 +67,19 @@ public final class AnchorPlacementListener implements Listener {
         );
 
         try {
+            boolean registeredAnchor = graphService.isRegisteredAnchor(metadata.anchorId());
+            AnchorMetadata blockMetadata = metadata.isBound()
+                ? metadata
+                : metadata.bind(event.getPlayer().getUniqueId());
+
             // Persist block identity before the graph mutation. If this fails, the database is
             // untouched and Bukkit can safely roll the placement back.
             anchorItemService.writeBlockMetadata(tileState, blockMetadata);
 
             AnchorPlacementOutcome outcome;
-            if (metadata.isBound()) {
+            if (metadata.isBound() || registeredAnchor) {
                 outcome = graphService.placeBound(
-                    metadata,
+                    blockMetadata,
                     type,
                     event.getPlayer().getUniqueId(),
                     event.getPlayer().getName(),

@@ -1,5 +1,6 @@
 package dev.liamtolkkinen.sanctuary.anchor;
 
+import dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryPosition;
 import java.sql.SQLException;
 import java.util.List;
 import java.util.Optional;

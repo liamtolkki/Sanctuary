@@ -9,7 +9,6 @@ import dev.liamtolkkinen.sanctuary.persistence.DatabaseManager;
 import dev.liamtolkkinen.sanctuary.persistence.SqliteOfferingProgressRepository;
 import java.util.Objects;
 import org.bukkit.Keyed;
-import org.bukkit.event.Event;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
@@ -17,7 +16,6 @@ import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.block.CrafterCraftEvent;
 import org.bukkit.event.inventory.CraftItemEvent;
 import org.bukkit.event.inventory.PrepareItemCraftEvent;
-import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.Recipe;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -78,16 +76,6 @@ final class SanctuaryItemUsageGuard implements Listener {
         }
     }
 
-    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)
-    public void onUseVanillaBehavior(PlayerInteractEvent event) {
-        if (!shouldBlockVanillaUse(event.getItem())) {
-            return;
-        }
-
-        event.setUseItemInHand(Event.Result.DENY);
-        event.setCancelled(true);
-    }
-
     @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = true)
     public void onBlockPlace(BlockPlaceEvent event) {
         ExtendedItemId id = ExtendedItems.getId(event.getItemInHand()).orElse(null);
@@ -107,10 +95,6 @@ final class SanctuaryItemUsageGuard implements Listener {
             return false;
         }
         return containsExtendedItem(matrix);
-    }
-
-    static boolean shouldBlockVanillaUse(ItemStack item) {
-        return ExtendedItems.is(item, ExtendedItemIds.WATCHERS_EYE);
     }
 
     static boolean containsExtendedItem(ItemStack[] items) {

@@ -40,12 +40,7 @@ public final class AnchorItemService {
     }
 
     public ItemStack createUnbound(SanctuaryType type) {
-        return createAnchor(type, new AnchorMetadata(
-            UUID.randomUUID(),
-            Optional.empty(),
-            1,
-            1
-        ));
+        return createAnchor(type, freshUnboundMetadata());
     }
 
     public ItemStack createBoundBeacon(AnchorMetadata metadata) {
@@ -126,6 +121,36 @@ public final class AnchorItemService {
         return meta == null ? Optional.empty() : read(meta.getPersistentDataContainer());
     }
 
+    /**
+     * Returns existing valid metadata, or initializes a pristine ExtendedItems anchor
+     * that has never received Sanctuary metadata. Partial/corrupt Sanctuary metadata is
+     * never silently replaced.
+     */
+    public Optional<AnchorMetadata> readOrInitializeUnboundAnchor(ItemStack item) {
+        if (!isSanctuaryAnchor(item) || !ExtendedItems.validate(item).isValid()) {
+            return Optional.empty();
+        }
+        ItemMeta meta = item.getItemMeta();
+        if (meta == null) {
+            return Optional.empty();
+        }
+
+        PersistentDataContainer data = meta.getPersistentDataContainer();
+        Optional<AnchorMetadata> existing = read(data);
+        if (existing.isPresent()) {
+            return existing;
+        }
+        if (containsAnyAnchorMetadata(data)) {
+            return Optional.empty();
+        }
+
+        AnchorMetadata created = freshUnboundMetadata();
+        write(data, created);
+        meta.setEnchantmentGlintOverride(true);
+        item.setItemMeta(meta);
+        return Optional.of(created);
+    }
+
     public void writeItemMetadata(ItemStack item, AnchorMetadata metadata) {
         Objects.requireNonNull(item, "item");
         Objects.requireNonNull(metadata, "metadata");
@@ -169,6 +194,17 @@ public final class AnchorItemService {
             );
         }
         return item;
+    }
+
+    private AnchorMetadata freshUnboundMetadata() {
+        return new AnchorMetadata(UUID.randomUUID(), Optional.empty(), 1, 1);
+    }
+
+    private boolean containsAnyAnchorMetadata(PersistentDataContainer data) {
+        return data.getKeys().contains(anchorIdKey)
+            || data.getKeys().contains(ownerUuidKey)
+            || data.getKeys().contains(tierKey)
+            || data.getKeys().contains(generationKey);
     }
 
     private Optional<AnchorMetadata> read(PersistentDataContainer data) {

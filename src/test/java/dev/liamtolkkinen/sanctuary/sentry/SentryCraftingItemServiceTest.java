@@ -55,4 +55,25 @@ class SentryCraftingItemServiceTest {
             SentryRecipeCatalog.SpecialIngredient.SPEED_II_POTION
         ));
     }
+
+    @Test
+    void vanillaMobHeadsSatisfyHeadIngredients() {
+        assertTrue(service.matchesSpecialIngredient(
+            new ItemStack(Material.CREEPER_HEAD),
+            SentryRecipeCatalog.SpecialIngredient.CREEPER_TROPHY_HEAD
+        ));
+        assertTrue(service.matchesSpecialIngredient(
+            new ItemStack(Material.ZOMBIE_HEAD),
+            SentryRecipeCatalog.SpecialIngredient.ZOMBIE_TROPHY_HEAD
+        ));
+        assertTrue(service.matchesSpecialIngredient(
+            new ItemStack(Material.PIGLIN_HEAD),
+            SentryRecipeCatalog.SpecialIngredient.PIGLIN_BRUTE_TROPHY_HEAD
+        ));
+
+        assertFalse(service.matchesSpecialIngredient(
+            new ItemStack(Material.SKELETON_SKULL),
+            SentryRecipeCatalog.SpecialIngredient.CREEPER_TROPHY_HEAD
+        ));
+    }
 }

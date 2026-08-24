@@ -94,6 +94,7 @@ public final class AnchorUiService {
                     return;
                 }
 
+                int connections = anchorRepository.findNeighborIds(anchor.id()).size();
                 menu.set(4, button(
                     anchor.type() == SanctuaryType.CONDUIT ? Material.CONDUIT : Material.BEACON,
                     anchor.type() == SanctuaryType.CONDUIT ? "<aqua>Sanctuary Conduit" : "<gold>Sanctuary Beacon",
@@ -102,9 +103,7 @@ public final class AnchorUiService {
                         "<gray>Anchor tier: <white>" + roman(anchor.tier()),
                         "<gray>Current radius: <white>" + formatRadius(anchor.territoryRadius()),
                         "<gray>Generation: <white>" + anchor.generation(),
-                        anchor.parentAnchorId().isPresent()
-                            ? "<gray>Graph node: <white>extender"
-                            : "<gray>Graph node: <white>root"
+                        "<gray>Graph connections: <white>" + connections
                     ),
                     null
                 ));

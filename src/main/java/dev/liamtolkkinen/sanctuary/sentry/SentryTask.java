@@ -568,8 +568,9 @@ public final class SentryTask implements Runnable {
             var position = anchor.position().orElseThrow();
             if (!position.world().equals(location.getWorld().getName())) continue;
             double dx = location.getX() - (position.x() + 0.5);
+            double dy = location.getY() - (position.y() + 0.5);
             double dz = location.getZ() - (position.z() + 0.5);
-            if (dx * dx + dz * dz <= radiusSquared) return true;
+            if (dx * dx + dy * dy + dz * dz <= radiusSquared) return true;
         }
         return false;
     }

@@ -1,6 +1,7 @@
 package dev.liamtolkkinen.sanctuary.companion;
 
 import org.bukkit.Bukkit;
+import org.bukkit.NamespacedKey;
 import org.bukkit.World;
 import org.bukkit.entity.Guardian;
 import org.bukkit.persistence.PersistentDataType;
@@ -19,9 +20,13 @@ public final class GuardianIdlePoseTask implements Runnable {
     private static final long UPDATE_PERIOD_TICKS = 2L;
 
     private final JavaPlugin plugin;
+    private final NamespacedKey sentryIdKey;
+    private final NamespacedKey companionIdKey;
 
     public GuardianIdlePoseTask(JavaPlugin plugin) {
         this.plugin = plugin;
+        this.sentryIdKey = new NamespacedKey(plugin, "sentry_id");
+        this.companionIdKey = new NamespacedKey(plugin, "companion_id");
     }
 
     public void start() {
@@ -54,11 +59,7 @@ public final class GuardianIdlePoseTask implements Runnable {
 
     private boolean isManaged(Guardian guardian) {
         var data = guardian.getPersistentDataContainer();
-        return data.has(pluginKey("sentry_id"), PersistentDataType.STRING)
-            || data.has(pluginKey("companion_id"), PersistentDataType.STRING);
-    }
-
-    private org.bukkit.NamespacedKey pluginKey(String key) {
-        return new org.bukkit.NamespacedKey(plugin, key);
+        return data.has(sentryIdKey, PersistentDataType.STRING)
+            || data.has(companionIdKey, PersistentDataType.STRING);
     }
 }

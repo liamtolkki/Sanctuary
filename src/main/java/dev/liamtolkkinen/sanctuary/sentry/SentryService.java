@@ -2,6 +2,7 @@ package dev.liamtolkkinen.sanctuary.sentry;
 
 import com.destroystokyo.paper.entity.ai.GoalType;
 import dev.liamtolkkinen.extendeditems.ExtendedItems;
+import dev.liamtolkkinen.sanctuary.defense.DefenseTargetingRules;
 import dev.liamtolkkinen.sanctuary.sanctuary.Sanctuary;
 import dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryRepository;
 import dev.liamtolkkinen.sanctuary.security.SanctuaryRelationship;
@@ -326,7 +327,8 @@ public final class SentryService {
     }
 
     public void authorizeAndEngage(Sanctuary sanctuary, SentryRecord sentry, SentryDefinition definition, Mob mob, LivingEntity target) {
-        if (!validTarget(sanctuary, sentry, definition, target)) {
+        if (!validTarget(sanctuary, sentry, definition, target)
+            || !DefenseTargetingRules.isLocallyRelevant(mob, home(sentry), target)) {
             clearTarget(sentry);
             return;
         }
@@ -336,6 +338,10 @@ public final class SentryService {
     }
 
     public void maintainAuthorizedTarget(SentryRecord sentry, Mob mob, LivingEntity target, Instant now) {
+        if (!DefenseTargetingRules.isLocallyRelevant(mob, home(sentry), target)) {
+            clearTarget(sentry);
+            return;
+        }
         applyAuthorizedTarget(sentry, mob, target, now, false);
     }
 

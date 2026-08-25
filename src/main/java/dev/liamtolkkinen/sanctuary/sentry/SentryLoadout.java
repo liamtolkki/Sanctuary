@@ -26,7 +26,10 @@ public final class SentryLoadout {
         } else if (mob instanceof Pillager) {
             equipNetheriteArmor(equipment);
             equipment.setItemInMainHand(maxCrossbow());
-        } else if (mob instanceof Zombie || mob instanceof PiglinBrute || mob instanceof Drowned) {
+        } else if (mob instanceof Drowned) {
+            equipNetheriteArmor(equipment);
+            equipment.setItemInMainHand(maxTrident());
+        } else if (mob instanceof Zombie || mob instanceof PiglinBrute) {
             equipNetheriteArmor(equipment);
             equipment.setItemInMainHand(maxSword());
         } else if (mob.getType() == EntityType.ZOMBIFIED_PIGLIN || mob.getType() == EntityType.PIGLIN) {
@@ -37,7 +40,7 @@ public final class SentryLoadout {
         equipment.setHelmetDropChance(0.0f);
         equipment.setChestplateDropChance(0.0f);
         equipment.setLeggingsDropChance(0.0f);
-        equipment.setBootsDropChance(0.0f);
+        equipment.setBootDropChance(0.0f);
         equipment.setItemInMainHandDropChance(0.0f);
         equipment.setItemInOffHandDropChance(0.0f);
     }
@@ -96,6 +99,15 @@ public final class SentryLoadout {
         return armor(Material.CROSSBOW,
             Enchantment.QUICK_CHARGE, 3,
             Enchantment.MULTISHOT, 1,
+            Enchantment.UNBREAKING, 3,
+            Enchantment.MENDING, 1);
+    }
+
+    private static ItemStack maxTrident() {
+        return armor(Material.TRIDENT,
+            Enchantment.IMPALING, 5,
+            Enchantment.LOYALTY, 3,
+            Enchantment.CHANNELING, 1,
             Enchantment.UNBREAKING, 3,
             Enchantment.MENDING, 1);
     }

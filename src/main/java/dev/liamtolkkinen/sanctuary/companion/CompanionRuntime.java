@@ -31,6 +31,7 @@ public final class CompanionRuntime {
             new ManagedElderGuardianEffectListener(plugin),
             plugin
         );
+        new GuardianIdlePoseTask(plugin).start();
         new CompanionTask(service, plugin.getLogger()).start(plugin);
         CompanionDebugCommand.register(plugin);
     }

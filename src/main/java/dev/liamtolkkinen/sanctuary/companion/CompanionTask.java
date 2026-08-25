@@ -1,5 +1,6 @@
 package dev.liamtolkkinen.sanctuary.companion;
 
+import dev.liamtolkkinen.sanctuary.defense.DefenseTargetingRules;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.HashMap;
@@ -16,7 +17,6 @@ import org.bukkit.damage.DamageType;
 import org.bukkit.entity.Creeper;
 import org.bukkit.entity.Enemy;
 import org.bukkit.entity.EntityType;
-import org.bukkit.entity.Guardian;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Mob;
 import org.bukkit.entity.Player;
@@ -33,7 +33,6 @@ public final class CompanionTask implements Runnable {
     private static final double FRIENDLY_MELEE_RANGE = 3.0;
     private static final Duration FRIENDLY_MELEE_COOLDOWN = Duration.ofMillis(1000);
 
-    private static final double WARDEN_TARGET_VERTICAL_RANGE = 8.0;
     private static final double WARDEN_MELEE_RANGE = 3.0;
     private static final double WARDEN_SONIC_MIN_HORIZONTAL_RANGE = 15.0;
     private static final double WARDEN_SONIC_VERTICAL_RANGE = 20.0;
@@ -107,7 +106,7 @@ public final class CompanionTask implements Runnable {
         }
 
         LivingEntity target = service.findTarget(companion, owner, now);
-        if (target != null && !specialTargetAllowed(companion, owner, target)) {
+        if (target != null && !targetAllowed(companion, owner, target)) {
             target = null;
         }
         if (strictAquatic && target != null && !isWater(target.getLocation())) {
@@ -136,18 +135,11 @@ public final class CompanionTask implements Runnable {
         service.tickEvokerVexes(companion, target, now);
     }
 
-    private boolean specialTargetAllowed(Mob companion, Player owner, LivingEntity target) {
-        if (companion instanceof Guardian guardian && !guardian.hasLineOfSight(target)) {
-            return false;
-        }
-        if (companion instanceof Warden) {
-            Location center = service.mode(companion) == CompanionMode.STAY
-                ? service.stayLocation(companion).orElse(companion.getLocation())
-                : owner.getLocation();
-            return center.getWorld() == target.getWorld()
-                && Math.abs(target.getY() - center.getY()) <= WARDEN_TARGET_VERTICAL_RANGE;
-        }
-        return true;
+    private boolean targetAllowed(Mob companion, Player owner, LivingEntity target) {
+        Location center = service.mode(companion) == CompanionMode.STAY
+            ? service.stayLocation(companion).orElse(companion.getLocation())
+            : owner.getLocation();
+        return DefenseTargetingRules.isLocallyRelevant(companion, center, target);
     }
 
     private void grantDolphinsGrace(Mob dolphin, Player owner) {

@@ -29,6 +29,7 @@ import org.bukkit.entity.Creeper;
 import org.bukkit.entity.Enemy;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.EntityType;
+import org.bukkit.entity.Guardian;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Mob;
 import org.bukkit.entity.Player;
@@ -49,6 +50,7 @@ public final class SentryTask implements Runnable {
     private static final int CREEPER_FUSE_TICKS = 12;
     private static final int CREEPER_EXPLOSION_RADIUS = 3;
 
+    private static final double WARDEN_TARGET_VERTICAL_RANGE = 8.0;
     private static final double WARDEN_MELEE_RANGE = 3.0;
     private static final double WARDEN_SONIC_MIN_HORIZONTAL_RANGE = 15.0;
     private static final double WARDEN_SONIC_VERTICAL_RANGE = 20.0;
@@ -219,6 +221,10 @@ public final class SentryTask implements Runnable {
 
         SentryDefinition definition = service.definition(sentry).orElse(null);
         LivingEntity target = service.authorizedTarget(sentry).orElse(null);
+        if (target != null && !specialTargetAllowed(mob, home, target)) {
+            service.clearTarget(sentry);
+            target = null;
+        }
         if (target != null && definition != null && service.validTarget(sanctuary, sentry, definition, target)) {
             if (mob instanceof Creeper creeper) {
                 tickCreeperCombat(sentry, creeper, target, now);
@@ -235,6 +241,17 @@ public final class SentryTask implements Runnable {
         }
 
         service.tickVexCompanions(sentry, mob, service.authorizedTarget(sentry).orElse(null), now);
+    }
+
+    private boolean specialTargetAllowed(Mob mob, Location home, LivingEntity target) {
+        if (mob instanceof Guardian guardian && !guardian.hasLineOfSight(target)) {
+            return false;
+        }
+        if (mob instanceof Warden) {
+            return target.getWorld() == home.getWorld()
+                && Math.abs(target.getY() - home.getY()) <= WARDEN_TARGET_VERTICAL_RANGE;
+        }
+        return true;
     }
 
     private void configureCreeperBody(Creeper creeper) {
@@ -430,6 +447,7 @@ public final class SentryTask implements Runnable {
 
                 Location location = entity.getLocation();
                 if (horizontalDistanceSquared(home, location) > targetRadius * targetRadius) continue;
+                if (!specialTargetAllowed(mob, home, living)) continue;
                 if (!containsTerritory(
                     activeAnchors,
                     world.getName(),
@@ -472,8 +490,13 @@ public final class SentryTask implements Runnable {
             }
 
             LivingEntity currentTarget = service.authorizedTarget(sentry).orElse(null);
-            if (currentTarget != null && service.validTarget(sanctuary, sentry, definition, currentTarget)) {
+            if (currentTarget != null
+                && specialTargetAllowed(mob, home, currentTarget)
+                && service.validTarget(sanctuary, sentry, definition, currentTarget)) {
                 continue;
+            }
+            if (currentTarget != null) {
+                service.clearTarget(sentry);
             }
 
             boolean hostileEnabled = !hostileMobs.isEmpty()

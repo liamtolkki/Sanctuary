@@ -40,7 +40,7 @@ public final class SentryLoadout {
         equipment.setHelmetDropChance(0.0f);
         equipment.setChestplateDropChance(0.0f);
         equipment.setLeggingsDropChance(0.0f);
-        equipment.setBootDropChance(0.0f);
+        equipment.setBootsDropChance(0.0f);
         equipment.setItemInMainHandDropChance(0.0f);
         equipment.setItemInOffHandDropChance(0.0f);
     }

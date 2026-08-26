@@ -69,7 +69,13 @@ public final class SanctuaryAdvancementCatalog {
     public static final String FIRST_ARTIFACT = "first_artifact";
     public static final String MASTER_ARTIFICER = "master_artificer";
     public static final String SANCTUARY_CONDUIT = "sanctuary_conduit";
+    public static final String FIRST_COMPANION = "first_companion";
+    public static final String WARDEN_COMPANION = "warden_companion";
+    public static final String WITHER_COMPANION = "wither_companion";
     public static final String FIRST_SENTRY = "first_sentry";
+    public static final String SANCTUARY_EXTENDED = "sanctuary_extended";
+    public static final String TIER_FIVE_ANCHOR = "tier_five_anchor";
+    public static final String WHAT_A_WASTE = "what_a_waste";
     public static final String FIRST_OFFERING = "first_offering";
     public static final String HALF_OFFERINGS = "half_offerings";
     public static final String ALL_OFFERINGS = "all_offerings";
@@ -152,8 +158,62 @@ public final class SanctuaryAdvancementCatalog {
             true
         ),
         d(
-            FIRST_SENTRY,
+            SANCTUARY_EXTENDED,
             SANCTUARY_BEACON,
+            Material.LODESTONE,
+            "Beyond the First Light",
+            "Extend a Sanctuary with another anchor.",
+            Frame.GOAL,
+            true
+        ),
+        d(
+            TIER_FIVE_ANCHOR,
+            SANCTUARY_BEACON,
+            Material.RESPAWN_ANCHOR,
+            "A Sanctuary Perfected",
+            "Raise a Sanctuary anchor to Tier V.",
+            Frame.CHALLENGE,
+            true
+        ),
+        d(
+            WHAT_A_WASTE,
+            TIER_FIVE_ANCHOR,
+            Material.FIRE_CHARGE,
+            "What a Waste",
+            "Destroy a Tier V Sanctuary Beacon.",
+            Frame.CHALLENGE,
+            true
+        ),
+        d(
+            FIRST_COMPANION,
+            DIVINE_ALTAR,
+            Material.IRON_GOLEM_SPAWN_EGG,
+            "A Faithful Companion",
+            "Obtain your first Companion Egg.",
+            Frame.TASK,
+            true
+        ),
+        d(
+            WARDEN_COMPANION,
+            FIRST_COMPANION,
+            Material.WARDEN_SPAWN_EGG,
+            "The Deep Answers",
+            "Obtain a Warden Companion Egg.",
+            Frame.CHALLENGE,
+            true
+        ),
+        d(
+            WITHER_COMPANION,
+            FIRST_COMPANION,
+            Material.WITHER_SPAWN_EGG,
+            "Death, Bound",
+            "Obtain a Wither Companion Egg.",
+            Frame.CHALLENGE,
+            true
+        ),
+        d(
+            FIRST_SENTRY,
+            FIRST_COMPANION,
             Material.ARMOR_STAND,
             "Standing Guard",
             "Craft your first Sentry Post.",

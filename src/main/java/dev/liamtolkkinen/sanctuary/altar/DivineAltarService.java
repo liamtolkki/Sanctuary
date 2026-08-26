@@ -130,6 +130,7 @@ public final class DivineAltarService implements Listener, AutoCloseable {
         );
         tileState.update(true, false);
         loadedAltars.add(BlockPosition.of(block));
+        spawnPlacementBurst(block.getLocation());
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
@@ -257,6 +258,14 @@ public final class DivineAltarService implements Listener, AutoCloseable {
         }
     }
 
+    private void spawnPlacementBurst(Location blockLocation) {
+        World world = blockLocation.getWorld();
+        Location center = blockLocation.clone().add(0.5, 0.85, 0.5);
+        world.spawnParticle(Particle.FIREFLY, center, 28, 0.9, 0.75, 0.9, 0.02);
+        world.spawnParticle(Particle.END_ROD, center, 12, 0.65, 0.55, 0.65, 0.02);
+        world.spawnParticle(Particle.ENCHANT, center, 48, 0.9, 0.65, 0.9, 0.45);
+    }
+
     private void spawnParticles() {
         for (BlockPosition position : List.copyOf(loadedAltars)) {
             World world = Bukkit.getWorld(position.worldId());
@@ -271,31 +280,35 @@ public final class DivineAltarService implements Listener, AutoCloseable {
             }
 
             Location base = block.getLocation().add(0.5, 0.0, 0.5);
-            Location upper = base.clone().add(0.0, 1.05, 0.0);
-            world.spawnParticle(Particle.FIREFLY, upper, 2, 0.55, 0.35, 0.55, 0.01);
+            Location lower = base.clone().add(0.0, 0.55, 0.0);
+            Location upper = base.clone().add(0.0, 1.15, 0.0);
+            world.spawnParticle(Particle.FIREFLY, lower, 4, 0.7, 0.3, 0.7, 0.01);
+            world.spawnParticle(Particle.FIREFLY, upper, 7, 0.8, 0.5, 0.8, 0.015);
 
             double angle = (world.getGameTime() % 80L) * (Math.PI * 2.0 / 80.0);
-            double radius = 0.62;
-            for (int i = 0; i < 2; i++) {
-                double current = angle + (Math.PI * i);
+            double radius = 0.68;
+            for (int i = 0; i < 4; i++) {
+                double current = angle + (Math.PI * 0.5 * i);
+                double height = i % 2 == 0 ? 0.24 : 0.42;
                 Location point = base.clone().add(
                     Math.cos(current) * radius,
-                    0.22,
+                    height,
                     Math.sin(current) * radius
                 );
                 world.spawnParticle(
                     Particle.END_ROD,
                     point,
                     1,
-                    0.02,
-                    0.04,
-                    0.02,
+                    0.025,
+                    0.05,
+                    0.025,
                     0.005
                 );
             }
 
             if (world.getGameTime() % 20L == 0L) {
-                world.spawnParticle(Particle.ENCHANT, upper, 4, 0.4, 0.15, 0.4, 0.15);
+                world.spawnParticle(Particle.ENCHANT, upper, 12, 0.55, 0.25, 0.55, 0.2);
+                world.spawnParticle(Particle.FIREFLY, upper, 8, 0.9, 0.6, 0.9, 0.02);
             }
         }
     }

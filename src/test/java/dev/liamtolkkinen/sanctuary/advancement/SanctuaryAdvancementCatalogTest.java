@@ -20,7 +20,7 @@ class SanctuaryAdvancementCatalogTest {
                 assertTrue(seen.contains(definition.parentKey()), definition.key());
             }
         }
-        assertEquals(12, seen.size());
+        assertEquals(18, seen.size());
     }
 
     @Test
@@ -84,19 +84,61 @@ class SanctuaryAdvancementCatalogTest {
     }
 
     @Test
-    void advancementTreeIncludesBeaconConduitAndSentryMilestones() {
+    void companionBranchContainsFirstWardenWitherAndSentryMilestones() {
         assertEquals(
-            SanctuaryAdvancementCatalog.FIRST_SHARD,
-            parentOf(SanctuaryAdvancementCatalog.SANCTUARY_BEACON)
+            SanctuaryAdvancementCatalog.DIVINE_ALTAR,
+            parentOf(SanctuaryAdvancementCatalog.FIRST_COMPANION)
         );
+        assertEquals(
+            SanctuaryAdvancementCatalog.FIRST_COMPANION,
+            parentOf(SanctuaryAdvancementCatalog.WARDEN_COMPANION)
+        );
+        assertEquals(
+            SanctuaryAdvancementCatalog.FIRST_COMPANION,
+            parentOf(SanctuaryAdvancementCatalog.WITHER_COMPANION)
+        );
+        assertEquals(
+            SanctuaryAdvancementCatalog.FIRST_COMPANION,
+            parentOf(SanctuaryAdvancementCatalog.FIRST_SENTRY)
+        );
+        assertEquals(
+            SanctuaryAdvancementCatalog.Frame.CHALLENGE,
+            SanctuaryAdvancementCatalog.find(
+                SanctuaryAdvancementCatalog.WARDEN_COMPANION
+            ).orElseThrow().frame()
+        );
+        assertEquals(
+            SanctuaryAdvancementCatalog.Frame.CHALLENGE,
+            SanctuaryAdvancementCatalog.find(
+                SanctuaryAdvancementCatalog.WITHER_COMPANION
+            ).orElseThrow().frame()
+        );
+    }
+
+    @Test
+    void anchorBranchContainsConduitExtensionTierFiveAndWasteMilestones() {
         assertEquals(
             SanctuaryAdvancementCatalog.SANCTUARY_BEACON,
             parentOf(SanctuaryAdvancementCatalog.SANCTUARY_CONDUIT)
         );
         assertEquals(
             SanctuaryAdvancementCatalog.SANCTUARY_BEACON,
-            parentOf(SanctuaryAdvancementCatalog.FIRST_SENTRY)
+            parentOf(SanctuaryAdvancementCatalog.SANCTUARY_EXTENDED)
         );
+        assertEquals(
+            SanctuaryAdvancementCatalog.SANCTUARY_BEACON,
+            parentOf(SanctuaryAdvancementCatalog.TIER_FIVE_ANCHOR)
+        );
+        assertEquals(
+            SanctuaryAdvancementCatalog.TIER_FIVE_ANCHOR,
+            parentOf(SanctuaryAdvancementCatalog.WHAT_A_WASTE)
+        );
+        var waste = SanctuaryAdvancementCatalog.find(
+            SanctuaryAdvancementCatalog.WHAT_A_WASTE
+        ).orElseThrow();
+        assertEquals("What a Waste", waste.title());
+        assertEquals("Destroy a Tier V Sanctuary Beacon.", waste.description());
+        assertEquals(SanctuaryAdvancementCatalog.Frame.CHALLENGE, waste.frame());
     }
 
     private static String parentOf(String key) {

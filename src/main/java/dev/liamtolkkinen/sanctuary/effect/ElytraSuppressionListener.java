@@ -14,13 +14,21 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
+import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
+import org.bukkit.Material;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityToggleGlideEvent;
+import org.bukkit.event.inventory.InventoryOpenEvent;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.Damageable;
 
 public final class ElytraSuppressionListener implements Listener {
+    private static final PlainTextComponentSerializer PLAIN_TEXT =
+        PlainTextComponentSerializer.plainText();
+
     private final SanctuaryRepository repository;
     private final TerritoryPresenceService legacyPresenceService;
     private final AnchorTerritoryService anchorTerritoryService;
@@ -39,7 +47,10 @@ public final class ElytraSuppressionListener implements Listener {
         this.legacyPresenceService = Objects.requireNonNull(presenceService, "presenceService");
         this.anchorTerritoryService = null;
         this.effectService = Objects.requireNonNull(effectService, "effectService");
-        this.maximumRadiusSupplier = Objects.requireNonNull(maximumRadiusSupplier, "maximumRadiusSupplier");
+        this.maximumRadiusSupplier = Objects.requireNonNull(
+            maximumRadiusSupplier,
+            "maximumRadiusSupplier"
+        );
         this.logger = Objects.requireNonNull(logger, "logger");
     }
 
@@ -52,9 +63,15 @@ public final class ElytraSuppressionListener implements Listener {
     ) {
         this.repository = Objects.requireNonNull(repository, "repository");
         this.legacyPresenceService = null;
-        this.anchorTerritoryService = Objects.requireNonNull(anchorTerritoryService, "anchorTerritoryService");
+        this.anchorTerritoryService = Objects.requireNonNull(
+            anchorTerritoryService,
+            "anchorTerritoryService"
+        );
         this.effectService = Objects.requireNonNull(effectService, "effectService");
-        this.maximumRadiusSupplier = Objects.requireNonNull(maximumRadiusSupplier, "maximumRadiusSupplier");
+        this.maximumRadiusSupplier = Objects.requireNonNull(
+            maximumRadiusSupplier,
+            "maximumRadiusSupplier"
+        );
         this.logger = Objects.requireNonNull(logger, "logger");
     }
 
@@ -82,6 +99,33 @@ public final class ElytraSuppressionListener implements Listener {
         }
     }
 
+    /**
+     * Sanctuary's effect menu uses an Elytra to represent Elytra Disabled. Give that
+     * display item one durability point so the client renders the vanilla broken Elytra.
+     */
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onInventoryOpen(InventoryOpenEvent event) {
+        for (ItemStack item : event.getView().getTopInventory().getContents()) {
+            if (!isElytraDisabledIcon(item)) {
+                continue;
+            }
+            item.editMeta(meta -> {
+                if (meta instanceof Damageable damageable) {
+                    damageable.setDamage(Material.ELYTRA.getMaxDurability() - 1);
+                }
+            });
+        }
+    }
+
+    static boolean isElytraDisabledIcon(ItemStack item) {
+        if (item == null || item.getType() != Material.ELYTRA || !item.hasItemMeta()) {
+            return false;
+        }
+        Component displayName = item.getItemMeta().displayName();
+        return displayName != null
+            && "Elytra Disabled".equals(PLAIN_TEXT.serialize(displayName));
+    }
+
     private boolean isElytraSuppressed(Player player) throws SQLException {
         if (anchorTerritoryService != null) {
             return isGraphElytraSuppressed(player);
@@ -95,7 +139,8 @@ public final class ElytraSuppressionListener implements Listener {
             player.getLocation().getX(),
             player.getLocation().getZ()
         )) {
-            if (anchor.type() != dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryType.BEACON
+            if (anchor.type()
+                    != dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryType.BEACON
                 || anchor.position().isEmpty()) {
                 continue;
             }
@@ -122,7 +167,9 @@ public final class ElytraSuppressionListener implements Listener {
     }
 
     private boolean isLegacyElytraSuppressed(Player player) throws SQLException {
-        List<Sanctuary> sanctuaries = repository.findActiveInWorld(player.getWorld().getName());
+        List<Sanctuary> sanctuaries = repository.findActiveInWorld(
+            player.getWorld().getName()
+        );
         Sanctuary sanctuary = legacyPresenceService.findCurrentSanctuary(
             sanctuaries,
             player.getWorld().getName(),

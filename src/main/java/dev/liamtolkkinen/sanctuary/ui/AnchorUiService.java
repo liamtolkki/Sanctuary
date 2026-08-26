@@ -52,8 +52,7 @@ public final class AnchorUiService {
         SanctuaryRepository sanctuaryRepository,
         SanctuaryAnchorRepository anchorRepository,
         SanctuaryEffectService effectService,
-        SanctuaryUiService sanctuaryUiService,
-        AnchorItemService anchorItemService
+        SanctuaryUiService sanctuaryUiService
     ) {
         this.plugin = plugin;
         this.ui = ui;
@@ -65,7 +64,7 @@ public final class AnchorUiService {
             plugin,
             sanctuaryRepository,
             anchorRepository,
-            anchorItemService
+            new AnchorItemService(plugin)
         );
     }
 

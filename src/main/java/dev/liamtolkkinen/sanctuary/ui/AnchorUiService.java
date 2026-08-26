@@ -1,5 +1,7 @@
 package dev.liamtolkkinen.sanctuary.ui;
 
+import dev.liamtolkkinen.extendeditems.ExtendedItemId;
+import dev.liamtolkkinen.extendeditems.ExtendedItems;
 import dev.liamtolkkinen.extendedui.ExtendedButton;
 import dev.liamtolkkinen.extendedui.ExtendedInventoryMenu;
 import dev.liamtolkkinen.extendedui.ExtendedItemBuilder;
@@ -9,6 +11,9 @@ import dev.liamtolkkinen.extendedui.ExtendedMenuContext;
 import dev.liamtolkkinen.extendedui.ExtendedUI;
 import dev.liamtolkkinen.extendedui.StandardButtons;
 import dev.liamtolkkinen.sanctuary.SanctuaryPlugin;
+import dev.liamtolkkinen.sanctuary.anchor.AnchorItemService;
+import dev.liamtolkkinen.sanctuary.anchor.AnchorTierProgression;
+import dev.liamtolkkinen.sanctuary.anchor.AnchorUpgradeService;
 import dev.liamtolkkinen.sanctuary.anchor.SanctuaryAnchor;
 import dev.liamtolkkinen.sanctuary.anchor.SanctuaryAnchorRepository;
 import dev.liamtolkkinen.sanctuary.effect.AnchorEffect;
@@ -24,6 +29,8 @@ import java.util.List;
 import java.util.UUID;
 import java.util.function.Consumer;
 import java.util.logging.Level;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.ChatColor;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
@@ -37,6 +44,7 @@ public final class AnchorUiService {
     private final SanctuaryAnchorRepository anchorRepository;
     private final SanctuaryEffectService effectService;
     private final SanctuaryUiService sanctuaryUiService;
+    private final AnchorUpgradeService upgradeService;
 
     public AnchorUiService(
         SanctuaryPlugin plugin,
@@ -44,7 +52,8 @@ public final class AnchorUiService {
         SanctuaryRepository sanctuaryRepository,
         SanctuaryAnchorRepository anchorRepository,
         SanctuaryEffectService effectService,
-        SanctuaryUiService sanctuaryUiService
+        SanctuaryUiService sanctuaryUiService,
+        AnchorItemService anchorItemService
     ) {
         this.plugin = plugin;
         this.ui = ui;
@@ -52,6 +61,12 @@ public final class AnchorUiService {
         this.anchorRepository = anchorRepository;
         this.effectService = effectService;
         this.sanctuaryUiService = sanctuaryUiService;
+        this.upgradeService = new AnchorUpgradeService(
+            plugin,
+            sanctuaryRepository,
+            anchorRepository,
+            anchorItemService
+        );
     }
 
     public void open(Player player, Sanctuary sanctuary, SanctuaryAnchor anchor, boolean adminMode) {
@@ -133,6 +148,8 @@ public final class AnchorUiService {
                     }
                 ));
 
+                menu.set(49, upgradeButton(anchor, adminMode));
+
                 List<SanctuaryEffectService.AnchorEffectDefinition> safe = effectService.definitions(
                     anchor.type(), AnchorEffect.Target.SAFE);
                 List<SanctuaryEffectService.AnchorEffectDefinition> hostile = effectService.definitions(
@@ -154,6 +171,85 @@ public final class AnchorUiService {
                 context.player().sendMessage(ChatColor.RED + "Sanctuary could not load this anchor.");
                 plugin.getLogger().log(Level.SEVERE, "Failed to load anchor UI " + anchorId, exception);
             }
+        }
+    }
+
+    private ExtendedButton upgradeButton(SanctuaryAnchor anchor, boolean adminMode) {
+        if (anchor.tier() >= AnchorTierProgression.MAX_TIER) {
+            return button(
+                Material.NETHER_STAR,
+                "<gold>Tier V - Maximum",
+                List.of(
+                    "<gray>This anchor has reached its maximum tier.",
+                    "<gray>Territory radius: <white>" + formatRadius(anchor.territoryRadius())
+                ),
+                null
+            );
+        }
+
+        ExtendedItemId requiredItem = AnchorTierProgression.requiredUpgradeItem(anchor.tier());
+        int nextTier = AnchorTierProgression.nextTier(anchor.tier());
+        double nextRadius = AnchorTierProgression.radiusForTier(
+            plugin.getMaximumTerritoryRadius(),
+            nextTier
+        );
+
+        ExtendedItemProvider provider = () -> {
+            ItemStack item = ExtendedItems.create(requiredItem);
+            item.editMeta(meta -> {
+                List<Component> lore = new ArrayList<>();
+                if (meta.lore() != null) {
+                    lore.addAll(meta.lore());
+                }
+                lore.add(Component.empty());
+                lore.add(Component.text(
+                    "Upgrade Tier " + roman(anchor.tier()) + " -> " + roman(nextTier),
+                    NamedTextColor.GOLD
+                ));
+                lore.add(Component.text(
+                    "Radius: " + formatRadius(anchor.territoryRadius()) + " -> " + formatRadius(nextRadius),
+                    NamedTextColor.GRAY
+                ));
+                lore.add(Component.text(
+                    "Consumes one " + pretty(requiredItem.persistentId()) + ".",
+                    NamedTextColor.YELLOW
+                ));
+                lore.add(Component.text("Click to upgrade this anchor.", NamedTextColor.AQUA));
+                meta.lore(lore);
+            });
+            return item;
+        };
+
+        return ExtendedButton.builder(provider)
+            .onClick(click -> upgradeAnchor(click.player(), anchor.id(), adminMode, click.menu()))
+            .build();
+    }
+
+    private void upgradeAnchor(
+        Player player,
+        UUID anchorId,
+        boolean adminMode,
+        ExtendedMenuContext context
+    ) {
+        try {
+            SanctuaryAnchor upgraded = upgradeService.upgrade(
+                player,
+                anchorId,
+                plugin.getMaximumTerritoryRadius(),
+                adminMode
+            );
+            player.updateInventory();
+            player.sendMessage(
+                ChatColor.GOLD + "Sanctuary anchor upgraded to Tier " + roman(upgraded.tier())
+                    + ChatColor.GRAY + " with a " + formatRadius(upgraded.territoryRadius()) + " radius."
+            );
+            context.refresh();
+        } catch (SQLException exception) {
+            player.sendMessage(ChatColor.RED + "Sanctuary could not save this anchor upgrade.");
+            plugin.getLogger().log(Level.SEVERE, "Failed to upgrade Sanctuary anchor " + anchorId, exception);
+        } catch (IllegalArgumentException | IllegalStateException exception) {
+            player.sendMessage(ChatColor.RED + exception.getMessage());
+            context.refresh();
         }
     }
 
@@ -293,7 +389,11 @@ public final class AnchorUiService {
     }
 
     private static String effectDisplayName(AnchorEffect effect) {
-        String[] words = effect.name().toLowerCase(java.util.Locale.ROOT).split("_");
+        return pretty(effect.name());
+    }
+
+    private static String pretty(String value) {
+        String[] words = value.toLowerCase(java.util.Locale.ROOT).split("_");
         StringBuilder result = new StringBuilder();
         for (String word : words) {
             if (!result.isEmpty()) result.append(' ');

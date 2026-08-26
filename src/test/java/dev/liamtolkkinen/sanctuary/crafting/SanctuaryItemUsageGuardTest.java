@@ -34,7 +34,7 @@ class SanctuaryItemUsageGuardTest {
 
         assertTrue(SanctuaryItemUsageGuard.containsExtendedItem(matrix));
 
-        matrix[1] = new ItemStack(Material.NETHER_STAR);
+        matrix[1] = new ItemStack(Material.END_CRYSTAL);
         assertFalse(SanctuaryItemUsageGuard.containsExtendedItem(matrix));
     }
 
@@ -49,21 +49,21 @@ class SanctuaryItemUsageGuardTest {
     }
 
     @Test
-    void progressionArtifactsCannotBePlacedAsVanillaBlocks() {
+    void progressionArtifactsCannotBePlacedAsVanillaItems() {
         assertFalse(SanctuaryItemUsageGuard.isAllowedPlacedItem(
             ExtendedItemIds.TERRITORY_KEYSTONE
         ));
         assertFalse(SanctuaryItemUsageGuard.isAllowedPlacedItem(
-            ExtendedItemIds.WARD_STONE
+            ExtendedItemIds.WATCHERS_EYE
         ));
         assertFalse(SanctuaryItemUsageGuard.isAllowedPlacedItem(
-            ExtendedItemIds.BLAST_WARD
-        ));
-        assertFalse(SanctuaryItemUsageGuard.isAllowedPlacedItem(
-            ExtendedItemIds.SEAL_OF_KEEPING
+            ExtendedItemIds.ATTUNEMENT_RELIC
         ));
         assertFalse(SanctuaryItemUsageGuard.isAllowedPlacedItem(
             ExtendedItemIds.CONSECRATED_KEYSTONE
+        ));
+        assertFalse(SanctuaryItemUsageGuard.isAllowedPlacedItem(
+            ExtendedItemIds.DIVINE_RELIC
         ));
     }
 

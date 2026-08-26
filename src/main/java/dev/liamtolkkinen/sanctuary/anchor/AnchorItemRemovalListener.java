@@ -4,6 +4,7 @@ import java.sql.SQLException;
 import java.util.Optional;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import org.bukkit.Bukkit;
 import org.bukkit.entity.Item;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -42,13 +43,25 @@ public final class AnchorItemRemovalListener implements Listener {
         }
 
         AnchorMetadata metadata = metadataResult.orElseThrow();
+        boolean tierFiveBeacon = anchorItemService.isSanctuaryBeacon(item.getItemStack())
+            && metadata.tier() >= 5;
+
         try {
             graphService.recordDestruction(metadata, destructionReason.orElseThrow())
-                .ifPresent(anchor -> logger.warning(
-                    "Sanctuary " + anchor.type().name().toLowerCase(java.util.Locale.ROOT)
-                        + " anchor " + anchor.id() + " was permanently destroyed: "
-                        + anchor.destructionReason().orElse("unknown")
-                ));
+                .ifPresent(anchor -> {
+                    logger.warning(
+                        "Sanctuary " + anchor.type().name().toLowerCase(java.util.Locale.ROOT)
+                            + " anchor " + anchor.id() + " was permanently destroyed: "
+                            + anchor.destructionReason().orElse("unknown")
+                    );
+                    if (tierFiveBeacon) {
+                        Bukkit.getPluginManager().callEvent(
+                            new TierFiveSanctuaryBeaconDestroyedEvent(
+                                metadata.ownerId().orElseThrow()
+                            )
+                        );
+                    }
+                });
         } catch (SQLException exception) {
             logger.log(
                 Level.SEVERE,

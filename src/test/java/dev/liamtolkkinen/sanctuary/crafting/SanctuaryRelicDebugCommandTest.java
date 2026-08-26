@@ -29,10 +29,18 @@ class SanctuaryRelicDebugCommandTest {
     void debugItemsContainEveryOfferingAndFinalRelic() {
         List<ItemStack> items = SanctuaryRelicDebugCommand.createTestItems();
         assertEquals(13, items.size());
+
         for (int index = 0; index < OfferingCatalog.all().size(); index++) {
-            assertTrue(ExtendedItems.is(items.get(index), OfferingCatalog.all().get(index).itemId()));
+            var ingredient = OfferingCatalog.all().get(index).ingredient();
+            ItemStack item = items.get(index);
+            if (ingredient.extendedItem() != null) {
+                assertTrue(ExtendedItems.is(item, ingredient.extendedItem()));
+            } else {
+                assertEquals(ingredient.material(), item.getType());
+            }
         }
-        assertEquals(Material.SHULKER_SHELL, items.get(8).getType());
+
+        assertEquals(Material.GOLDEN_APPLE, items.get(2).getType());
         assertTrue(ExtendedItems.is(items.getLast(), ExtendedItemIds.DIVINE_RELIC));
     }
 }

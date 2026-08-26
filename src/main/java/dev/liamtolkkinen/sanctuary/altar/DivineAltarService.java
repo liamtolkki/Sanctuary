@@ -123,7 +123,11 @@ public final class DivineAltarService implements Listener, AutoCloseable {
             event.getPlayer().sendMessage("The Divine Altar could not bind to that block.");
             return;
         }
-        tileState.getPersistentDataContainer().set(altarKey, PersistentDataType.BYTE, MARKER_VALUE);
+        tileState.getPersistentDataContainer().set(
+            altarKey,
+            PersistentDataType.BYTE,
+            MARKER_VALUE
+        );
         tileState.update(true, false);
         loadedAltars.add(BlockPosition.of(block));
     }
@@ -188,7 +192,10 @@ public final class DivineAltarService implements Listener, AutoCloseable {
         discoverAltars(event.getChunk());
     }
 
-    private void breakIfPistonMovesAltar(List<Block> blocks, java.util.function.Consumer<Boolean> cancel) {
+    private void breakIfPistonMovesAltar(
+        List<Block> blocks,
+        java.util.function.Consumer<Boolean> cancel
+    ) {
         for (Block block : blocks) {
             if (!isAltar(block)) {
                 continue;
@@ -228,7 +235,10 @@ public final class DivineAltarService implements Listener, AutoCloseable {
         if (!(state instanceof TileState tileState)) {
             return false;
         }
-        Byte marker = tileState.getPersistentDataContainer().get(altarKey, PersistentDataType.BYTE);
+        Byte marker = tileState.getPersistentDataContainer().get(
+            altarKey,
+            PersistentDataType.BYTE
+        );
         return marker != null && marker == MARKER_VALUE;
     }
 
@@ -237,7 +247,10 @@ public final class DivineAltarService implements Listener, AutoCloseable {
             if (!(state instanceof TileState tileState)) {
                 continue;
             }
-            Byte marker = tileState.getPersistentDataContainer().get(altarKey, PersistentDataType.BYTE);
+            Byte marker = tileState.getPersistentDataContainer().get(
+                altarKey,
+                PersistentDataType.BYTE
+            );
             if (marker != null && marker == MARKER_VALUE) {
                 loadedAltars.add(BlockPosition.of(state.getBlock()));
             }
@@ -247,7 +260,8 @@ public final class DivineAltarService implements Listener, AutoCloseable {
     private void spawnParticles() {
         for (BlockPosition position : List.copyOf(loadedAltars)) {
             World world = Bukkit.getWorld(position.worldId());
-            if (world == null || !world.isChunkLoaded(position.x() >> 4, position.z() >> 4)) {
+            if (world == null
+                || !world.isChunkLoaded(position.x() >> 4, position.z() >> 4)) {
                 continue;
             }
             Block block = world.getBlockAt(position.x(), position.y(), position.z());
@@ -269,7 +283,15 @@ public final class DivineAltarService implements Listener, AutoCloseable {
                     0.22,
                     Math.sin(current) * radius
                 );
-                world.spawnParticle(Particle.END_ROD, point, 1, 0.02, 0.04, 0.02, 0.005);
+                world.spawnParticle(
+                    Particle.END_ROD,
+                    point,
+                    1,
+                    0.02,
+                    0.04,
+                    0.02,
+                    0.005
+                );
             }
 
             if (world.getGameTime() % 20L == 0L) {
@@ -311,7 +333,7 @@ public final class DivineAltarService implements Listener, AutoCloseable {
                 click -> click.menu().open(new OfferingsMenu())
             ));
             menu.set(22, menuButton(
-                Material.NETHER_STAR,
+                Material.TOTEM_OF_UNDYING,
                 "<gold>Divine Favor",
                 "<gray>View your path to the Divine Relic",
                 click -> click.menu().open(new DivineFavorMenu())
@@ -328,12 +350,21 @@ public final class DivineAltarService implements Listener, AutoCloseable {
         @Override
         public void build(ExtendedMenuContext context, ExtendedMenuBuilder menu) {
             menu.fillBackground();
-            List<SanctuaryRecipeCatalog.RecipeDefinition> recipes = SanctuaryRecipeCatalog.allRecipes();
+            Player player = context.player();
+            List<SanctuaryRecipeCatalog.RecipeDefinition> recipes =
+                SanctuaryRecipeCatalog.allRecipes()
+                    .stream()
+                    .filter(recipe -> isRecipeUnlocked(player, recipe))
+                    .toList();
+
             for (int index = 0; index < recipes.size() && index < RECIPE_SLOTS.length; index++) {
                 var recipe = recipes.get(index);
-                menu.set(RECIPE_SLOTS[index], ExtendedButton.builder(() -> recipeResultIcon(recipe))
-                    .onClick(click -> click.menu().open(new RecipeDetailMenu(recipe)))
-                    .build());
+                menu.set(
+                    RECIPE_SLOTS[index],
+                    ExtendedButton.builder(() -> recipeResultIcon(recipe))
+                        .onClick(click -> click.menu().open(new RecipeDetailMenu(recipe)))
+                        .build()
+                );
             }
             menu.set(36, StandardButtons.back(context.theme()));
             menu.set(44, StandardButtons.close(context.theme()));
@@ -352,19 +383,41 @@ public final class DivineAltarService implements Listener, AutoCloseable {
         public void build(ExtendedMenuContext context, ExtendedMenuBuilder menu) {
             menu.fillBackground();
             Player player = context.player();
+            if (!isRecipeUnlocked(player, recipe)) {
+                menu.set(22, ExtendedButton.builder(() -> ExtendedItemBuilder.of(Material.BARRIER)
+                    .name("<red>Recipe Locked")
+                    .lore("<gray>Complete all twelve offerings to unlock this recipe.")
+                    .build()).enabled(false).build());
+                menu.set(36, StandardButtons.back(context.theme()));
+                menu.set(44, StandardButtons.close(context.theme()));
+                return;
+            }
+
             ItemStack[] displayed = recipeGrid(recipe);
             int[] gridSlots = AltarGuardCraftingMenus.craftingGridSlots();
             for (int i = 0; i < displayed.length; i++) {
                 if (displayed[i] != null) {
-                    menu.set(gridSlots[i], ExtendedButton.builder(displayed[i]).enabled(false).build());
+                    menu.set(
+                        gridSlots[i],
+                        ExtendedButton.builder(displayed[i]).enabled(false).build()
+                    );
                 }
             }
 
             boolean ready = hasAllIngredients(player, recipe);
-            menu.set(24, ExtendedButton.builder(() -> recipeStatusIcon(player, recipe, ready)).enabled(false).build());
-            ExtendedButton.Builder resultButton = ExtendedButton.builder(() -> craftResultIcon(recipe, ready));
+            menu.set(
+                24,
+                ExtendedButton.builder(() -> recipeStatusIcon(player, recipe, ready))
+                    .enabled(false)
+                    .build()
+            );
+            ExtendedButton.Builder resultButton = ExtendedButton.builder(
+                () -> craftResultIcon(recipe, ready)
+            );
             if (ready) {
-                resultButton.onClick(click -> craftAtAltar(click.player(), recipe, click.menu()));
+                resultButton.onClick(
+                    click -> craftAtAltar(click.player(), recipe, click.menu())
+                );
             } else {
                 resultButton.enabled(false);
             }
@@ -392,7 +445,9 @@ public final class DivineAltarService implements Listener, AutoCloseable {
                     () -> offeringIcon(offering, completed)
                 );
                 if (current) {
-                    button.onClick(click -> makeOffering(click.player(), offering, click.menu()));
+                    button.onClick(
+                        click -> makeOffering(click.player(), offering, click.menu())
+                    );
                 } else {
                     button.enabled(false);
                 }
@@ -402,15 +457,18 @@ public final class DivineAltarService implements Listener, AutoCloseable {
             String progress = completed >= 12
                 ? "<green>All twelve offerings are complete."
                 : "<gray>Completed: <light_purple>" + completed + "<gray> / 12";
-            menu.set(31, ExtendedButton.builder(() -> ExtendedItemBuilder.of(Material.EXPERIENCE_BOTTLE)
-                .name("<gold>Divine Favor")
-                .lore(
-                    progress,
-                    completed >= 12
-                        ? "<gold>The Divine Relic has been bestowed."
-                        : "<gray>Only the highlighted offering may be sacrificed."
-                )
-                .build()).enabled(false).build());
+            menu.set(
+                31,
+                ExtendedButton.builder(() -> ExtendedItemBuilder.of(Material.EXPERIENCE_BOTTLE)
+                    .name("<gold>Divine Favor")
+                    .lore(
+                        progress,
+                        completed >= 12
+                            ? "<gold>The Divine Relic recipe is permanently unlocked."
+                            : "<gray>Only the highlighted offering may be sacrificed."
+                    )
+                    .build()).enabled(false).build()
+            );
             menu.set(36, StandardButtons.back(context.theme()));
             menu.set(44, StandardButtons.close(context.theme()));
         }
@@ -424,17 +482,12 @@ public final class DivineAltarService implements Listener, AutoCloseable {
         @Override
         public void build(ExtendedMenuContext context, ExtendedMenuBuilder menu) {
             menu.fillBackground();
-            int completed = completedOfferings(context.player());
-            menu.set(13, ExtendedButton.builder(() -> ExtendedItemBuilder.of(Material.NETHER_STAR)
-                .name("<gold>Divine Relic")
-                .lore(
-                    "<gray>Sacred offerings: <light_purple>" + completed + "<gray> / 12",
-                    completed >= 12
-                        ? "<green>The ritual is complete."
-                        : "<gray>Complete every offering to earn the final artifact."
-                )
-                .glint(true)
-                .build()).enabled(false).build());
+            Player player = context.player();
+            int completed = completedOfferings(player);
+            boolean unlocked = divineRelicRecipeUnlocked(player);
+            menu.set(13, ExtendedButton.builder(() -> divineFavorIcon(completed, unlocked))
+                .enabled(false)
+                .build());
             menu.set(18, StandardButtons.back(context.theme()));
             menu.set(26, StandardButtons.close(context.theme()));
         }
@@ -471,7 +524,10 @@ public final class DivineAltarService implements Listener, AutoCloseable {
                     if (meta.lore() != null) {
                         lines.addAll(meta.lore());
                     }
-                    lines.add(Component.text(lore.replaceAll("<[^>]+>", ""), NamedTextColor.GRAY));
+                    lines.add(Component.text(
+                        lore.replaceAll("<[^>]+>", ""),
+                        NamedTextColor.GRAY
+                    ));
                     meta.lore(lines);
                 });
                 return item;
@@ -483,28 +539,50 @@ public final class DivineAltarService implements Listener, AutoCloseable {
     private ItemStack recipeResultIcon(SanctuaryRecipeCatalog.RecipeDefinition recipe) {
         ItemStack item = createCraftResult(recipe);
         item.editMeta(meta -> {
-            List<Component> lore = new ArrayList<>();
-            if (meta.lore() != null) {
-                lore.addAll(meta.lore());
-            }
+            List<Component> lore = mutableLore(meta.lore());
             lore.add(Component.text("Click to view recipe", NamedTextColor.AQUA));
             meta.lore(lore);
         });
         return item;
     }
 
-    private ItemStack craftResultIcon(SanctuaryRecipeCatalog.RecipeDefinition recipe, boolean ready) {
+    private ItemStack craftResultIcon(
+        SanctuaryRecipeCatalog.RecipeDefinition recipe,
+        boolean ready
+    ) {
         ItemStack item = createCraftResult(recipe);
         item.editMeta(meta -> {
-            List<Component> lore = new ArrayList<>();
-            if (meta.lore() != null) {
-                lore.addAll(meta.lore());
-            }
+            List<Component> lore = mutableLore(meta.lore());
             lore.add(Component.empty());
             lore.add(Component.text(
                 ready ? "Click to craft" : "Gather the missing ingredients to craft",
                 ready ? NamedTextColor.GREEN : NamedTextColor.GRAY
             ));
+            meta.lore(lore);
+        });
+        return item;
+    }
+
+    private ItemStack divineFavorIcon(int completed, boolean unlocked) {
+        ItemStack item = customItem(ExtendedItemIds.DIVINE_RELIC);
+        item.editMeta(meta -> {
+            List<Component> lore = mutableLore(meta.lore());
+            lore.add(Component.text(
+                "Sacred offerings: " + completed + " / 12",
+                NamedTextColor.LIGHT_PURPLE
+            ));
+            lore.add(Component.text(
+                unlocked
+                    ? "Divine Relic recipe permanently unlocked."
+                    : "Complete every offering to receive the first relic.",
+                unlocked ? NamedTextColor.GREEN : NamedTextColor.GRAY
+            ));
+            if (unlocked) {
+                lore.add(Component.text(
+                    "Future relics can be crafted in Sacred Arts.",
+                    NamedTextColor.GOLD
+                ));
+            }
             meta.lore(lore);
         });
         return item;
@@ -517,7 +595,9 @@ public final class DivineAltarService implements Listener, AutoCloseable {
                 for (int column = 0; column < 3; column++) {
                     char symbol = shaped.shape().get(row).charAt(column);
                     if (symbol != ' ') {
-                        grid[row * 3 + column] = ingredientIcon(shaped.ingredients().get(symbol));
+                        grid[row * 3 + column] = ingredientIcon(
+                            shaped.ingredients().get(symbol)
+                        );
                     }
                 }
             }
@@ -576,12 +656,9 @@ public final class DivineAltarService implements Listener, AutoCloseable {
     }
 
     private ItemStack offeringIcon(OfferingCatalog.Offering offering, int completed) {
-        ItemStack item = customItem(offering.itemId());
+        ItemStack item = ingredientIcon(offering.ingredient());
         item.editMeta(meta -> {
-            List<Component> lore = new ArrayList<>();
-            if (meta.lore() != null) {
-                lore.addAll(meta.lore());
-            }
+            List<Component> lore = mutableLore(meta.lore());
             lore.add(Component.text(
                 "Offering " + offering.number() + " of 12",
                 NamedTextColor.LIGHT_PURPLE
@@ -603,12 +680,7 @@ public final class DivineAltarService implements Listener, AutoCloseable {
     }
 
     private ItemStack customItem(ExtendedItemId id) {
-        ItemStack item = ExtendedItems.create(id);
-        if (id.equals(ExtendedItemIds.SEAL_OF_KEEPING) && item.getType() == Material.ENDER_CHEST) {
-            item.setType(Material.SHULKER_SHELL);
-            item.editMeta(meta -> meta.setEnchantmentGlintOverride(true));
-        }
-        return item;
+        return ExtendedItems.create(id);
     }
 
     private ItemStack createCraftResult(SanctuaryRecipeCatalog.RecipeDefinition recipe) {
@@ -623,6 +695,14 @@ public final class DivineAltarService implements Listener, AutoCloseable {
         SanctuaryRecipeCatalog.RecipeDefinition recipe,
         ExtendedMenuContext menu
     ) {
+        if (!isRecipeUnlocked(player, recipe)) {
+            player.sendMessage(Component.text(
+                "That Sacred Arts recipe is still locked.",
+                NamedTextColor.YELLOW
+            ));
+            menu.goBack();
+            return;
+        }
         if (!hasAllIngredients(player, recipe)) {
             player.sendMessage(Component.text(
                 "You no longer have every exact ingredient for that recipe.",
@@ -665,10 +745,11 @@ public final class DivineAltarService implements Listener, AutoCloseable {
             return;
         }
 
-        ItemStack sacrificed = takeExtendedItem(player.getInventory(), offering.itemId());
+        ItemStack sacrificed = takeIngredient(player.getInventory(), offering.ingredient());
         if (sacrificed == null) {
             player.sendMessage(Component.text(
-                "You need the exact " + pretty(offering.itemId().persistentId()) + " for this offering.",
+                "You need the exact " + displayName(offering.ingredient())
+                    + " for this offering.",
                 NamedTextColor.YELLOW
             ));
             return;
@@ -686,7 +767,11 @@ public final class DivineAltarService implements Listener, AutoCloseable {
             }
         } catch (SQLException exception) {
             giveOrDrop(player, sacrificed);
-            plugin.getLogger().log(Level.SEVERE, "Failed to save Divine Altar offering progress", exception);
+            plugin.getLogger().log(
+                Level.SEVERE,
+                "Failed to save Divine Altar offering progress",
+                exception
+            );
             player.sendMessage(Component.text(
                 "The altar could not preserve your offering. Nothing was consumed.",
                 NamedTextColor.RED
@@ -713,13 +798,38 @@ public final class DivineAltarService implements Listener, AutoCloseable {
         try {
             return offeringProgress.completedOfferings(player.getUniqueId());
         } catch (SQLException exception) {
-            plugin.getLogger().log(Level.SEVERE, "Failed to read Divine Altar offering progress", exception);
+            plugin.getLogger().log(
+                Level.SEVERE,
+                "Failed to read Divine Altar offering progress",
+                exception
+            );
             player.sendMessage(Component.text(
                 "The altar could not read your offering progress.",
                 NamedTextColor.RED
             ));
             return 0;
         }
+    }
+
+    private boolean divineRelicRecipeUnlocked(Player player) {
+        try {
+            return offeringProgress.divineRelicAwarded(player.getUniqueId());
+        } catch (SQLException exception) {
+            plugin.getLogger().log(
+                Level.SEVERE,
+                "Failed to read Divine Relic recipe unlock",
+                exception
+            );
+            return false;
+        }
+    }
+
+    private boolean isRecipeUnlocked(
+        Player player,
+        SanctuaryRecipeCatalog.RecipeDefinition recipe
+    ) {
+        return !recipe.result().equals(ExtendedItemIds.DIVINE_RELIC)
+            || divineRelicRecipeUnlocked(player);
     }
 
     private void awardPendingDivineRelic(Player player) {
@@ -729,40 +839,28 @@ public final class DivineAltarService implements Listener, AutoCloseable {
                 return;
             }
 
+            offeringProgress.markDivineRelicAwarded(player.getUniqueId());
             giveOrDrop(player, customItem(ExtendedItemIds.DIVINE_RELIC));
             advancementService.recordDivineRelicReceived(player);
-            offeringProgress.markDivineRelicAwarded(player.getUniqueId());
             player.sendMessage(Component.text(
                 "Divine favor answers your devotion. You have received the Divine Relic.",
                 NamedTextColor.GOLD
             ));
+            player.sendMessage(Component.text(
+                "The Divine Relic recipe is now permanently unlocked at every Divine Altar.",
+                NamedTextColor.LIGHT_PURPLE
+            ));
         } catch (SQLException exception) {
-            plugin.getLogger().log(Level.SEVERE, "Failed to finalize Divine Relic reward", exception);
+            plugin.getLogger().log(
+                Level.SEVERE,
+                "Failed to finalize Divine Relic reward",
+                exception
+            );
             player.sendMessage(Component.text(
                 "Your ritual is complete, but the altar could not finalize the reward. Reopen it to retry.",
                 NamedTextColor.RED
             ));
         }
-    }
-
-    private ItemStack takeExtendedItem(PlayerInventory inventory, ExtendedItemId id) {
-        ItemStack[] storage = inventory.getStorageContents();
-        for (int slot = 0; slot < storage.length; slot++) {
-            ItemStack candidate = storage[slot];
-            if (candidate == null || !ExtendedItems.is(candidate, id)) {
-                continue;
-            }
-            ItemStack taken = candidate.clone();
-            taken.setAmount(1);
-            if (candidate.getAmount() <= 1) {
-                inventory.setItem(slot, null);
-            } else {
-                candidate.setAmount(candidate.getAmount() - 1);
-                inventory.setItem(slot, candidate);
-            }
-            return taken;
-        }
-        return null;
     }
 
     private ItemStack takeIngredient(
@@ -789,7 +887,10 @@ public final class DivineAltarService implements Listener, AutoCloseable {
         return null;
     }
 
-    private boolean matchesIngredient(ItemStack item, SanctuaryRecipeCatalog.Ingredient ingredient) {
+    private boolean matchesIngredient(
+        ItemStack item,
+        SanctuaryRecipeCatalog.Ingredient ingredient
+    ) {
         if (item == null || item.getType().isAir()) {
             return false;
         }
@@ -813,7 +914,10 @@ public final class DivineAltarService implements Listener, AutoCloseable {
         }
     }
 
-    private boolean hasAllIngredients(Player player, SanctuaryRecipeCatalog.RecipeDefinition recipe) {
+    private boolean hasAllIngredients(
+        Player player,
+        SanctuaryRecipeCatalog.RecipeDefinition recipe
+    ) {
         Map<String, Integer> required = new LinkedHashMap<>();
         Map<String, SanctuaryRecipeCatalog.Ingredient> definitions = new LinkedHashMap<>();
         for (var ingredient : flattenedIngredients(recipe)) {
@@ -835,20 +939,25 @@ public final class DivineAltarService implements Listener, AutoCloseable {
         List<SanctuaryRecipeCatalog.Ingredient> result = new ArrayList<>();
         if (recipe instanceof SanctuaryRecipeCatalog.ShapedRecipeDefinition shaped) {
             for (String row : shaped.shape()) {
-                for (int i = 0; i < row.length(); i++) {
-                    char symbol = row.charAt(i);
+                for (int index = 0; index < row.length(); index++) {
+                    char symbol = row.charAt(index);
                     if (symbol != ' ') {
                         result.add(shaped.ingredients().get(symbol));
                     }
                 }
             }
         } else {
-            result.addAll(((SanctuaryRecipeCatalog.ShapelessRecipeDefinition) recipe).ingredients());
+            result.addAll(
+                ((SanctuaryRecipeCatalog.ShapelessRecipeDefinition) recipe).ingredients()
+            );
         }
         return result;
     }
 
-    private int countIngredient(Player player, SanctuaryRecipeCatalog.Ingredient ingredient) {
+    private int countIngredient(
+        Player player,
+        SanctuaryRecipeCatalog.Ingredient ingredient
+    ) {
         int count = 0;
         for (ItemStack item : player.getInventory().getStorageContents()) {
             if (item == null || item.getType().isAir()) {
@@ -858,7 +967,8 @@ public final class DivineAltarService implements Listener, AutoCloseable {
                 if (ExtendedItems.is(item, ingredient.extendedItem())) {
                     count += item.getAmount();
                 }
-            } else if (item.getType() == ingredient.material() && ExtendedItems.getId(item).isEmpty()) {
+            } else if (item.getType() == ingredient.material()
+                && ExtendedItems.getId(item).isEmpty()) {
                 count += item.getAmount();
             }
         }
@@ -889,9 +999,18 @@ public final class DivineAltarService implements Listener, AutoCloseable {
         return result.toString();
     }
 
+    private static List<Component> mutableLore(List<Component> existing) {
+        return existing == null ? new ArrayList<>() : new ArrayList<>(existing);
+    }
+
     private record BlockPosition(UUID worldId, int x, int y, int z) {
         private static BlockPosition of(Block block) {
-            return new BlockPosition(block.getWorld().getUID(), block.getX(), block.getY(), block.getZ());
+            return new BlockPosition(
+                block.getWorld().getUID(),
+                block.getX(),
+                block.getY(),
+                block.getZ()
+            );
         }
     }
 }

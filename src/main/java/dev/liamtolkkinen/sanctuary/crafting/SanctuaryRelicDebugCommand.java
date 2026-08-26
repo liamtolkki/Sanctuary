@@ -10,7 +10,6 @@ import java.util.Map;
 import java.util.Objects;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
-import org.bukkit.Material;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
@@ -44,7 +43,8 @@ public final class SanctuaryRelicDebugCommand implements CommandExecutor {
         if (args.length == 0) {
             if (!(sender instanceof Player player)) {
                 sender.sendMessage(
-                    ChatColor.RED + "Console must specify a target player: /sanctuarydebugrelics <player>"
+                    ChatColor.RED
+                        + "Console must specify a target player: /sanctuarydebugrelics <player>"
                 );
                 return true;
             }
@@ -73,7 +73,7 @@ public final class SanctuaryRelicDebugCommand implements CommandExecutor {
         );
         if (!target.equals(sender)) {
             target.sendMessage(
-                ChatColor.GOLD + "You received all Sanctuary offering relics for testing."
+                ChatColor.GOLD + "You received all Sanctuary offering items for testing."
             );
         }
         return true;
@@ -82,18 +82,19 @@ public final class SanctuaryRelicDebugCommand implements CommandExecutor {
     static List<ItemStack> createTestItems() {
         List<ItemStack> items = new ArrayList<>();
         for (var offering : OfferingCatalog.all()) {
-            items.add(createCompatibleItem(offering.itemId()));
+            items.add(createIngredientItem(offering.ingredient()));
         }
-        items.add(createCompatibleItem(ExtendedItemIds.DIVINE_RELIC));
+        items.add(ExtendedItems.create(ExtendedItemIds.DIVINE_RELIC));
         return List.copyOf(items);
     }
 
-    private static ItemStack createCompatibleItem(ExtendedItemId id) {
-        ItemStack item = ExtendedItems.create(id);
-        if (id.equals(ExtendedItemIds.SEAL_OF_KEEPING) && item.getType() == Material.ENDER_CHEST) {
-            item.setType(Material.SHULKER_SHELL);
-            item.editMeta(meta -> meta.setEnchantmentGlintOverride(true));
-        }
-        return item;
+    private static ItemStack createIngredientItem(SanctuaryRecipeCatalog.Ingredient ingredient) {
+        return ingredient.extendedItem() != null
+            ? createExtendedItem(ingredient.extendedItem())
+            : new ItemStack(ingredient.material());
+    }
+
+    private static ItemStack createExtendedItem(ExtendedItemId id) {
+        return ExtendedItems.create(id);
     }
 }

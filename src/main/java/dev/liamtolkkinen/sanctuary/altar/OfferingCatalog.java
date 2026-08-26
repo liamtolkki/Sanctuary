@@ -1,18 +1,23 @@
 package dev.liamtolkkinen.sanctuary.altar;
 
-import dev.liamtolkkinen.extendeditems.ExtendedItemId;
 import dev.liamtolkkinen.extendeditems.ExtendedItemIds;
+import dev.liamtolkkinen.sanctuary.crafting.SanctuaryRecipeCatalog;
 import java.util.List;
 import java.util.Objects;
+import org.bukkit.Material;
 
 /** Ordered Divine Altar offering progression and XP rewards. */
 public final class OfferingCatalog {
-    public record Offering(int number, ExtendedItemId itemId, int experiencePoints) {
+    public record Offering(
+        int number,
+        SanctuaryRecipeCatalog.Ingredient ingredient,
+        int experiencePoints
+    ) {
         public Offering {
             if (number < 1 || number > 12) {
                 throw new IllegalArgumentException("Offering number must be between 1 and 12");
             }
-            Objects.requireNonNull(itemId, "itemId");
+            Objects.requireNonNull(ingredient, "ingredient");
             if (experiencePoints < 1) {
                 throw new IllegalArgumentException("Offering experience must be positive");
             }
@@ -20,18 +25,18 @@ public final class OfferingCatalog {
     }
 
     private static final List<Offering> OFFERINGS = List.of(
-        new Offering(1, ExtendedItemIds.CONSECRATED_SHARD_FRAGMENT, 25),
-        new Offering(2, ExtendedItemIds.CONSECRATED_SHARD, 50),
-        new Offering(3, ExtendedItemIds.WATCHERS_EYE, 75),
-        new Offering(4, ExtendedItemIds.WARD_STONE, 100),
-        new Offering(5, ExtendedItemIds.BLAST_WARD, 125),
-        new Offering(6, ExtendedItemIds.GUARDIAN_TOKEN, 150),
-        new Offering(7, ExtendedItemIds.PURIFICATION_RELIC, 175),
-        new Offering(8, ExtendedItemIds.TERRITORY_KEYSTONE, 200),
-        new Offering(9, ExtendedItemIds.SEAL_OF_KEEPING, 225),
-        new Offering(10, ExtendedItemIds.SENTINEL_SEAL, 250),
-        new Offering(11, ExtendedItemIds.SANCTUARY_CORE, 275),
-        new Offering(12, ExtendedItemIds.CONSECRATED_KEYSTONE, 300)
+        extended(1, ExtendedItemIds.CONSECRATED_SHARD_FRAGMENT, 25),
+        extended(2, ExtendedItemIds.CONSECRATED_SHARD, 50),
+        material(3, Material.GOLDEN_APPLE, 75),
+        material(4, Material.GHAST_TEAR, 100),
+        extended(5, ExtendedItemIds.WATCHERS_EYE, 125),
+        extended(6, ExtendedItemIds.ATTUNEMENT_RELIC, 150),
+        material(7, Material.END_CRYSTAL, 175),
+        extended(8, ExtendedItemIds.SANCTUARY_CORE, 200),
+        extended(9, ExtendedItemIds.TERRITORY_KEYSTONE, 225),
+        material(10, Material.TOTEM_OF_UNDYING, 250),
+        material(11, Material.NETHER_STAR, 275),
+        extended(12, ExtendedItemIds.CONSECRATED_KEYSTONE, 300)
     );
 
     private OfferingCatalog() {
@@ -46,5 +51,25 @@ public final class OfferingCatalog {
             throw new IllegalArgumentException("Offering number must be between 1 and 12");
         }
         return OFFERINGS.get(number - 1);
+    }
+
+    private static Offering extended(
+        int number,
+        dev.liamtolkkinen.extendeditems.ExtendedItemId itemId,
+        int experiencePoints
+    ) {
+        return new Offering(
+            number,
+            SanctuaryRecipeCatalog.Ingredient.extended(itemId),
+            experiencePoints
+        );
+    }
+
+    private static Offering material(int number, Material material, int experiencePoints) {
+        return new Offering(
+            number,
+            SanctuaryRecipeCatalog.Ingredient.material(material),
+            experiencePoints
+        );
     }
 }

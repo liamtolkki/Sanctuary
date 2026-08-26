@@ -7,6 +7,7 @@ import dev.liamtolkkinen.extendeditems.ExtendedItemIds;
 public final class AnchorTierProgression {
     public static final int MIN_TIER = 1;
     public static final int MAX_TIER = 5;
+    public static final double DEFAULT_STARTING_RADIUS = 20.0;
 
     private AnchorTierProgression() {
     }
@@ -15,8 +16,15 @@ public final class AnchorTierProgression {
         if (!Double.isFinite(maximumRadius) || maximumRadius <= 0.0) {
             throw new IllegalArgumentException("maximumRadius must be finite and greater than zero");
         }
+        if (maximumRadius < DEFAULT_STARTING_RADIUS) {
+            throw new IllegalArgumentException(
+                "maximumRadius must be at least the Tier I starting radius"
+            );
+        }
         validateTier(tier);
-        return (maximumRadius / MAX_TIER) * tier;
+
+        double increment = (maximumRadius - DEFAULT_STARTING_RADIUS) / (MAX_TIER - MIN_TIER);
+        return DEFAULT_STARTING_RADIUS + (increment * (tier - MIN_TIER));
     }
 
     public static ExtendedItemId requiredUpgradeItem(int currentTier) {

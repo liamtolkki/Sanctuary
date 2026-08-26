@@ -27,49 +27,49 @@ class SanctuaryRecipeValidatorTest {
     }
 
     @Test
-    void consecratedShardRequiresCraftingTable() {
+    void consecratedShardFitsPlayerTwoByTwoCraftingGrid() {
         var recipe = shaped(ExtendedItemIds.CONSECRATED_SHARD);
-        ItemStack[] matrix = new ItemStack[4];
-        for (int slot = 0; slot < matrix.length; slot++) {
-            matrix[slot] = ExtendedItems.create(
-                ExtendedItemIds.CONSECRATED_SHARD_FRAGMENT
-            );
-        }
+        ItemStack[] matrix = fragmentSquare(4);
 
+        assertTrue(validator.matches(recipe, matrix));
+
+        matrix[3] = null;
         assertFalse(validator.matches(recipe, matrix));
     }
 
     @Test
-    void consecratedShardUsesFullThreeByThreePatternInCraftingTable() {
+    void consecratedShardAlsoWorksInCraftingTableAtAnyValidOffset() {
         var recipe = shaped(ExtendedItemIds.CONSECRATED_SHARD);
-        ItemStack[] matrix = new ItemStack[9];
-        for (int slot = 0; slot < matrix.length; slot++) {
-            matrix[slot] = ExtendedItems.create(
-                ExtendedItemIds.CONSECRATED_SHARD_FRAGMENT
-            );
-        }
-        assertTrue(validator.matches(recipe, matrix));
 
-        ItemStack[] missingOne = matrix.clone();
-        missingOne[8] = null;
-        assertFalse(validator.matches(recipe, missingOne));
+        ItemStack[] topLeft = new ItemStack[9];
+        topLeft[0] = fragment();
+        topLeft[1] = fragment();
+        topLeft[3] = fragment();
+        topLeft[4] = fragment();
+        assertTrue(validator.matches(recipe, topLeft));
+
+        ItemStack[] bottomRight = new ItemStack[9];
+        bottomRight[4] = fragment();
+        bottomRight[5] = fragment();
+        bottomRight[7] = fragment();
+        bottomRight[8] = fragment();
+        assertTrue(validator.matches(recipe, bottomRight));
+
+        bottomRight[8] = null;
+        assertFalse(validator.matches(recipe, bottomRight));
     }
 
     @Test
-    void vanillaAmethystShardsCannotImpersonateConsecratedFragments() {
+    void vanillaSmallAmethystBudsCannotImpersonateConsecratedFragments() {
         var recipe = shaped(ExtendedItemIds.CONSECRATED_SHARD);
-        ItemStack[] valid = new ItemStack[9];
-        for (int slot = 0; slot < valid.length; slot++) {
-            valid[slot] = ExtendedItems.create(
-                ExtendedItemIds.CONSECRATED_SHARD_FRAGMENT
-            );
-        }
-        assertTrue(validator.matches(recipe, valid));
+        assertTrue(validator.matches(recipe, fragmentSquare(4)));
 
-        ItemStack[] vanilla = new ItemStack[9];
-        for (int slot = 0; slot < vanilla.length; slot++) {
-            vanilla[slot] = new ItemStack(Material.AMETHYST_SHARD);
-        }
+        ItemStack[] vanilla = new ItemStack[] {
+            new ItemStack(Material.SMALL_AMETHYST_BUD),
+            new ItemStack(Material.SMALL_AMETHYST_BUD),
+            new ItemStack(Material.SMALL_AMETHYST_BUD),
+            new ItemStack(Material.SMALL_AMETHYST_BUD)
+        };
         assertFalse(validator.matches(recipe, vanilla));
     }
 
@@ -98,7 +98,7 @@ class SanctuaryRecipeValidatorTest {
         var matrix = matrixFor(recipe);
         assertTrue(validator.matches(recipe, matrix));
 
-        matrix[4] = new ItemStack(Material.NETHER_STAR);
+        matrix[4] = new ItemStack(Material.END_CRYSTAL);
         assertFalse(validator.matches(recipe, matrix));
     }
 
@@ -108,7 +108,7 @@ class SanctuaryRecipeValidatorTest {
         var matrix = matrixFor(recipe);
         assertTrue(validator.matches(recipe, matrix));
 
-        matrix[4] = new ItemStack(Material.NETHER_STAR);
+        matrix[4] = new ItemStack(Material.END_CRYSTAL);
         assertFalse(validator.matches(recipe, matrix));
 
         matrix = matrixFor(recipe);
@@ -124,6 +124,18 @@ class SanctuaryRecipeValidatorTest {
 
         matrix[4] = ExtendedItems.create(ExtendedItemIds.DIVINE_ALTAR);
         assertFalse(validator.matches(recipe, matrix));
+    }
+
+    private static ItemStack[] fragmentSquare(int size) {
+        ItemStack[] matrix = new ItemStack[size];
+        for (int slot = 0; slot < matrix.length; slot++) {
+            matrix[slot] = fragment();
+        }
+        return matrix;
+    }
+
+    private static ItemStack fragment() {
+        return ExtendedItems.create(ExtendedItemIds.CONSECRATED_SHARD_FRAGMENT);
     }
 
     private static ItemStack[] matrixFor(

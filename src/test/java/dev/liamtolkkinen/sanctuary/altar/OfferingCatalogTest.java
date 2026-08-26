@@ -20,10 +20,10 @@ class OfferingCatalogTest {
             assertTrue(offering.experiencePoints() > previousXp);
             previousXp = offering.experiencePoints();
         }
-        assertEquals(25, offerings.getFirst().experiencePoints());
-        assertEquals(300, offerings.getLast().experiencePoints());
+        assertEquals(250, offerings.getFirst().experiencePoints());
+        assertEquals(3000, offerings.getLast().experiencePoints());
         assertEquals(
-            1950,
+            19500,
             offerings.stream().mapToInt(OfferingCatalog.Offering::experiencePoints).sum()
         );
     }

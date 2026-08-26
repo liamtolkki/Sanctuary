@@ -3,10 +3,15 @@ package dev.liamtolkkinen.sanctuary.advancement;
 import dev.liamtolkkinen.extendeditems.ExtendedItemId;
 import dev.liamtolkkinen.extendeditems.ExtendedItemIds;
 import dev.liamtolkkinen.extendeditems.ExtendedItems;
+import dev.liamtolkkinen.sanctuary.anchor.AnchorItemService;
+import dev.liamtolkkinen.sanctuary.anchor.SanctuaryExtendedEvent;
+import dev.liamtolkkinen.sanctuary.anchor.TierFiveSanctuaryBeaconDestroyedEvent;
 import dev.liamtolkkinen.sanctuary.crafting.SanctuaryRecipeCatalog;
 import dev.liamtolkkinen.sanctuary.sentry.SentryRecipeCatalog;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
 import org.bukkit.Bukkit;
 import org.bukkit.Keyed;
 import org.bukkit.NamespacedKey;
@@ -28,19 +33,35 @@ import org.bukkit.plugin.java.JavaPlugin;
 
 public final class SanctuaryAdvancementService implements Listener {
     private static final String ROOT_BACKGROUND="minecraft:gui/advancements/backgrounds/stone";
-    private final JavaPlugin plugin; private final String namespace;
-    public SanctuaryAdvancementService(JavaPlugin plugin){this.plugin=Objects.requireNonNull(plugin,"plugin");this.namespace=plugin.getName().toLowerCase(Locale.ROOT);}
+    private final JavaPlugin plugin;
+    private final String namespace;
+    private final AnchorItemService anchorItemService;
+    private final Set<ExtendedItemId> companionIds;
+
+    public SanctuaryAdvancementService(JavaPlugin plugin){
+        this.plugin=Objects.requireNonNull(plugin,"plugin");
+        this.namespace=plugin.getName().toLowerCase(Locale.ROOT);
+        this.anchorItemService=new AnchorItemService(plugin);
+        this.companionIds=SentryRecipeCatalog.companionRecipes().stream()
+            .map(SentryRecipeCatalog.CompanionRecipe::result)
+            .collect(Collectors.toUnmodifiableSet());
+    }
+
     public void start(){registerAdvancements();plugin.getServer().getPluginManager().registerEvents(this,plugin);for(Player player:plugin.getServer().getOnlinePlayers())refreshPossessionMilestones(player);}
     public void recordOfferingProgress(Player player,int completedOfferings){Objects.requireNonNull(player,"player");if(completedOfferings<0||completedOfferings>12)throw new IllegalArgumentException("completedOfferings must be between 0 and 12");if(completedOfferings>=1)grantCompleted(player,SanctuaryAdvancementCatalog.FIRST_OFFERING);if(completedOfferings>=6)grantCompleted(player,SanctuaryAdvancementCatalog.HALF_OFFERINGS);if(completedOfferings>=12)grantCompleted(player,SanctuaryAdvancementCatalog.ALL_OFFERINGS);}
     public void recordDivineRelicReceived(Player player){Objects.requireNonNull(player,"player");grantCompleted(player,SanctuaryAdvancementCatalog.DIVINE_RELIC);}
     public void recordSentryCraft(Player player){Objects.requireNonNull(player,"player");grantCompleted(player,SanctuaryAdvancementCatalog.FIRST_SENTRY);}
+    public void recordCompanionObtained(Player player,ExtendedItemId companionId){Objects.requireNonNull(player,"player");Objects.requireNonNull(companionId,"companionId");if(!companionIds.contains(companionId))return;grantCompleted(player,SanctuaryAdvancementCatalog.FIRST_COMPANION);if(companionId.equals(ExtendedItemIds.COMPANION_WARDEN))grantCompleted(player,SanctuaryAdvancementCatalog.WARDEN_COMPANION);if(companionId.equals(ExtendedItemIds.COMPANION_WITHER))grantCompleted(player,SanctuaryAdvancementCatalog.WITHER_COMPANION);}
+    public void recordTierFiveAnchor(Player player){Objects.requireNonNull(player,"player");grantCompleted(player,SanctuaryAdvancementCatalog.TIER_FIVE_ANCHOR);}
 
     @EventHandler(priority=EventPriority.MONITOR,ignoreCancelled=true) public void onCraft(CraftItemEvent event){if(!(event.getWhoClicked() instanceof Player player))return;String recipeKey=recipeKey(event.getRecipe());if(recipeKey==null)return;SanctuaryRecipeCatalog.findByKey(recipeKey).ifPresent(definition->recordSanctuaryCraft(player,definition.result()));if(SentryRecipeCatalog.sentryConversions().stream().anyMatch(conversion->conversion.key().equals(recipeKey)))recordSentryCraft(player);}
-    @EventHandler(priority=EventPriority.MONITOR,ignoreCancelled=true) public void onBlockPlace(BlockPlaceEvent event){if(ExtendedItems.is(event.getItemInHand(),ExtendedItemIds.SANCTUARY_BEACON))grantCompleted(event.getPlayer(),SanctuaryAdvancementCatalog.SANCTUARY_BEACON);}
+    @EventHandler(priority=EventPriority.MONITOR,ignoreCancelled=true) public void onBlockPlace(BlockPlaceEvent event){if(ExtendedItems.is(event.getItemInHand(),ExtendedItemIds.SANCTUARY_BEACON))grantCompleted(event.getPlayer(),SanctuaryAdvancementCatalog.SANCTUARY_BEACON);anchorItemService.readAnchor(event.getItemInHand()).filter(metadata->metadata.tier()>=5).ifPresent(metadata->recordTierFiveAnchor(event.getPlayer()));}
     @EventHandler(priority=EventPriority.MONITOR,ignoreCancelled=true) public void onItemPickup(EntityPickupItemEvent event){if(event.getEntity() instanceof Player player)observePossession(player,event.getItem().getItemStack());}
     @EventHandler(priority=EventPriority.MONITOR) public void onPlayerJoin(PlayerJoinEvent event){scheduleRefresh(event.getPlayer());}
     @EventHandler(priority=EventPriority.MONITOR,ignoreCancelled=true) public void onInventoryClick(InventoryClickEvent event){if(event.getWhoClicked() instanceof Player player)scheduleRefresh(player);}
     @EventHandler(priority=EventPriority.MONITOR,ignoreCancelled=true) public void onInventoryDrag(InventoryDragEvent event){if(event.getWhoClicked() instanceof Player player)scheduleRefresh(player);}
+    @EventHandler(priority=EventPriority.MONITOR) public void onSanctuaryExtended(SanctuaryExtendedEvent event){grantCompleted(event.player(),SanctuaryAdvancementCatalog.SANCTUARY_EXTENDED);}
+    @EventHandler(priority=EventPriority.MONITOR) public void onTierFiveBeaconDestroyed(TierFiveSanctuaryBeaconDestroyedEvent event){Player player=Bukkit.getPlayer(event.ownerId());if(player!=null&&player.isOnline())grantCompleted(player,SanctuaryAdvancementCatalog.WHAT_A_WASTE);}
 
     public void recordSanctuaryCraft(Player player,ExtendedItemId result){
         if(result.equals(ExtendedItemIds.CONSECRATED_SHARD)){grantCompleted(player,SanctuaryAdvancementCatalog.FIRST_FRAGMENT);grantCompleted(player,SanctuaryAdvancementCatalog.FIRST_SHARD);return;}
@@ -49,8 +70,18 @@ public final class SanctuaryAdvancementService implements Listener {
         if(result.equals(ExtendedItemIds.SANCTUARY_CONDUIT)){grantCompleted(player,SanctuaryAdvancementCatalog.SANCTUARY_CONDUIT);return;}
         SanctuaryAdvancementCatalog.masterArtifactCriterion(result).ifPresent(criterion->{grantCompleted(player,SanctuaryAdvancementCatalog.FIRST_ARTIFACT);grantCriterion(player,SanctuaryAdvancementCatalog.MASTER_ARTIFICER,criterion);});
     }
+
     private void refreshPossessionMilestones(Player player){for(ItemStack item:player.getInventory().getContents())observePossession(player,item);}
-    private void observePossession(Player player,ItemStack item){if(item==null||item.getType().isAir())return;if(ExtendedItems.is(item,ExtendedItemIds.CONSECRATED_SHARD_FRAGMENT))grantCompleted(player,SanctuaryAdvancementCatalog.FIRST_FRAGMENT);if(ExtendedItems.is(item,ExtendedItemIds.SANCTUARY_BEACON))grantCompleted(player,SanctuaryAdvancementCatalog.SANCTUARY_BEACON);if(ExtendedItems.is(item,ExtendedItemIds.DIVINE_RELIC))grantCompleted(player,SanctuaryAdvancementCatalog.DIVINE_RELIC);}
+
+    private void observePossession(Player player,ItemStack item){
+        if(item==null||item.getType().isAir())return;
+        if(ExtendedItems.is(item,ExtendedItemIds.CONSECRATED_SHARD_FRAGMENT))grantCompleted(player,SanctuaryAdvancementCatalog.FIRST_FRAGMENT);
+        if(ExtendedItems.is(item,ExtendedItemIds.SANCTUARY_BEACON))grantCompleted(player,SanctuaryAdvancementCatalog.SANCTUARY_BEACON);
+        if(ExtendedItems.is(item,ExtendedItemIds.DIVINE_RELIC))grantCompleted(player,SanctuaryAdvancementCatalog.DIVINE_RELIC);
+        ExtendedItems.getId(item).ifPresent(id->recordCompanionObtained(player,id));
+        anchorItemService.readAnchor(item).filter(metadata->metadata.tier()>=5).ifPresent(metadata->recordTierFiveAnchor(player));
+    }
+
     private void scheduleRefresh(Player player){plugin.getServer().getScheduler().runTask(plugin,()->{if(player.isOnline())refreshPossessionMilestones(player);});}
     private String recipeKey(Recipe recipe){if(!(recipe instanceof Keyed keyed))return null;NamespacedKey key=keyed.getKey();return key.getNamespace().equals(namespace)?key.getKey():null;}
     private void grantCompleted(Player player,String advancementKey){var definition=SanctuaryAdvancementCatalog.find(advancementKey).orElseThrow();for(String criterion:definition.criteria())grantCriterion(player,advancementKey,criterion);}

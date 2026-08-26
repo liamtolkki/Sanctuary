@@ -8,11 +8,11 @@ import org.junit.jupiter.api.Test;
 
 class AnchorTierProgressionTest {
     @Test
-    void defaultMaximumRadiusProducesFiveEqualTierSegments() {
-        assertEquals(19.2, AnchorTierProgression.radiusForTier(96.0, 1), 0.000001);
-        assertEquals(38.4, AnchorTierProgression.radiusForTier(96.0, 2), 0.000001);
-        assertEquals(57.6, AnchorTierProgression.radiusForTier(96.0, 3), 0.000001);
-        assertEquals(76.8, AnchorTierProgression.radiusForTier(96.0, 4), 0.000001);
+    void defaultMaximumRadiusProducesWholeNumberTierProgression() {
+        assertEquals(20.0, AnchorTierProgression.radiusForTier(96.0, 1), 0.000001);
+        assertEquals(39.0, AnchorTierProgression.radiusForTier(96.0, 2), 0.000001);
+        assertEquals(58.0, AnchorTierProgression.radiusForTier(96.0, 3), 0.000001);
+        assertEquals(77.0, AnchorTierProgression.radiusForTier(96.0, 4), 0.000001);
         assertEquals(96.0, AnchorTierProgression.radiusForTier(96.0, 5), 0.000001);
     }
 

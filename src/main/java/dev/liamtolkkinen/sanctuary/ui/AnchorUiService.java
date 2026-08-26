@@ -27,6 +27,8 @@ import java.util.logging.Level;
 import org.bukkit.ChatColor;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.Damageable;
 
 public final class AnchorUiService {
     private final SanctuaryPlugin plugin;
@@ -190,8 +192,8 @@ public final class AnchorUiService {
         }
 
         int currentLevel = level;
-        return button(
-            effectMaterial(effect),
+        return effectIconButton(
+            effect,
             (effect.target() == AnchorEffect.Target.SAFE ? "<green>" : "<red>")
                 + effectDisplayName(effect),
             lore,
@@ -222,6 +224,34 @@ public final class AnchorUiService {
         } catch (SQLException | IllegalArgumentException | IllegalStateException exception) {
             player.sendMessage(ChatColor.RED + exception.getMessage());
         }
+    }
+
+    private static ExtendedButton effectIconButton(
+        AnchorEffect effect,
+        String name,
+        List<String> lore,
+        Consumer<dev.liamtolkkinen.extendedui.ExtendedClickContext> onClick
+    ) {
+        ExtendedItemProvider provider = () -> {
+            ExtendedItemBuilder builder = ExtendedItemBuilder.of(effectMaterial(effect)).name(name);
+            if (!lore.isEmpty()) {
+                builder.lore(lore.toArray(String[]::new));
+            }
+            ItemStack item = builder.build();
+            if (effect == AnchorEffect.ELYTRA_DISABLED) {
+                item.editMeta(meta -> {
+                    if (meta instanceof Damageable damageable) {
+                        damageable.setDamage(Material.ELYTRA.getMaxDurability() - 1);
+                    }
+                });
+            }
+            return item;
+        };
+        ExtendedButton.Builder button = ExtendedButton.builder(provider);
+        if (onClick != null) {
+            button.onClick(onClick);
+        }
+        return button.build();
     }
 
     private static ExtendedButton button(

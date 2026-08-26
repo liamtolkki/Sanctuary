@@ -92,14 +92,15 @@ public final class AnchorPlacementListener implements Listener {
                     event.getPlayer().hasPermission("sanctuary.admin")
                 );
             } else {
+                double maximumRadius = maximumTerritoryRadius.getAsDouble();
                 outcome = graphService.placeNew(
                     blockMetadata,
                     type,
                     event.getPlayer().getUniqueId(),
                     event.getPlayer().getName(),
                     position,
-                    initialTerritoryRadius.getAsDouble(),
-                    maximumTerritoryRadius.getAsDouble(),
+                    AnchorTierProgression.radiusForTier(maximumRadius, metadata.tier()),
+                    maximumRadius,
                     spacingMargin.getAsDouble()
                 );
             }

@@ -70,8 +70,6 @@ public final class AnchorPlacementListener implements Listener {
         try {
             boolean registeredAnchor = graphService.isRegisteredAnchor(metadata.anchorId());
 
-            // Anchor ownership follows placement, not item provenance. The physical anchor keeps
-            // its identity and upgrades, while the placer determines the Sanctuary it joins.
             AnchorMetadata blockMetadata = new AnchorMetadata(
                 metadata.anchorId(),
                 Optional.of(event.getPlayer().getUniqueId()),
@@ -79,8 +77,6 @@ public final class AnchorPlacementListener implements Listener {
                 metadata.generation()
             );
 
-            // Persist block identity before the graph mutation. If this fails, the database is
-            // untouched and Bukkit can safely roll the placement back.
             anchorItemService.writeBlockMetadata(tileState, blockMetadata);
 
             AnchorPlacementOutcome outcome;
@@ -114,6 +110,9 @@ public final class AnchorPlacementListener implements Listener {
                     ChatColor.AQUA + anchorName + ChatColor.GREEN + " joined "
                         + outcome.sanctuary().name() + ChatColor.GRAY
                         + " as a Sanctuary extender."
+                );
+                Bukkit.getPluginManager().callEvent(
+                    new SanctuaryExtendedEvent(event.getPlayer(), outcome.sanctuary())
                 );
             } else {
                 event.getPlayer().sendMessage(

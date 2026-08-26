@@ -6,7 +6,7 @@ names:
   maximum-length: 32
 
 anchors:
-  initial-territory-radius: 18.0
+  initial-territory-radius: 19.2
   recovery:
     enabled: true
     cooldown-seconds: 300

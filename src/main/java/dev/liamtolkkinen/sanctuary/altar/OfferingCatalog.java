@@ -25,18 +25,18 @@ public final class OfferingCatalog {
     }
 
     private static final List<Offering> OFFERINGS = List.of(
-        extended(1, ExtendedItemIds.CONSECRATED_SHARD_FRAGMENT, 25),
-        extended(2, ExtendedItemIds.CONSECRATED_SHARD, 50),
-        material(3, Material.GOLDEN_APPLE, 75),
-        material(4, Material.GHAST_TEAR, 100),
-        extended(5, ExtendedItemIds.WATCHERS_EYE, 125),
-        extended(6, ExtendedItemIds.ATTUNEMENT_RELIC, 150),
-        material(7, Material.END_CRYSTAL, 175),
-        extended(8, ExtendedItemIds.SANCTUARY_CORE, 200),
-        extended(9, ExtendedItemIds.TERRITORY_KEYSTONE, 225),
-        material(10, Material.TOTEM_OF_UNDYING, 250),
-        material(11, Material.NETHER_STAR, 275),
-        extended(12, ExtendedItemIds.CONSECRATED_KEYSTONE, 300)
+        extended(1, ExtendedItemIds.CONSECRATED_SHARD_FRAGMENT, 250),
+        extended(2, ExtendedItemIds.CONSECRATED_SHARD, 500),
+        material(3, Material.GOLDEN_APPLE, 750),
+        material(4, Material.GHAST_TEAR, 1000),
+        extended(5, ExtendedItemIds.WATCHERS_EYE, 1250),
+        extended(6, ExtendedItemIds.ATTUNEMENT_RELIC, 1500),
+        material(7, Material.END_CRYSTAL, 1750),
+        extended(8, ExtendedItemIds.SANCTUARY_CORE, 2000),
+        extended(9, ExtendedItemIds.TERRITORY_KEYSTONE, 2250),
+        material(10, Material.TOTEM_OF_UNDYING, 2500),
+        material(11, Material.NETHER_STAR, 2750),
+        extended(12, ExtendedItemIds.CONSECRATED_KEYSTONE, 3000)
     );
 
     private OfferingCatalog() {

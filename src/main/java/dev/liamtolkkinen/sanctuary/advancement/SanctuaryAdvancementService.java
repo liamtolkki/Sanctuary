@@ -4,6 +4,7 @@ import dev.liamtolkkinen.extendeditems.ExtendedItemId;
 import dev.liamtolkkinen.extendeditems.ExtendedItemIds;
 import dev.liamtolkkinen.extendeditems.ExtendedItems;
 import dev.liamtolkkinen.sanctuary.anchor.AnchorItemService;
+import dev.liamtolkkinen.sanctuary.anchor.AnchorTierUpgradedEvent;
 import dev.liamtolkkinen.sanctuary.anchor.SanctuaryExtendedEvent;
 import dev.liamtolkkinen.sanctuary.anchor.TierFiveSanctuaryBeaconDestroyedEvent;
 import dev.liamtolkkinen.sanctuary.crafting.SanctuaryRecipeCatalog;
@@ -61,6 +62,7 @@ public final class SanctuaryAdvancementService implements Listener {
     @EventHandler(priority=EventPriority.MONITOR,ignoreCancelled=true) public void onInventoryClick(InventoryClickEvent event){if(event.getWhoClicked() instanceof Player player)scheduleRefresh(player);}
     @EventHandler(priority=EventPriority.MONITOR,ignoreCancelled=true) public void onInventoryDrag(InventoryDragEvent event){if(event.getWhoClicked() instanceof Player player)scheduleRefresh(player);}
     @EventHandler(priority=EventPriority.MONITOR) public void onSanctuaryExtended(SanctuaryExtendedEvent event){grantCompleted(event.player(),SanctuaryAdvancementCatalog.SANCTUARY_EXTENDED);}
+    @EventHandler(priority=EventPriority.MONITOR) public void onAnchorTierUpgraded(AnchorTierUpgradedEvent event){if(event.anchor().tier()>=5)recordTierFiveAnchor(event.player());}
     @EventHandler(priority=EventPriority.MONITOR) public void onTierFiveBeaconDestroyed(TierFiveSanctuaryBeaconDestroyedEvent event){Player player=Bukkit.getPlayer(event.ownerId());if(player!=null&&player.isOnline())grantCompleted(player,SanctuaryAdvancementCatalog.WHAT_A_WASTE);}
 
     public void recordSanctuaryCraft(Player player,ExtendedItemId result){

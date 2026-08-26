@@ -65,6 +65,7 @@ public final class AnchorGraphService {
             throw new AnchorPlacementException("A Sanctuary anchor already exists with this ID");
         }
 
+        double currentRadius = AnchorTierProgression.radiusForTier(maximumRadius, metadata.tier());
         List<SanctuaryAnchor> neighbors = joinCandidates(
             ownerId,
             position,
@@ -84,7 +85,7 @@ public final class AnchorGraphService {
                 Optional.of(position),
                 metadata.tier(),
                 metadata.generation(),
-                initialRadius,
+                currentRadius,
                 SanctuaryState.ACTIVE,
                 Optional.empty(),
                 Optional.empty(),
@@ -110,7 +111,7 @@ public final class AnchorGraphService {
             position,
             metadata.tier(),
             metadata.generation(),
-            initialRadius,
+            currentRadius,
             now
         );
         sanctuaryRepository.save(sanctuary);
@@ -123,7 +124,7 @@ public final class AnchorGraphService {
             Optional.of(position),
             metadata.tier(),
             metadata.generation(),
-            initialRadius,
+            currentRadius,
             SanctuaryState.ACTIVE,
             Optional.empty(),
             Optional.empty(),
@@ -431,7 +432,7 @@ public final class AnchorGraphService {
                 continue;
             }
             double distance = TerritoryCalculator.horizontalDistance(candidate, anchor.position().orElseThrow());
-            if (distance <= maximumRadius) {
+            if (distance <= anchor.territoryRadius()) {
                 result.add(anchor);
             }
         }

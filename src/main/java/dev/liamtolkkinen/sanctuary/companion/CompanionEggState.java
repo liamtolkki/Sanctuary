@@ -7,7 +7,6 @@ import org.bukkit.NamespacedKey;
 import org.bukkit.attribute.Attribute;
 import org.bukkit.attribute.AttributeInstance;
 import org.bukkit.entity.Mob;
-import org.bukkit.inventory.ItemFlag;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.persistence.PersistentDataType;
@@ -95,8 +94,7 @@ public final class CompanionEggState {
     ) {
         ItemMeta meta = egg.getItemMeta();
         meta.setMaxStackSize(1);
-        meta.setUnbreakable(true);
-        meta.addItemFlags(ItemFlag.HIDE_UNBREAKABLE);
+        meta.setUnbreakable(false);
         egg.setItemMeta(meta);
 
         egg.setData(DataComponentTypes.MAX_DAMAGE, DISPLAY_MAX_DAMAGE);

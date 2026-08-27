@@ -23,8 +23,14 @@ import dev.liamtolkkinen.sanctuary.sanctuary.Sanctuary;
 import dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryRepository;
 import dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryState;
 import dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryType;
+import dev.liamtolkkinen.sanctuary.security.SanctuarySecurityMode;
+import dev.liamtolkkinen.sanctuary.security.SanctuarySecurityService;
 import dev.liamtolkkinen.sanctuary.territory.TerritoryAreaCalculator;
+import dev.liamtolkkinen.sanctuary.upgrade.AnchorUpgradeType;
+import dev.liamtolkkinen.sanctuary.upgrade.SanctuaryUpgradeType;
+import dev.liamtolkkinen.sanctuary.upgrade.UpgradeRepository;
 import java.sql.SQLException;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -40,11 +46,15 @@ import org.bukkit.inventory.PlayerInventory;
 import org.bukkit.inventory.meta.Damageable;
 
 public final class AnchorUiService {
+    private static final int LOCKDOWN_UNLOCK_TIER = 3;
+
     private final SanctuaryPlugin plugin;
     private final ExtendedUI ui;
     private final SanctuaryRepository sanctuaryRepository;
     private final SanctuaryAnchorRepository anchorRepository;
     private final SanctuaryEffectService effectService;
+    private final SanctuarySecurityService securityService;
+    private final UpgradeRepository upgradeRepository;
     private final SanctuaryUiService sanctuaryUiService;
     private final AnchorUpgradeService upgradeService;
 
@@ -54,6 +64,8 @@ public final class AnchorUiService {
         SanctuaryRepository sanctuaryRepository,
         SanctuaryAnchorRepository anchorRepository,
         SanctuaryEffectService effectService,
+        SanctuarySecurityService securityService,
+        UpgradeRepository upgradeRepository,
         SanctuaryUiService sanctuaryUiService
     ) {
         this.plugin = plugin;
@@ -61,6 +73,8 @@ public final class AnchorUiService {
         this.sanctuaryRepository = sanctuaryRepository;
         this.anchorRepository = anchorRepository;
         this.effectService = effectService;
+        this.securityService = securityService;
+        this.upgradeRepository = upgradeRepository;
         this.sanctuaryUiService = sanctuaryUiService;
         this.upgradeService = new AnchorUpgradeService(
             plugin,
@@ -149,6 +163,15 @@ public final class AnchorUiService {
                     }
                 ));
 
+                menu.set(47, button(
+                    Material.ECHO_SHARD,
+                    "<light_purple>Relics & Permanent Upgrades",
+                    List.of(
+                        "<gray>Install anchor-local and Sanctuary-wide relics.",
+                        "<gray>Lockdown also becomes available through tier progression."
+                    ),
+                    click -> click.menu().open(new UpgradeMenu(sanctuary.id(), anchor.id(), adminMode))
+                ));
                 menu.set(49, upgradeButton(anchor, adminMode));
 
                 List<SanctuaryEffectService.AnchorEffectDefinition> safe = effectService.definitions(
@@ -172,6 +195,110 @@ public final class AnchorUiService {
                 context.player().sendMessage(ChatColor.RED + "Sanctuary could not load this anchor.");
                 plugin.getLogger().log(Level.SEVERE, "Failed to load anchor UI " + anchorId, exception);
             }
+        }
+    }
+
+    private final class UpgradeMenu extends ExtendedInventoryMenu {
+        private final UUID sanctuaryId;
+        private final UUID anchorId;
+        private final boolean adminMode;
+
+        private UpgradeMenu(UUID sanctuaryId, UUID anchorId, boolean adminMode) {
+            super(4, "<light_purple>Relics & Upgrades");
+            this.sanctuaryId = sanctuaryId;
+            this.anchorId = anchorId;
+            this.adminMode = adminMode;
+        }
+
+        @Override
+        public void build(ExtendedMenuContext context, ExtendedMenuBuilder menu) {
+            menu.fillBackground();
+            try {
+                Sanctuary sanctuary = sanctuaryRepository.findById(sanctuaryId).orElse(null);
+                SanctuaryAnchor anchor = anchorRepository.findById(anchorId).orElse(null);
+                if (sanctuary == null || anchor == null || !anchor.sanctuaryId().equals(sanctuary.id())) {
+                    menu.set(13, button(Material.BARRIER, "<red>Anchor unavailable", List.of(), null));
+                    menu.set(35, StandardButtons.close(context.theme()));
+                    return;
+                }
+
+                boolean watchersEyeInstalled = upgradeRepository.hasAnchorUpgrade(
+                    anchor.id(), AnchorUpgradeType.WATCHERS_EYE
+                );
+                menu.set(11, button(
+                    Material.ENDER_EYE,
+                    watchersEyeInstalled ? "<green>Watcher's Eye Installed" : "<aqua>Install Watcher's Eye",
+                    watchersEyeInstalled
+                        ? List.of(
+                            "<green>Permanent anchor-local upgrade.",
+                            "<gray>This upgrade stays with the physical anchor."
+                        )
+                        : List.of(
+                            "<gray>Improves this anchor's sentry awareness.",
+                            "<gray>Permanent and anchor-local.",
+                            "<yellow>Consumes one Watcher's Eye."
+                        ),
+                    watchersEyeInstalled ? null : click -> installAnchorRelic(
+                        click.player(), anchor.id(), ExtendedItemIds.WATCHERS_EYE,
+                        AnchorUpgradeType.WATCHERS_EYE, click.menu()
+                    )
+                ));
+
+                boolean territoryKeystoneInstalled = upgradeRepository.hasSanctuaryUpgrade(
+                    sanctuary.id(), SanctuaryUpgradeType.TERRITORY_KEYSTONE
+                );
+                menu.set(13, button(
+                    Material.LODESTONE,
+                    territoryKeystoneInstalled
+                        ? "<green>Territory Keystone Installed"
+                        : "<gold>Install Territory Keystone",
+                    territoryKeystoneInstalled
+                        ? List.of(
+                            "<green>Permanent Sanctuary-wide upgrade.",
+                            "<gray>Survives Sanctuary inactivity."
+                        )
+                        : List.of(
+                            "<gray>Unlocks Sanctuary anchor extension progression.",
+                            "<gray>Permanent and Sanctuary-wide.",
+                            "<yellow>Consumes one Territory Keystone."
+                        ),
+                    territoryKeystoneInstalled ? null : click -> installSanctuaryRelic(
+                        click.player(), sanctuary.id(), ExtendedItemIds.TERRITORY_KEYSTONE,
+                        SanctuaryUpgradeType.TERRITORY_KEYSTONE, click.menu()
+                    )
+                ));
+
+                SanctuarySecurityMode mode = securityService.mode(sanctuary);
+                boolean lockdownUnlocked = sanctuary.tier() >= LOCKDOWN_UNLOCK_TIER || adminMode;
+                menu.set(15, button(
+                    lockdownUnlocked
+                        ? (mode == SanctuarySecurityMode.LOCKDOWN ? Material.REDSTONE_TORCH : Material.LEVER)
+                        : Material.IRON_BARS,
+                    lockdownUnlocked
+                        ? "<red>Lockdown: " + (mode == SanctuarySecurityMode.LOCKDOWN ? "Enabled" : "Available")
+                        : "<dark_gray>Lockdown Locked",
+                    lockdownUnlocked
+                        ? List.of(
+                            "<gray>Unlocked by reaching Sanctuary Tier " + roman(LOCKDOWN_UNLOCK_TIER) + ".",
+                            mode == SanctuarySecurityMode.LOCKDOWN
+                                ? "<red>Neutral outsiders are currently hostile."
+                                : "<gray>Click to enable Lockdown.",
+                            mode == SanctuarySecurityMode.LOCKDOWN
+                                ? "<yellow>Click to return to Normal security."
+                                : "<yellow>No relic is consumed."
+                        )
+                        : List.of(
+                            "<gray>Reach Sanctuary Tier " + roman(LOCKDOWN_UNLOCK_TIER)
+                                + " to unlock Lockdown."
+                        ),
+                    lockdownUnlocked ? click -> toggleLockdown(click.player(), sanctuary.id(), click.menu()) : null
+                ));
+            } catch (SQLException exception) {
+                context.player().sendMessage(ChatColor.RED + "Sanctuary could not load permanent upgrades.");
+                plugin.getLogger().log(Level.SEVERE, "Failed to load Sanctuary upgrades", exception);
+            }
+            menu.set(27, StandardButtons.back(context.theme()));
+            menu.set(35, StandardButtons.close(context.theme()));
         }
     }
 
@@ -199,21 +326,20 @@ public final class AnchorUiService {
             ItemStack item = ExtendedItems.create(requiredItem);
             item.editMeta(meta -> {
                 List<Component> lore = new ArrayList<>();
-                if (meta.lore() != null) {
-                    lore.addAll(meta.lore());
-                }
+                if (meta.lore() != null) lore.addAll(meta.lore());
                 lore.add(Component.empty());
                 lore.add(Component.text(
-                    "Upgrade Tier " + roman(anchor.tier()) + " -> " + roman(nextTier),
-                    NamedTextColor.GOLD
+                    "Upgrade Tier " + roman(anchor.tier()) + " -> " + roman(nextTier), NamedTextColor.GOLD
                 ));
                 lore.add(Component.text(
                     "Radius: " + formatRadius(anchor.territoryRadius()) + " -> " + formatRadius(nextRadius),
                     NamedTextColor.GRAY
                 ));
+                if (nextTier == LOCKDOWN_UNLOCK_TIER) {
+                    lore.add(Component.text("Unlocks Sanctuary Lockdown controls.", NamedTextColor.RED));
+                }
                 lore.add(Component.text(
-                    "Consumes one " + pretty(requiredItem.persistentId()) + ".",
-                    NamedTextColor.YELLOW
+                    "Consumes one " + pretty(requiredItem.persistentId()) + ".", NamedTextColor.YELLOW
                 ));
                 lore.add(Component.text("Click to upgrade this anchor.", NamedTextColor.AQUA));
                 meta.lore(lore);
@@ -226,24 +352,19 @@ public final class AnchorUiService {
             .build();
     }
 
-    private void upgradeAnchor(
-        Player player,
-        UUID anchorId,
-        boolean adminMode,
-        ExtendedMenuContext context
-    ) {
+    private void upgradeAnchor(Player player, UUID anchorId, boolean adminMode, ExtendedMenuContext context) {
         try {
             SanctuaryAnchor upgraded = upgradeService.upgrade(
-                player,
-                anchorId,
-                plugin.getMaximumTerritoryRadius(),
-                adminMode
+                player, anchorId, plugin.getMaximumTerritoryRadius(), adminMode
             );
             player.updateInventory();
             player.sendMessage(
                 ChatColor.GOLD + "Sanctuary anchor upgraded to Tier " + roman(upgraded.tier())
                     + ChatColor.GRAY + " with a " + formatRadius(upgraded.territoryRadius()) + " radius."
             );
+            if (upgraded.tier() == LOCKDOWN_UNLOCK_TIER) {
+                player.sendMessage(ChatColor.RED + "Lockdown controls are now available in Relics & Permanent Upgrades.");
+            }
             context.refresh();
         } catch (SQLException exception) {
             player.sendMessage(ChatColor.RED + "Sanctuary could not save this anchor upgrade.");
@@ -327,8 +448,7 @@ public final class AnchorUiService {
         int currentMaximumAttunement = maximumAttunement;
         return effectIconButton(
             effect,
-            (effect.target() == AnchorEffect.Target.SAFE ? "<green>" : "<red>")
-                + effectDisplayName(effect),
+            (effect.target() == AnchorEffect.Target.SAFE ? "<green>" : "<red>") + effectDisplayName(effect),
             lore,
             unlocked && currentAttunementLevel < currentMaximumAttunement
                 ? click -> upgradeEffect(click.player(), anchor.id(), effect, click.menu())
@@ -336,12 +456,7 @@ public final class AnchorUiService {
         );
     }
 
-    private void upgradeEffect(
-        Player player,
-        UUID anchorId,
-        AnchorEffect effect,
-        ExtendedMenuContext context
-    ) {
+    private void upgradeEffect(Player player, UUID anchorId, AnchorEffect effect, ExtendedMenuContext context) {
         try {
             SanctuaryAnchor anchor = anchorRepository.findById(anchorId).orElse(null);
             if (anchor == null) {
@@ -384,9 +499,7 @@ public final class AnchorUiService {
         } catch (SQLException exception) {
             player.sendMessage(ChatColor.RED + "Sanctuary could not save this effect upgrade.");
             plugin.getLogger().log(
-                Level.SEVERE,
-                "Failed to upgrade Sanctuary anchor effect " + anchorId + ":" + effect.name(),
-                exception
+                Level.SEVERE, "Failed to upgrade Sanctuary anchor effect " + anchorId + ":" + effect.name(), exception
             );
         } catch (IllegalArgumentException | IllegalStateException exception) {
             player.sendMessage(ChatColor.RED + exception.getMessage());
@@ -394,11 +507,104 @@ public final class AnchorUiService {
         }
     }
 
+    private void installAnchorRelic(
+        Player player,
+        UUID anchorId,
+        ExtendedItemId itemId,
+        AnchorUpgradeType upgrade,
+        ExtendedMenuContext context
+    ) {
+        try {
+            if (upgradeRepository.hasAnchorUpgrade(anchorId, upgrade)) {
+                throw new IllegalStateException("That anchor already has this permanent upgrade.");
+            }
+            if (!hasExactItem(player.getInventory(), itemId)) {
+                throw new IllegalStateException("You need a " + pretty(itemId.persistentId()) + ".");
+            }
+            if (!consumeExactItem(player.getInventory(), itemId)) {
+                throw new IllegalStateException("The required relic disappeared before installation.");
+            }
+            try {
+                upgradeRepository.installAnchorUpgrade(anchorId, upgrade, Instant.now());
+            } catch (SQLException exception) {
+                player.getInventory().addItem(ExtendedItems.create(itemId));
+                throw exception;
+            }
+            player.updateInventory();
+            player.sendMessage(ChatColor.AQUA + pretty(itemId.persistentId()) + " permanently installed on this anchor.");
+            context.refresh();
+        } catch (SQLException exception) {
+            player.sendMessage(ChatColor.RED + "Sanctuary could not save this anchor upgrade.");
+            plugin.getLogger().log(Level.SEVERE, "Failed to install anchor relic " + anchorId, exception);
+        } catch (IllegalArgumentException | IllegalStateException exception) {
+            player.sendMessage(ChatColor.RED + exception.getMessage());
+            context.refresh();
+        }
+    }
+
+    private void installSanctuaryRelic(
+        Player player,
+        UUID sanctuaryId,
+        ExtendedItemId itemId,
+        SanctuaryUpgradeType upgrade,
+        ExtendedMenuContext context
+    ) {
+        try {
+            if (upgradeRepository.hasSanctuaryUpgrade(sanctuaryId, upgrade)) {
+                throw new IllegalStateException("This Sanctuary already has that permanent upgrade.");
+            }
+            if (!hasExactItem(player.getInventory(), itemId)) {
+                throw new IllegalStateException("You need a " + pretty(itemId.persistentId()) + ".");
+            }
+            if (!consumeExactItem(player.getInventory(), itemId)) {
+                throw new IllegalStateException("The required relic disappeared before installation.");
+            }
+            try {
+                upgradeRepository.installSanctuaryUpgrade(sanctuaryId, upgrade, Instant.now());
+            } catch (SQLException exception) {
+                player.getInventory().addItem(ExtendedItems.create(itemId));
+                throw exception;
+            }
+            player.updateInventory();
+            player.sendMessage(ChatColor.GOLD + pretty(itemId.persistentId()) + " permanently installed for this Sanctuary.");
+            context.refresh();
+        } catch (SQLException exception) {
+            player.sendMessage(ChatColor.RED + "Sanctuary could not save this Sanctuary upgrade.");
+            plugin.getLogger().log(Level.SEVERE, "Failed to install Sanctuary relic " + sanctuaryId, exception);
+        } catch (IllegalArgumentException | IllegalStateException exception) {
+            player.sendMessage(ChatColor.RED + exception.getMessage());
+            context.refresh();
+        }
+    }
+
+    private void toggleLockdown(Player player, UUID sanctuaryId, ExtendedMenuContext context) {
+        try {
+            Sanctuary sanctuary = sanctuaryRepository.findById(sanctuaryId).orElse(null);
+            if (sanctuary == null) throw new IllegalStateException("That Sanctuary no longer exists.");
+            if (sanctuary.tier() < LOCKDOWN_UNLOCK_TIER && !player.hasPermission("sanctuary.admin")) {
+                throw new IllegalStateException(
+                    "Lockdown unlocks at Sanctuary Tier " + roman(LOCKDOWN_UNLOCK_TIER) + "."
+                );
+            }
+            SanctuarySecurityMode current = securityService.mode(sanctuary);
+            SanctuarySecurityMode next = current == SanctuarySecurityMode.LOCKDOWN
+                ? SanctuarySecurityMode.NORMAL
+                : SanctuarySecurityMode.LOCKDOWN;
+            securityService.setMode(sanctuary, next);
+            player.sendMessage(ChatColor.YELLOW + "Sanctuary security mode set to " + next + ".");
+            context.refresh();
+        } catch (SQLException exception) {
+            player.sendMessage(ChatColor.RED + "Sanctuary could not update Lockdown.");
+            plugin.getLogger().log(Level.SEVERE, "Failed to update Lockdown " + sanctuaryId, exception);
+        } catch (IllegalStateException exception) {
+            player.sendMessage(ChatColor.RED + exception.getMessage());
+            context.refresh();
+        }
+    }
+
     private static boolean hasExactItem(PlayerInventory inventory, ExtendedItemId itemId) {
         for (ItemStack item : inventory.getStorageContents()) {
-            if (ExtendedItems.is(item, itemId)) {
-                return true;
-            }
+            if (ExtendedItems.is(item, itemId)) return true;
         }
         return false;
     }
@@ -407,12 +613,9 @@ public final class AnchorUiService {
         ItemStack[] storage = inventory.getStorageContents();
         for (int slot = 0; slot < storage.length; slot++) {
             ItemStack item = storage[slot];
-            if (!ExtendedItems.is(item, itemId)) {
-                continue;
-            }
-            if (item.getAmount() <= 1) {
-                inventory.setItem(slot, null);
-            } else {
+            if (!ExtendedItems.is(item, itemId)) continue;
+            if (item.getAmount() <= 1) inventory.setItem(slot, null);
+            else {
                 item.setAmount(item.getAmount() - 1);
                 inventory.setItem(slot, item);
             }
@@ -429,9 +632,7 @@ public final class AnchorUiService {
     ) {
         ExtendedItemProvider provider = () -> {
             ExtendedItemBuilder builder = ExtendedItemBuilder.of(effectMaterial(effect)).name(name);
-            if (!lore.isEmpty()) {
-                builder.lore(lore.toArray(String[]::new));
-            }
+            if (!lore.isEmpty()) builder.lore(lore.toArray(String[]::new));
             ItemStack item = builder.build();
             if (effect == AnchorEffect.ELYTRA_DISABLED) {
                 item.editMeta(meta -> {
@@ -443,9 +644,7 @@ public final class AnchorUiService {
             return item;
         };
         ExtendedButton.Builder button = ExtendedButton.builder(provider);
-        if (onClick != null) {
-            button.onClick(onClick);
-        }
+        if (onClick != null) button.onClick(onClick);
         return button.build();
     }
 
@@ -457,15 +656,11 @@ public final class AnchorUiService {
     ) {
         ExtendedItemProvider provider = () -> {
             ExtendedItemBuilder builder = ExtendedItemBuilder.of(material).name(name);
-            if (!lore.isEmpty()) {
-                builder.lore(lore.toArray(String[]::new));
-            }
+            if (!lore.isEmpty()) builder.lore(lore.toArray(String[]::new));
             return builder.build();
         };
         ExtendedButton.Builder button = ExtendedButton.builder(provider);
-        if (onClick != null) {
-            button.onClick(onClick);
-        }
+        if (onClick != null) button.onClick(onClick);
         return button.build();
     }
 

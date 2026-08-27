@@ -4,7 +4,6 @@ import dev.liamtolkkinen.sanctuary.anchor.SanctuaryAnchor;
 import dev.liamtolkkinen.sanctuary.sanctuary.Sanctuary;
 import dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryRepository;
 import dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryState;
-import dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryType;
 import dev.liamtolkkinen.sanctuary.territory.AnchorTerritoryService;
 import java.sql.SQLException;
 import java.util.ArrayList;
@@ -25,8 +24,9 @@ import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 
 /**
- * Draws the actual three-dimensional Beacon Proximity sentry trigger boundary.
+ * Draws the actual three-dimensional Anchor Proximity sentry trigger boundary.
  * This is intentionally separate from the Sanctuary territory union perimeter.
+ * Both Beacon and Conduit anchors use the same sphere when that anchor has a Watcher's Eye.
  */
 public final class BeaconProximityBoundaryTask implements Runnable {
     private static final long LINGER_MILLIS = 3000L;
@@ -84,14 +84,14 @@ public final class BeaconProximityBoundaryTask implements Runnable {
                 }
 
                 for (SanctuaryAnchor anchor : anchorTerritoryService.activeAnchors(sanctuary.id())) {
-                    if (anchor.type() != SanctuaryType.BEACON || anchor.position().isEmpty()) {
+                    if (anchor.position().isEmpty() || !SentryAwarenessService.hasWatcherRuntime(anchor)) {
                         continue;
                     }
                     renderAnchorSphere(sanctuary, anchor, proximitySentries, now);
                 }
             }
         } catch (SQLException exception) {
-            logger.log(Level.WARNING, "Failed to render Beacon Proximity boundaries", exception);
+            logger.log(Level.WARNING, "Failed to render Anchor Proximity boundaries", exception);
         } finally {
             visibleUntil.entrySet().removeIf(entry -> entry.getValue() < now);
         }

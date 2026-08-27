@@ -114,7 +114,7 @@ public final class SanctuaryEffectService {
 
     public int maximumAttunementLevel(SanctuaryType type, AnchorEffect effect) {
         AnchorEffect paired = pairedEffect(type, effect);
-        return Math.min(effect.maximumLevel(), paired.maximumLevel());
+        return Math.max(effect.maximumLevel(), paired.maximumLevel());
     }
 
     public boolean isUnlocked(SanctuaryAnchor anchor, AnchorEffect effect) {
@@ -144,14 +144,19 @@ public final class SanctuaryEffectService {
         return horizontalDistance <= effectiveRadius;
     }
 
-    public int level(SanctuaryAnchor anchor, AnchorEffect effect) throws SQLException {
+    public int attunementLevel(SanctuaryAnchor anchor, AnchorEffect effect) throws SQLException {
         requireAnchorRepository();
         AnchorEffect paired = pairedEffect(anchor.type(), effect);
         int maximumLevel = maximumAttunementLevel(anchor.type(), effect);
         int ownLevel = anchorRepository.getLevel(anchor.id(), effect);
         int pairedLevel = anchorRepository.getLevel(anchor.id(), paired);
-        int boundLevel = Math.min(ownLevel, pairedLevel);
-        return Math.max(1, Math.min(boundLevel, maximumLevel));
+        int pairLevel = Math.max(ownLevel, pairedLevel);
+        return Math.max(1, Math.min(pairLevel, maximumLevel));
+    }
+
+    public int level(SanctuaryAnchor anchor, AnchorEffect effect) throws SQLException {
+        int pairLevel = attunementLevel(anchor, effect);
+        return Math.min(pairLevel, effect.maximumLevel());
     }
 
     public void setLevel(SanctuaryAnchor anchor, AnchorEffect effect, int level) throws SQLException {
@@ -174,9 +179,12 @@ public final class SanctuaryEffectService {
 
         int previousEffectLevel = anchorRepository.getLevel(anchor.id(), effect);
         int previousPairedLevel = anchorRepository.getLevel(anchor.id(), paired);
-        anchorRepository.setLevel(anchor.id(), effect, level);
+        int effectLevel = Math.min(level, effect.maximumLevel());
+        int pairedLevel = Math.min(level, paired.maximumLevel());
+
+        anchorRepository.setLevel(anchor.id(), effect, effectLevel);
         try {
-            anchorRepository.setLevel(anchor.id(), paired, level);
+            anchorRepository.setLevel(anchor.id(), paired, pairedLevel);
         } catch (SQLException | RuntimeException exception) {
             try {
                 anchorRepository.setLevel(anchor.id(), effect, previousEffectLevel);

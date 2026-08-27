@@ -96,6 +96,27 @@ public final class SanctuaryEffectService {
             ));
     }
 
+    public AnchorEffect pairedEffect(SanctuaryType type, AnchorEffect effect) {
+        Objects.requireNonNull(type, "type");
+        Objects.requireNonNull(effect, "effect");
+        int tier = tierFor(type, effect);
+        AnchorEffect.Target pairedTarget = effect.target() == AnchorEffect.Target.SAFE
+            ? AnchorEffect.Target.HOSTILE
+            : AnchorEffect.Target.SAFE;
+        return definitions(type, pairedTarget).stream()
+            .filter(definition -> definition.tier() == tier)
+            .map(AnchorEffectDefinition::effect)
+            .findFirst()
+            .orElseThrow(() -> new IllegalArgumentException(
+                "No paired effect exists for " + effect.name() + " on " + type.name()
+            ));
+    }
+
+    public int maximumAttunementLevel(SanctuaryType type, AnchorEffect effect) {
+        AnchorEffect paired = pairedEffect(type, effect);
+        return Math.min(effect.maximumLevel(), paired.maximumLevel());
+    }
+
     public boolean isUnlocked(SanctuaryAnchor anchor, AnchorEffect effect) {
         try {
             return anchor.tier() >= tierFor(anchor.type(), effect);
@@ -125,8 +146,12 @@ public final class SanctuaryEffectService {
 
     public int level(SanctuaryAnchor anchor, AnchorEffect effect) throws SQLException {
         requireAnchorRepository();
-        int level = anchorRepository.getLevel(anchor.id(), effect);
-        return Math.max(1, Math.min(level, effect.maximumLevel()));
+        AnchorEffect paired = pairedEffect(anchor.type(), effect);
+        int maximumLevel = maximumAttunementLevel(anchor.type(), effect);
+        int ownLevel = anchorRepository.getLevel(anchor.id(), effect);
+        int pairedLevel = anchorRepository.getLevel(anchor.id(), paired);
+        int boundLevel = Math.min(ownLevel, pairedLevel);
+        return Math.max(1, Math.min(boundLevel, maximumLevel));
     }
 
     public void setLevel(SanctuaryAnchor anchor, AnchorEffect effect, int level) throws SQLException {
@@ -134,7 +159,33 @@ public final class SanctuaryEffectService {
         if (!isUnlocked(anchor, effect)) {
             throw new IllegalStateException("That effect is not unlocked at this anchor tier.");
         }
+
+        AnchorEffect paired = pairedEffect(anchor.type(), effect);
+        if (!isUnlocked(anchor, paired)) {
+            throw new IllegalStateException("The paired effect is not unlocked at this anchor tier.");
+        }
+
+        int maximumLevel = maximumAttunementLevel(anchor.type(), effect);
+        if (level < 1 || level > maximumLevel) {
+            throw new IllegalArgumentException(
+                "Paired attunement level must be between 1 and " + maximumLevel
+            );
+        }
+
+        int previousEffectLevel = anchorRepository.getLevel(anchor.id(), effect);
+        int previousPairedLevel = anchorRepository.getLevel(anchor.id(), paired);
         anchorRepository.setLevel(anchor.id(), effect, level);
+        try {
+            anchorRepository.setLevel(anchor.id(), paired, level);
+        } catch (SQLException | RuntimeException exception) {
+            try {
+                anchorRepository.setLevel(anchor.id(), effect, previousEffectLevel);
+                anchorRepository.setLevel(anchor.id(), paired, previousPairedLevel);
+            } catch (SQLException | RuntimeException rollbackException) {
+                exception.addSuppressed(rollbackException);
+            }
+            throw exception;
+        }
     }
 
     public List<ActiveAnchorEffect> activeAnchorEffects(

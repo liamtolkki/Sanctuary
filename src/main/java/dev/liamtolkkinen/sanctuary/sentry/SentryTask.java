@@ -147,9 +147,6 @@ public final class SentryTask implements Runnable {
 
         Location home = service.home(sentry);
         if (!containsTerritory(activeAnchors, sentry.world(), home.getX(), home.getZ())) {
-            // Territory topology changed underneath this post. This is not combat death: keep the
-            // Sanctuary-bound record suspended so it can return if another active anchor covers
-            // the post again later.
             clearWardenCombatState(sentry.id());
             service.suspendForInactiveSanctuary(sentry);
             return;
@@ -187,9 +184,6 @@ public final class SentryTask implements Runnable {
 
         Location loc = entity.getLocation();
         if (!containsTerritory(activeAnchors, sentry.world(), loc.getX(), loc.getZ())) {
-            // Crossing between anchor circles in the same Sanctuary is allowed. Leaving the true
-            // union is a real sentry death, so use Minecraft's normal death sequence rather than
-            // removing the entity immediately. EntityDeathEvent records the respawn cooldown.
             clearWardenCombatState(sentry.id());
             mob.setHealth(0.0);
             return;
@@ -430,8 +424,6 @@ public final class SentryTask implements Runnable {
             List<LivingEntity> hostileMobs = new ArrayList<>();
             List<LivingEntity> neutralMobs = new ArrayList<>();
 
-            // Deliberately scan only around this sentry's post. Chaining anchors can make a
-            // Sanctuary arbitrarily large; Sanctuary size must never expand a sentry's watch cost.
             for (Entity entity : world.getNearbyEntities(
                 home,
                 targetRadius,
@@ -561,18 +553,8 @@ public final class SentryTask implements Runnable {
         List<SanctuaryAnchor> activeAnchors,
         Location location,
         double radius
-    ) {
-        double radiusSquared = radius * radius;
-        for (SanctuaryAnchor anchor : activeAnchors) {
-            if (anchor.position().isEmpty()) continue;
-            var position = anchor.position().orElseThrow();
-            if (!position.world().equals(location.getWorld().getName())) continue;
-            double dx = location.getX() - (position.x() + 0.5);
-            double dy = location.getY() - (position.y() + 0.5);
-            double dz = location.getZ() - (position.z() + 0.5);
-            if (dx * dx + dy * dy + dz * dz <= radiusSquared) return true;
-        }
-        return false;
+    ) throws SQLException {
+        return SentryAwarenessService.isNearWatcherAnchorRuntime(activeAnchors, location, radius);
     }
 
     private static boolean isHostileMob(Entity entity) {

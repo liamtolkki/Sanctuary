@@ -261,14 +261,18 @@ public final class AnchorUiService {
     ) {
         AnchorEffect effect = definition.effect();
         boolean unlocked = anchor.tier() >= definition.tier();
-        int level = 1;
+        int effectLevel = 1;
+        int attunementLevel = 1;
         int maximumAttunement = effect.maximumLevel();
         AnchorEffect pairedEffect = null;
+        int pairedLevel = 1;
         if (unlocked) {
             try {
                 pairedEffect = effectService.pairedEffect(anchor.type(), effect);
                 maximumAttunement = effectService.maximumAttunementLevel(anchor.type(), effect);
-                level = effectService.level(anchor, effect);
+                attunementLevel = effectService.attunementLevel(anchor, effect);
+                effectLevel = effectService.level(anchor, effect);
+                pairedLevel = effectService.level(anchor, pairedEffect);
             } catch (SQLException exception) {
                 player.sendMessage(ChatColor.RED + "Sanctuary could not load an anchor effect level.");
             }
@@ -282,33 +286,51 @@ public final class AnchorUiService {
         List<String> lore = new ArrayList<>();
         lore.add("<gray>Unlock tier: <white>" + roman(definition.tier()));
         lore.add("<gray>Current effect radius: <white>" + formatRadius(effectRadius));
-        lore.add("<gray>Pair ceiling: <white>" + roman(maximumAttunement));
+        lore.add("<gray>Maximum level: <white>" + roman(effect.maximumLevel()));
         if (!unlocked) {
             lore.add("<red>Locked until Anchor Tier " + roman(definition.tier()) + ".");
         } else {
-            lore.add("<green>Current level: " + roman(level));
+            lore.add("<green>Current level: " + roman(effectLevel));
             if (pairedEffect != null) {
-                lore.add("<gray>Bound with: <white>" + effectDisplayName(pairedEffect));
+                lore.add(
+                    "<gray>Bound with: <white>" + effectDisplayName(pairedEffect)
+                        + " <gray>(Level " + roman(pairedLevel) + ")"
+                );
             }
-            if (level < maximumAttunement) {
-                lore.add("<yellow>Click to attune both effects to Level " + roman(level + 1) + ".");
+            if (attunementLevel < maximumAttunement) {
+                int nextAttunement = attunementLevel + 1;
+                int nextEffectLevel = Math.min(nextAttunement, effect.maximumLevel());
+                int nextPairedLevel = pairedEffect == null
+                    ? nextAttunement
+                    : Math.min(nextAttunement, pairedEffect.maximumLevel());
+                lore.add("<yellow>Click to advance paired attunement to " + roman(nextAttunement) + ".");
+                if (nextEffectLevel == effectLevel && pairedEffect != null) {
+                    lore.add(
+                        "<gray>" + effectDisplayName(effect) + " stays at " + roman(effectLevel)
+                            + "; " + effectDisplayName(pairedEffect) + " advances to " + roman(nextPairedLevel) + "."
+                    );
+                } else if (pairedEffect != null && nextPairedLevel == pairedLevel) {
+                    lore.add(
+                        "<gray>" + effectDisplayName(pairedEffect) + " stays at " + roman(pairedLevel)
+                            + "; " + effectDisplayName(effect) + " advances to " + roman(nextEffectLevel) + "."
+                    );
+                } else if (pairedEffect != null) {
+                    lore.add("<gray>Both effects advance together.");
+                }
                 lore.add("<yellow>Consumes one Attunement Relic.");
-            } else if (maximumAttunement < effect.maximumLevel()) {
-                lore.add("<green>Pair ceiling reached.");
-                lore.add("<gray>This effect cannot outlevel its paired effect.");
             } else {
-                lore.add("<green>Maximum attunement reached.");
+                lore.add("<green>Maximum paired attunement reached.");
             }
         }
 
-        int currentLevel = level;
+        int currentAttunementLevel = attunementLevel;
         int currentMaximumAttunement = maximumAttunement;
         return effectIconButton(
             effect,
             (effect.target() == AnchorEffect.Target.SAFE ? "<green>" : "<red>")
                 + effectDisplayName(effect),
             lore,
-            unlocked && currentLevel < currentMaximumAttunement
+            unlocked && currentAttunementLevel < currentMaximumAttunement
                 ? click -> upgradeEffect(click.player(), anchor.id(), effect, click.menu())
                 : null
         );
@@ -333,27 +355,30 @@ public final class AnchorUiService {
 
             AnchorEffect pairedEffect = effectService.pairedEffect(anchor.type(), effect);
             int maximumAttunement = effectService.maximumAttunementLevel(anchor.type(), effect);
-            int currentLevel = effectService.level(anchor, effect);
-            if (currentLevel >= maximumAttunement) {
+            int currentAttunement = effectService.attunementLevel(anchor, effect);
+            if (currentAttunement >= maximumAttunement) {
                 throw new IllegalStateException("That effect pair is already at maximum attunement.");
             }
             if (!hasExactItem(player.getInventory(), ExtendedItemIds.ATTUNEMENT_RELIC)) {
                 throw new IllegalStateException("You need an Attunement Relic to upgrade this effect pair.");
             }
 
-            int nextLevel = currentLevel + 1;
-            effectService.setLevel(anchor, effect, nextLevel);
+            int nextAttunement = currentAttunement + 1;
+            effectService.setLevel(anchor, effect, nextAttunement);
             if (!consumeExactItem(player.getInventory(), ExtendedItemIds.ATTUNEMENT_RELIC)) {
-                effectService.setLevel(anchor, effect, currentLevel);
+                effectService.setLevel(anchor, effect, currentAttunement);
                 throw new IllegalStateException(
                     "The Attunement Relic disappeared before the upgrade could finish."
                 );
             }
 
+            int effectLevel = effectService.level(anchor, effect);
+            int pairedLevel = effectService.level(anchor, pairedEffect);
             player.updateInventory();
             player.sendMessage(
-                ChatColor.AQUA + effectDisplayName(effect) + " and " + effectDisplayName(pairedEffect)
-                    + " permanently attuned to Level " + roman(nextLevel) + "."
+                ChatColor.AQUA + "Paired attunement advanced to " + roman(nextAttunement) + ". "
+                    + effectDisplayName(effect) + " is Level " + roman(effectLevel) + ", "
+                    + effectDisplayName(pairedEffect) + " is Level " + roman(pairedLevel) + "."
             );
             context.refresh();
         } catch (SQLException exception) {

@@ -6,6 +6,8 @@ import dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryRepository;
 import dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryState;
 import dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryType;
 import dev.liamtolkkinen.sanctuary.territory.TerritoryCalculator;
+import dev.liamtolkkinen.sanctuary.upgrade.SanctuaryUpgradeType;
+import dev.liamtolkkinen.sanctuary.upgrade.UpgradeRepository;
 import java.sql.SQLException;
 import java.time.Clock;
 import java.time.Instant;
@@ -20,13 +22,22 @@ import java.util.UUID;
 public final class AnchorGraphService {
     private final SanctuaryRepository sanctuaryRepository;
     private final SanctuaryAnchorRepository anchorRepository;
+    private final UpgradeRepository upgradeRepository;
     private final Clock clock;
 
     public AnchorGraphService(
         SanctuaryRepository sanctuaryRepository,
         SanctuaryAnchorRepository anchorRepository
     ) {
-        this(sanctuaryRepository, anchorRepository, Clock.systemUTC());
+        this(sanctuaryRepository, anchorRepository, null, Clock.systemUTC());
+    }
+
+    public AnchorGraphService(
+        SanctuaryRepository sanctuaryRepository,
+        SanctuaryAnchorRepository anchorRepository,
+        UpgradeRepository upgradeRepository
+    ) {
+        this(sanctuaryRepository, anchorRepository, upgradeRepository, Clock.systemUTC());
     }
 
     AnchorGraphService(
@@ -34,8 +45,18 @@ public final class AnchorGraphService {
         SanctuaryAnchorRepository anchorRepository,
         Clock clock
     ) {
+        this(sanctuaryRepository, anchorRepository, null, clock);
+    }
+
+    AnchorGraphService(
+        SanctuaryRepository sanctuaryRepository,
+        SanctuaryAnchorRepository anchorRepository,
+        UpgradeRepository upgradeRepository,
+        Clock clock
+    ) {
         this.sanctuaryRepository = Objects.requireNonNull(sanctuaryRepository, "sanctuaryRepository");
         this.anchorRepository = Objects.requireNonNull(anchorRepository, "anchorRepository");
+        this.upgradeRepository = upgradeRepository;
         this.clock = Objects.requireNonNull(clock, "clock");
     }
 
@@ -76,6 +97,7 @@ public final class AnchorGraphService {
 
         if (!neighbors.isEmpty()) {
             UUID sanctuaryId = requireSingleJoinSanctuary(neighbors);
+            requireExtensionUnlocked(sanctuaryId);
             Sanctuary sanctuary = requireSanctuary(sanctuaryId);
             SanctuaryAnchor anchor = new SanctuaryAnchor(
                 metadata.anchorId(),
@@ -182,6 +204,7 @@ public final class AnchorGraphService {
 
         if (!neighbors.isEmpty()) {
             UUID targetSanctuaryId = requireSingleJoinSanctuary(neighbors);
+            requireExtensionUnlocked(targetSanctuaryId);
             Sanctuary target = requireSanctuary(targetSanctuaryId);
             boolean movingSanctuaries = !target.id().equals(source.id());
             anchorRepository.deleteEdgesForAnchor(existing.id());
@@ -449,6 +472,21 @@ public final class AnchorGraphService {
             );
         }
         return sanctuaryId;
+    }
+
+    private void requireExtensionUnlocked(UUID sanctuaryId)
+        throws SQLException, AnchorPlacementException {
+        if (upgradeRepository == null) {
+            return;
+        }
+        if (!upgradeRepository.hasSanctuaryUpgrade(
+            sanctuaryId,
+            SanctuaryUpgradeType.TERRITORY_KEYSTONE
+        )) {
+            throw new AnchorPlacementException(
+                "This Sanctuary needs a Territory Keystone before another anchor can extend it."
+            );
+        }
     }
 
     private void connectToNeighbors(UUID anchorId, List<SanctuaryAnchor> neighbors) throws SQLException {

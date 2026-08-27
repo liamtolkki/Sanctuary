@@ -7,12 +7,11 @@ import dev.liamtolkkinen.sanctuary.anchor.AnchorItemService;
 import dev.liamtolkkinen.sanctuary.anchor.AnchorTierUpgradedEvent;
 import dev.liamtolkkinen.sanctuary.anchor.SanctuaryExtendedEvent;
 import dev.liamtolkkinen.sanctuary.anchor.TierFiveSanctuaryBeaconDestroyedEvent;
+import dev.liamtolkkinen.sanctuary.companion.CompanionDefinition;
 import dev.liamtolkkinen.sanctuary.crafting.SanctuaryRecipeCatalog;
 import dev.liamtolkkinen.sanctuary.sentry.SentryRecipeCatalog;
 import java.util.Locale;
 import java.util.Objects;
-import java.util.Set;
-import java.util.stream.Collectors;
 import org.bukkit.Bukkit;
 import org.bukkit.Keyed;
 import org.bukkit.NamespacedKey;
@@ -37,22 +36,18 @@ public final class SanctuaryAdvancementService implements Listener {
     private final JavaPlugin plugin;
     private final String namespace;
     private final AnchorItemService anchorItemService;
-    private final Set<ExtendedItemId> companionIds;
 
     public SanctuaryAdvancementService(JavaPlugin plugin){
         this.plugin=Objects.requireNonNull(plugin,"plugin");
         this.namespace=plugin.getName().toLowerCase(Locale.ROOT);
         this.anchorItemService=new AnchorItemService(plugin);
-        this.companionIds=SentryRecipeCatalog.companionRecipes().stream()
-            .map(SentryRecipeCatalog.CompanionRecipe::result)
-            .collect(Collectors.toUnmodifiableSet());
     }
 
     public void start(){registerAdvancements();plugin.getServer().getPluginManager().registerEvents(this,plugin);for(Player player:plugin.getServer().getOnlinePlayers())refreshPossessionMilestones(player);}
     public void recordOfferingProgress(Player player,int completedOfferings){Objects.requireNonNull(player,"player");if(completedOfferings<0||completedOfferings>12)throw new IllegalArgumentException("completedOfferings must be between 0 and 12");if(completedOfferings>=1)grantCompleted(player,SanctuaryAdvancementCatalog.FIRST_OFFERING);if(completedOfferings>=6)grantCompleted(player,SanctuaryAdvancementCatalog.HALF_OFFERINGS);if(completedOfferings>=12)grantCompleted(player,SanctuaryAdvancementCatalog.ALL_OFFERINGS);}
     public void recordDivineRelicReceived(Player player){Objects.requireNonNull(player,"player");grantCompleted(player,SanctuaryAdvancementCatalog.DIVINE_RELIC);}
     public void recordSentryCraft(Player player){Objects.requireNonNull(player,"player");grantCompleted(player,SanctuaryAdvancementCatalog.FIRST_SENTRY);}
-    public void recordCompanionObtained(Player player,ExtendedItemId companionId){Objects.requireNonNull(player,"player");Objects.requireNonNull(companionId,"companionId");if(!companionIds.contains(companionId))return;grantCompleted(player,SanctuaryAdvancementCatalog.FIRST_COMPANION);if(companionId.equals(ExtendedItemIds.COMPANION_WARDEN))grantCompleted(player,SanctuaryAdvancementCatalog.WARDEN_COMPANION);if(companionId.equals(ExtendedItemIds.COMPANION_WITHER))grantCompleted(player,SanctuaryAdvancementCatalog.WITHER_COMPANION);}
+    public void recordCompanionObtained(Player player,ExtendedItemId companionId){Objects.requireNonNull(player,"player");Objects.requireNonNull(companionId,"companionId");if(CompanionDefinition.byItemId(companionId).isEmpty())return;grantCompleted(player,SanctuaryAdvancementCatalog.FIRST_COMPANION);if(companionId.equals(ExtendedItemIds.COMPANION_WARDEN))grantCompleted(player,SanctuaryAdvancementCatalog.WARDEN_COMPANION);if(companionId.equals(ExtendedItemIds.COMPANION_WITHER))grantCompleted(player,SanctuaryAdvancementCatalog.WITHER_COMPANION);}
     public void recordTierFiveAnchor(Player player){Objects.requireNonNull(player,"player");grantCompleted(player,SanctuaryAdvancementCatalog.TIER_FIVE_ANCHOR);}
 
     @EventHandler(priority=EventPriority.MONITOR,ignoreCancelled=true) public void onCraft(CraftItemEvent event){if(!(event.getWhoClicked() instanceof Player player))return;String recipeKey=recipeKey(event.getRecipe());if(recipeKey==null)return;SanctuaryRecipeCatalog.findByKey(recipeKey).ifPresent(definition->recordSanctuaryCraft(player,definition.result()));if(SentryRecipeCatalog.sentryConversions().stream().anyMatch(conversion->conversion.key().equals(recipeKey)))recordSentryCraft(player);}

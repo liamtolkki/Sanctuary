@@ -31,6 +31,7 @@ import dev.liamtolkkinen.sanctuary.protection.SanctuaryProtectionListener;
 import dev.liamtolkkinen.sanctuary.protection.SanctuaryProtectionService;
 import dev.liamtolkkinen.sanctuary.security.SanctuarySecurityService;
 import dev.liamtolkkinen.sanctuary.sentry.BeaconProximityBoundaryTask;
+import dev.liamtolkkinen.sanctuary.sentry.SentryAwarenessService;
 import dev.liamtolkkinen.sanctuary.sentry.SentryListener;
 import dev.liamtolkkinen.sanctuary.sentry.SentryRecipeService;
 import dev.liamtolkkinen.sanctuary.sentry.SentryService;
@@ -106,6 +107,7 @@ public final class SanctuaryPlugin extends JavaPlugin {
             var upgradeRepository = new SqliteUpgradeRepository(databaseManager);
             var graphService = new AnchorGraphService(repository, anchorRepository, upgradeRepository);
             var anchorTerritoryService = new AnchorTerritoryService(repository, anchorRepository);
+            new SentryAwarenessService(anchorTerritoryService, upgradeRepository);
             sanctuaryApi = new DefaultSanctuaryApi(repository, getLogger());
 
             getServer().getServicesManager().register(

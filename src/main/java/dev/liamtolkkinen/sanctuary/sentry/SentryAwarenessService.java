@@ -20,6 +20,8 @@ import org.bukkit.Location;
  * three-dimensional proximity sphere.
  */
 public final class SentryAwarenessService {
+    private static volatile SentryAwarenessService current;
+
     private final AnchorTerritoryService anchorTerritoryService;
     private final UpgradeRepository upgradeRepository;
 
@@ -29,6 +31,32 @@ public final class SentryAwarenessService {
     ) {
         this.anchorTerritoryService = Objects.requireNonNull(anchorTerritoryService, "anchorTerritoryService");
         this.upgradeRepository = Objects.requireNonNull(upgradeRepository, "upgradeRepository");
+        current = this;
+    }
+
+    /**
+     * Runtime-aware proactive check. A missing runtime instance preserves legacy/test behavior;
+     * the plugin installs this service during startup before sentry tasks begin.
+     */
+    public static boolean proactivelyWatches(UUID sanctuaryId, Location location) throws SQLException {
+        SentryAwarenessService service = current;
+        return service == null || service.covers(sanctuaryId, location);
+    }
+
+    /** Runtime-aware Anchor Proximity check against Watcher's Eye anchors only. */
+    public static boolean isNearWatcherAnchorRuntime(
+        List<SanctuaryAnchor> activeAnchors,
+        Location location,
+        double radius
+    ) throws SQLException {
+        SentryAwarenessService service = current;
+        if (service == null) return isNearAnyAnchor(activeAnchors, location, radius);
+        return service.isNearWatcherAnchor(service.watcherAnchors(activeAnchors), location, radius);
+    }
+
+    public static boolean hasWatcherRuntime(SanctuaryAnchor anchor) throws SQLException {
+        SentryAwarenessService service = current;
+        return service == null || service.hasWatcher(anchor);
     }
 
     public List<SanctuaryAnchor> watcherAnchors(UUID sanctuaryId) throws SQLException {
@@ -76,10 +104,18 @@ public final class SentryAwarenessService {
         Location location,
         double radius
     ) {
+        return isNearAnyAnchor(watcherAnchors, location, radius);
+    }
+
+    private static boolean isNearAnyAnchor(
+        List<SanctuaryAnchor> anchors,
+        Location location,
+        double radius
+    ) {
         if (location.getWorld() == null) return false;
         double radiusSquared = radius * radius;
         String world = location.getWorld().getName();
-        for (SanctuaryAnchor anchor : watcherAnchors) {
+        for (SanctuaryAnchor anchor : anchors) {
             if (anchor.position().isEmpty()) continue;
             var position = anchor.position().orElseThrow();
             if (!position.world().equals(world)) continue;

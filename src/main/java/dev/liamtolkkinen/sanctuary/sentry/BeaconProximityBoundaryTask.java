@@ -8,7 +8,10 @@ import dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryType;
 import dev.liamtolkkinen.sanctuary.territory.AnchorTerritoryService;
 import java.sql.SQLException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 import java.util.function.DoubleSupplier;
 import java.util.function.LongSupplier;
 import java.util.logging.Level;
@@ -26,6 +29,8 @@ import org.bukkit.plugin.java.JavaPlugin;
  * This is intentionally separate from the Sanctuary territory union perimeter.
  */
 public final class BeaconProximityBoundaryTask implements Runnable {
+    private static final long LINGER_MILLIS = 3000L;
+
     private final SanctuaryRepository sanctuaryRepository;
     private final AnchorTerritoryService anchorTerritoryService;
     private final SentryRepository sentryRepository;
@@ -35,6 +40,7 @@ public final class BeaconProximityBoundaryTask implements Runnable {
     private final DoubleSupplier maximumViewerDistance;
     private final LongSupplier updatePeriodTicks;
     private final Logger logger;
+    private final Map<BoundaryViewerKey, Long> visibleUntil = new HashMap<>();
 
     public BeaconProximityBoundaryTask(
         SanctuaryRepository sanctuaryRepository,
@@ -65,6 +71,7 @@ public final class BeaconProximityBoundaryTask implements Runnable {
 
     @Override
     public void run() {
+        long now = System.currentTimeMillis();
         try {
             for (Sanctuary sanctuary : sanctuaryRepository.findAll()) {
                 if (sanctuary.state() != SanctuaryState.ACTIVE) {
@@ -80,11 +87,13 @@ public final class BeaconProximityBoundaryTask implements Runnable {
                     if (anchor.type() != SanctuaryType.BEACON || anchor.position().isEmpty()) {
                         continue;
                     }
-                    renderAnchorSphere(sanctuary, anchor, proximitySentries);
+                    renderAnchorSphere(sanctuary, anchor, proximitySentries, now);
                 }
             }
         } catch (SQLException exception) {
             logger.log(Level.WARNING, "Failed to render Beacon Proximity boundaries", exception);
+        } finally {
+            visibleUntil.entrySet().removeIf(entry -> entry.getValue() < now);
         }
     }
 
@@ -102,7 +111,8 @@ public final class BeaconProximityBoundaryTask implements Runnable {
     private void renderAnchorSphere(
         Sanctuary sanctuary,
         SanctuaryAnchor anchor,
-        List<SentryRecord> proximitySentries
+        List<SentryRecord> proximitySentries,
+        long now
     ) {
         var position = anchor.position().orElseThrow();
         World world = Bukkit.getWorld(position.world());
@@ -117,22 +127,31 @@ public final class BeaconProximityBoundaryTask implements Runnable {
             position.z() + 0.5
         );
         double radius = SentryService.BEACON_PROXIMITY_RADIUS;
-        double minimum = Math.max(0.0, minimumViewerDistance.getAsDouble());
-        double maximum = Math.max(minimum, maximumViewerDistance.getAsDouble());
+        double maximum = Math.max(
+            Math.max(0.0, minimumViewerDistance.getAsDouble()),
+            maximumViewerDistance.getAsDouble()
+        );
         double spacing = Math.max(0.5, particleSpacing.getAsDouble());
 
         for (Player player : world.getPlayers()) {
+            BoundaryViewerKey key = new BoundaryViewerKey(anchor.id(), player.getUniqueId());
             double centerDistance = player.getLocation().distance(center);
-            if (Math.abs(centerDistance - radius) > maximum) {
+            boolean inRange = Math.abs(centerDistance - radius) <= maximum;
+            if (inRange) {
+                visibleUntil.put(key, now + LINGER_MILLIS);
+            }
+
+            Long expiry = visibleUntil.get(key);
+            if (!inRange && (expiry == null || expiry < now)) {
                 continue;
             }
 
             boolean dangerous = wouldEngage(sanctuary, proximitySentries, player);
             Particle.DustOptions dust = new Particle.DustOptions(
-                dangerous ? Color.RED : Color.LIME,
+                dangerous ? Color.RED : Color.WHITE,
                 1.0f
             );
-            renderSpherePatch(player, center, radius, spacing, minimum, maximum, dust);
+            renderFullSphere(player, center, radius, spacing, dust);
         }
     }
 
@@ -150,19 +169,14 @@ public final class BeaconProximityBoundaryTask implements Runnable {
         return false;
     }
 
-    private static void renderSpherePatch(
+    private static void renderFullSphere(
         Player player,
         Location center,
         double radius,
         double spacing,
-        double minimumViewerDistance,
-        double maximumViewerDistance,
         Particle.DustOptions dust
     ) {
         double latitudeStep = Math.max(0.08, spacing / radius);
-        double minimumSquared = minimumViewerDistance * minimumViewerDistance;
-        double maximumSquared = maximumViewerDistance * maximumViewerDistance;
-        Location viewer = player.getLocation();
 
         for (double latitude = -Math.PI / 2.0;
              latitude <= Math.PI / 2.0 + 1.0e-9;
@@ -177,15 +191,11 @@ public final class BeaconProximityBoundaryTask implements Runnable {
                 double angle = Math.PI * 2.0 * index / ringPoints;
                 double x = center.getX() + ringRadius * Math.cos(angle);
                 double z = center.getZ() + ringRadius * Math.sin(angle);
-                double dx = viewer.getX() - x;
-                double dy = viewer.getY() - y;
-                double dz = viewer.getZ() - z;
-                double distanceSquared = dx * dx + dy * dy + dz * dz;
-                if (distanceSquared <= minimumSquared || distanceSquared >= maximumSquared) {
-                    continue;
-                }
                 player.spawnParticle(Particle.DUST, x, y, z, 1, 0.0, 0.0, 0.0, 0.0, dust);
             }
         }
+    }
+
+    private record BoundaryViewerKey(UUID anchorId, UUID playerId) {
     }
 }

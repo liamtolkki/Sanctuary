@@ -322,11 +322,35 @@ public final class SentryService {
             SentryDefinition definition = definition(sentry).orElse(null);
             Mob mob = entity(sentry).filter(Mob.class::isInstance).map(Mob.class::cast).orElse(null);
             if (definition == null || mob == null || !validTarget(sanctuary, sentry, definition, target)) continue;
-            authorizeAndEngage(sanctuary, sentry, definition, mob, target);
+            if (trigger == SentryTrigger.SENTRY_ATTACKED) {
+                authorizeAndEngageUnchecked(sanctuary, sentry, definition, mob, target);
+            } else {
+                authorizeAndEngage(sanctuary, sentry, definition, mob, target);
+            }
         }
     }
 
     public void authorizeAndEngage(Sanctuary sanctuary, SentryRecord sentry, SentryDefinition definition, Mob mob, LivingEntity target) {
+        try {
+            if (!SentryAwarenessService.proactivelyWatches(sanctuary.id(), target.getLocation())) {
+                clearTarget(sentry);
+                return;
+            }
+        } catch (SQLException exception) {
+            logger.warning("Failed Watcher's Eye awareness check: " + exception.getMessage());
+            clearTarget(sentry);
+            return;
+        }
+        authorizeAndEngageUnchecked(sanctuary, sentry, definition, mob, target);
+    }
+
+    private void authorizeAndEngageUnchecked(
+        Sanctuary sanctuary,
+        SentryRecord sentry,
+        SentryDefinition definition,
+        Mob mob,
+        LivingEntity target
+    ) {
         if (!validTarget(sanctuary, sentry, definition, target)
             || !DefenseTargetingRules.isLocallyRelevant(mob, home(sentry), target)) {
             clearTarget(sentry);

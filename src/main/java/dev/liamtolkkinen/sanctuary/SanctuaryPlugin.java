@@ -26,9 +26,11 @@ import dev.liamtolkkinen.sanctuary.persistence.SqliteSanctuaryRepository;
 import dev.liamtolkkinen.sanctuary.persistence.SqliteSanctuarySecurityRepository;
 import dev.liamtolkkinen.sanctuary.persistence.SqliteSanctuaryTrustRepository;
 import dev.liamtolkkinen.sanctuary.persistence.SqliteSentryRepository;
+import dev.liamtolkkinen.sanctuary.persistence.SqliteUpgradeRepository;
 import dev.liamtolkkinen.sanctuary.protection.SanctuaryProtectionListener;
 import dev.liamtolkkinen.sanctuary.protection.SanctuaryProtectionService;
 import dev.liamtolkkinen.sanctuary.security.SanctuarySecurityService;
+import dev.liamtolkkinen.sanctuary.sentry.BeaconProximityBoundaryTask;
 import dev.liamtolkkinen.sanctuary.sentry.SentryListener;
 import dev.liamtolkkinen.sanctuary.sentry.SentryRecipeService;
 import dev.liamtolkkinen.sanctuary.sentry.SentryService;
@@ -101,6 +103,7 @@ public final class SanctuaryPlugin extends JavaPlugin {
                 securityService
             );
             var sentryRepository = new SqliteSentryRepository(databaseManager);
+            var upgradeRepository = new SqliteUpgradeRepository(databaseManager);
             var graphService = new AnchorGraphService(repository, anchorRepository);
             var anchorTerritoryService = new AnchorTerritoryService(repository, anchorRepository);
             sanctuaryApi = new DefaultSanctuaryApi(repository, getLogger());
@@ -243,6 +246,8 @@ public final class SanctuaryPlugin extends JavaPlugin {
                 repository,
                 anchorRepository,
                 effectService,
+                securityService,
+                upgradeRepository,
                 uiService
             );
             getServer().getPluginManager().registerEvents(
@@ -261,6 +266,17 @@ public final class SanctuaryPlugin extends JavaPlugin {
                 sentryRepository,
                 repository,
                 anchorTerritoryService,
+                getLogger()
+            ).start(this);
+            new BeaconProximityBoundaryTask(
+                repository,
+                anchorTerritoryService,
+                sentryRepository,
+                sentryService,
+                this::getBoundaryParticleSpacing,
+                this::getAutomaticBoundaryMinimumDistance,
+                this::getAutomaticBoundaryMaximumDistance,
+                this::getAutomaticBoundaryUpdatePeriodTicks,
                 getLogger()
             ).start(this);
             getServer().getPluginManager().registerEvents(

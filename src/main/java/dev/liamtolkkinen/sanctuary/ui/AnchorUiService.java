@@ -1,6 +1,7 @@
 package dev.liamtolkkinen.sanctuary.ui;
 
 import dev.liamtolkkinen.extendeditems.ExtendedItemId;
+import dev.liamtolkkinen.extendeditems.ExtendedItemIds;
 import dev.liamtolkkinen.extendeditems.ExtendedItems;
 import dev.liamtolkkinen.extendedui.ExtendedButton;
 import dev.liamtolkkinen.extendedui.ExtendedInventoryMenu;
@@ -35,6 +36,7 @@ import org.bukkit.ChatColor;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.PlayerInventory;
 import org.bukkit.inventory.meta.Damageable;
 
 public final class AnchorUiService {
@@ -281,8 +283,11 @@ public final class AnchorUiService {
             lore.add("<red>Locked until Anchor Tier " + roman(definition.tier()) + ".");
         } else {
             lore.add("<green>Current level: " + roman(level));
-            if (effect.maximumLevel() > 1) {
-                lore.add("<yellow>Click to select the next level.");
+            if (level < effect.maximumLevel()) {
+                lore.add("<yellow>Click to permanently attune to Level " + roman(level + 1) + ".");
+                lore.add("<yellow>Consumes one Attunement Relic.");
+            } else {
+                lore.add("<green>Maximum attunement reached.");
             }
         }
 
@@ -292,17 +297,16 @@ public final class AnchorUiService {
             (effect.target() == AnchorEffect.Target.SAFE ? "<green>" : "<red>")
                 + effectDisplayName(effect),
             lore,
-            unlocked && effect.maximumLevel() > 1
-                ? click -> cycle(click.player(), anchor.id(), effect, currentLevel, click.menu())
+            unlocked && currentLevel < effect.maximumLevel()
+                ? click -> upgradeEffect(click.player(), anchor.id(), effect, click.menu())
                 : null
         );
     }
 
-    private void cycle(
+    private void upgradeEffect(
         Player player,
         UUID anchorId,
         AnchorEffect effect,
-        int currentLevel,
         ExtendedMenuContext context
     ) {
         try {
@@ -312,13 +316,71 @@ public final class AnchorUiService {
                 ui.close(player);
                 return;
             }
-            int nextLevel = currentLevel >= effect.maximumLevel() ? 1 : currentLevel + 1;
+            if (!effectService.isUnlocked(anchor, effect)) {
+                throw new IllegalStateException("That effect is not unlocked at this anchor tier.");
+            }
+
+            int currentLevel = effectService.level(anchor, effect);
+            if (currentLevel >= effect.maximumLevel()) {
+                throw new IllegalStateException("That effect is already at maximum attunement.");
+            }
+            if (!hasExactItem(player.getInventory(), ExtendedItemIds.ATTUNEMENT_RELIC)) {
+                throw new IllegalStateException("You need an Attunement Relic to upgrade this effect.");
+            }
+
+            int nextLevel = currentLevel + 1;
             effectService.setLevel(anchor, effect, nextLevel);
-            player.sendMessage(ChatColor.AQUA + effectDisplayName(effect) + " set to " + roman(nextLevel) + ".");
+            if (!consumeExactItem(player.getInventory(), ExtendedItemIds.ATTUNEMENT_RELIC)) {
+                effectService.setLevel(anchor, effect, currentLevel);
+                throw new IllegalStateException(
+                    "The Attunement Relic disappeared before the upgrade could finish."
+                );
+            }
+
+            player.updateInventory();
+            player.sendMessage(
+                ChatColor.AQUA + effectDisplayName(effect)
+                    + " permanently attuned to Level " + roman(nextLevel) + "."
+            );
             context.refresh();
-        } catch (SQLException | IllegalArgumentException | IllegalStateException exception) {
+        } catch (SQLException exception) {
+            player.sendMessage(ChatColor.RED + "Sanctuary could not save this effect upgrade.");
+            plugin.getLogger().log(
+                Level.SEVERE,
+                "Failed to upgrade Sanctuary anchor effect " + anchorId + ":" + effect.name(),
+                exception
+            );
+        } catch (IllegalArgumentException | IllegalStateException exception) {
             player.sendMessage(ChatColor.RED + exception.getMessage());
+            context.refresh();
         }
+    }
+
+    private static boolean hasExactItem(PlayerInventory inventory, ExtendedItemId itemId) {
+        for (ItemStack item : inventory.getStorageContents()) {
+            if (ExtendedItems.is(item, itemId)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean consumeExactItem(PlayerInventory inventory, ExtendedItemId itemId) {
+        ItemStack[] storage = inventory.getStorageContents();
+        for (int slot = 0; slot < storage.length; slot++) {
+            ItemStack item = storage[slot];
+            if (!ExtendedItems.is(item, itemId)) {
+                continue;
+            }
+            if (item.getAmount() <= 1) {
+                inventory.setItem(slot, null);
+            } else {
+                item.setAmount(item.getAmount() - 1);
+                inventory.setItem(slot, item);
+            }
+            return true;
+        }
+        return false;
     }
 
     private static ExtendedButton effectIconButton(

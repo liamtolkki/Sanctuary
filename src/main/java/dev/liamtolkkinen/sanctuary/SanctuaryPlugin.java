@@ -104,7 +104,7 @@ public final class SanctuaryPlugin extends JavaPlugin {
             );
             var sentryRepository = new SqliteSentryRepository(databaseManager);
             var upgradeRepository = new SqliteUpgradeRepository(databaseManager);
-            var graphService = new AnchorGraphService(repository, anchorRepository);
+            var graphService = new AnchorGraphService(repository, anchorRepository, upgradeRepository);
             var anchorTerritoryService = new AnchorTerritoryService(repository, anchorRepository);
             sanctuaryApi = new DefaultSanctuaryApi(repository, getLogger());
 

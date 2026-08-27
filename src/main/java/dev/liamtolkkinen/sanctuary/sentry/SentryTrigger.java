@@ -6,7 +6,7 @@ public enum SentryTrigger {
     ENTITY_HURT("Entity Hurt", true),
     HOSTILE_MOB_ENTERED("Hostile Mob Present", true),
     NEUTRAL_MOB_ENTERED("Neutral Mob Present", false),
-    BEACON_PROXIMITY("Beacon Proximity", false),
+    BEACON_PROXIMITY("Anchor Proximity", false),
     OWNER_ATTACKED("Owner Attacked", true),
     BLOCK_BROKEN("Block Broken", true),
     BLOCK_PLACED("Block Placed", true),

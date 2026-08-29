@@ -15,6 +15,8 @@ import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitTask;
 
 public final class TerritoryBoundaryProximityTask implements Runnable {
+    private static final double FULL_SHELL_SPACING_MULTIPLIER = 4.0;
+
     private final SanctuaryRepository repository;
     private final TerritoryBoundaryService boundaryService;
     private final BooleanSupplier enabled;
@@ -66,8 +68,14 @@ public final class TerritoryBoundaryProximityTask implements Runnable {
         if (!enabled.getAsBoolean()) {
             return;
         }
+
         double minimum = minimumDistance.getAsDouble();
         double maximum = maximumDistance.getAsDouble();
+        double detailHorizontalSpacing = horizontalSpacing.getAsDouble();
+        double detailVerticalSpacing = verticalSpacing.getAsDouble();
+        double shellHorizontalSpacing = detailHorizontalSpacing * FULL_SHELL_SPACING_MULTIPLIER;
+        double shellVerticalSpacing = detailVerticalSpacing * FULL_SHELL_SPACING_MULTIPLIER;
+
         try {
             for (Player player : Bukkit.getOnlinePlayers()) {
                 for (Sanctuary sanctuary : repository.findActiveInWorld(player.getWorld().getName())) {
@@ -81,11 +89,26 @@ public final class TerritoryBoundaryProximityTask implements Runnable {
                     )) {
                         continue;
                     }
+
+                    // Once the viewer is close enough to any exposed part of the Sanctuary,
+                    // show the entire outer union shell at a deliberately lighter density. This
+                    // makes the ellipsoid's height and fly-over path readable without sending the
+                    // dense proximity particle pattern across the whole Sanctuary.
                     boundaryService.showProximity(
                         player,
                         sanctuary,
-                        horizontalSpacing.getAsDouble(),
-                        verticalSpacing.getAsDouble(),
+                        shellHorizontalSpacing,
+                        shellVerticalSpacing,
+                        0.0,
+                        Double.MAX_VALUE
+                    );
+
+                    // Keep the existing dense local band so the nearby edge remains precise.
+                    boundaryService.showProximity(
+                        player,
+                        sanctuary,
+                        detailHorizontalSpacing,
+                        detailVerticalSpacing,
                         minimum,
                         maximum
                     );

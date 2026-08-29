@@ -196,7 +196,7 @@ public final class SanctuaryEffectTask implements Runnable {
             case STRENGTH -> PotionEffectType.STRENGTH;
             case HASTE -> PotionEffectType.HASTE;
             case SPEED -> PotionEffectType.SPEED;
-            case NIGHT_VISION -> PotionEffectType.NIGHT_VISION;
+            case CONDUIT_POWER -> PotionEffectType.CONDUIT_POWER;
             case DOLPHINS_GRACE -> PotionEffectType.DOLPHINS_GRACE;
             case MINING_FATIGUE -> PotionEffectType.MINING_FATIGUE;
             case WEAKNESS -> PotionEffectType.WEAKNESS;

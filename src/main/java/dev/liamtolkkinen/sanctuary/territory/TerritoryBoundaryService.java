@@ -151,26 +151,62 @@ public final class TerritoryBoundaryService {
     ) throws SQLException {
         Objects.requireNonNull(sanctuary, "sanctuary");
         Objects.requireNonNull(world, "world");
-        if (!Double.isFinite(maximumDistance) || maximumDistance <= 0.0) {
-            throw new IllegalArgumentException(
-                "maximumDistance must be finite and greater than zero"
-            );
+        validateMaximumDistance(maximumDistance);
+        return boundaryEllipsoids(sanctuary).stream().anyMatch(ellipsoid ->
+            ellipsoid.position().world().equals(world)
+                && conservativeDistanceToSurface(ellipsoid, x, y, z) < maximumDistance
+        );
+    }
+
+    /**
+     * Automatic boundary visibility keeps the full shell hidden while a player is comfortably
+     * inside the Sanctuary, but keeps it visible to players who are vertically outside the
+     * territory as long as their X/Z position remains over or near its footprint.
+     */
+    public boolean isWithinAutomaticRenderDistance(
+        Sanctuary sanctuary,
+        String world,
+        double x,
+        double y,
+        double z,
+        double maximumDistance
+    ) throws SQLException {
+        Objects.requireNonNull(sanctuary, "sanctuary");
+        Objects.requireNonNull(world, "world");
+        validateMaximumDistance(maximumDistance);
+
+        List<BoundaryEllipsoid> ellipsoids = boundaryEllipsoids(sanctuary).stream()
+            .filter(ellipsoid -> ellipsoid.position().world().equals(world))
+            .toList();
+        if (ellipsoids.isEmpty()) {
+            return false;
         }
-        return boundaryEllipsoids(sanctuary).stream().anyMatch(ellipsoid -> {
-            if (!ellipsoid.position().world().equals(world)) {
-                return false;
-            }
-            double scaledDistance = TerritoryCalculator.scaledDistance(
+
+        boolean insideTerritory = ellipsoids.stream().anyMatch(ellipsoid ->
+            TerritoryCalculator.contains(
                 ellipsoid.position(),
+                ellipsoid.radius(),
+                world,
                 x,
                 y,
                 z
-            );
-            double conservativeDistanceToSurface = Math.abs(
-                scaledDistance - ellipsoid.radius()
-            ) * TerritoryCalculator.VERTICAL_RADIUS_SCALE;
-            return conservativeDistanceToSurface < maximumDistance;
-        });
+            )
+        );
+        double nearestThreeDimensionalSurfaceDistance = ellipsoids.stream()
+            .mapToDouble(ellipsoid -> conservativeDistanceToSurface(ellipsoid, x, y, z))
+            .min()
+            .orElse(Double.POSITIVE_INFINITY);
+        double horizontalFootprintDistance = ellipsoids.stream()
+            .mapToDouble(ellipsoid -> horizontalDistanceToFootprint(ellipsoid, x, z))
+            .min()
+            .orElse(Double.POSITIVE_INFINITY);
+
+        return automaticBoundaryVisible(
+            insideTerritory,
+            nearestThreeDimensionalSurfaceDistance,
+            horizontalFootprintDistance,
+            maximumDistance
+        );
     }
 
     public boolean isWithinRenderDistance(
@@ -180,18 +216,36 @@ public final class TerritoryBoundaryService {
         double z,
         double maximumDistance
     ) throws SQLException {
-        List<BoundaryEllipsoid> ellipsoids = boundaryEllipsoids(sanctuary);
-        if (ellipsoids.isEmpty()) {
-            return false;
-        }
-        return isWithinRenderDistance(
-            sanctuary,
-            world,
-            x,
-            ellipsoids.get(0).position().y() + 0.5,
-            z,
-            maximumDistance
+        Objects.requireNonNull(sanctuary, "sanctuary");
+        Objects.requireNonNull(world, "world");
+        validateMaximumDistance(maximumDistance);
+        return boundaryEllipsoids(sanctuary).stream().anyMatch(ellipsoid ->
+            ellipsoid.position().world().equals(world)
+                && horizontalDistanceToFootprint(ellipsoid, x, z) < maximumDistance
         );
+    }
+
+    static boolean automaticBoundaryVisible(
+        boolean insideTerritory,
+        double nearestThreeDimensionalSurfaceDistance,
+        double horizontalFootprintDistance,
+        double maximumDistance
+    ) {
+        if (!Double.isFinite(nearestThreeDimensionalSurfaceDistance)
+            || nearestThreeDimensionalSurfaceDistance < 0.0) {
+            throw new IllegalArgumentException(
+                "nearestThreeDimensionalSurfaceDistance must be finite and zero or greater"
+            );
+        }
+        if (!Double.isFinite(horizontalFootprintDistance) || horizontalFootprintDistance < 0.0) {
+            throw new IllegalArgumentException(
+                "horizontalFootprintDistance must be finite and zero or greater"
+            );
+        }
+        validateMaximumDistance(maximumDistance);
+        return insideTerritory
+            ? nearestThreeDimensionalSurfaceDistance < maximumDistance
+            : horizontalFootprintDistance < maximumDistance;
     }
 
     static int pointCount(double radius, double particleSpacing) {
@@ -478,6 +532,34 @@ public final class TerritoryBoundaryService {
         return false;
     }
 
+    private static double conservativeDistanceToSurface(
+        BoundaryEllipsoid ellipsoid,
+        double x,
+        double y,
+        double z
+    ) {
+        double scaledDistance = TerritoryCalculator.scaledDistance(
+            ellipsoid.position(),
+            x,
+            y,
+            z
+        );
+        return Math.abs(scaledDistance - ellipsoid.radius())
+            * TerritoryCalculator.VERTICAL_RADIUS_SCALE;
+    }
+
+    private static double horizontalDistanceToFootprint(
+        BoundaryEllipsoid ellipsoid,
+        double x,
+        double z
+    ) {
+        SanctuaryPosition position = ellipsoid.position();
+        double centerX = position.x() + 0.5;
+        double centerZ = position.z() + 0.5;
+        double horizontalDistance = Math.hypot(x - centerX, z - centerZ);
+        return Math.max(0.0, horizontalDistance - ellipsoid.radius());
+    }
+
     private Particle boundaryParticle(Player viewer, Sanctuary sanctuary) {
         try {
             SanctuaryThreat threat = securityService.threat(
@@ -552,6 +634,14 @@ public final class TerritoryBoundaryService {
         if (!Double.isFinite(maximumDistance) || maximumDistance <= minimumDistance) {
             throw new IllegalArgumentException(
                 "maximumDistance must be finite and greater than minimumDistance"
+            );
+        }
+    }
+
+    private static void validateMaximumDistance(double maximumDistance) {
+        if (!Double.isFinite(maximumDistance) || maximumDistance <= 0.0) {
+            throw new IllegalArgumentException(
+                "maximumDistance must be finite and greater than zero"
             );
         }
     }

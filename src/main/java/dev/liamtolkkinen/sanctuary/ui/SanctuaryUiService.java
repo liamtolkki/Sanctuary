@@ -544,6 +544,7 @@ public final class SanctuaryUiService {
                     .map(SanctuaryTrustEntry::playerId)
                     .collect(java.util.stream.Collectors.toSet());
                 return Bukkit.getOnlinePlayers().stream()
+                    .map(Player.class::cast)
                     .filter(value -> !value.getUniqueId().equals(sanctuary.ownerId()))
                     .filter(value -> !trusted.contains(value.getUniqueId()))
                     .sorted(Comparator.comparing(Player::getName, String.CASE_INSENSITIVE_ORDER))
@@ -677,6 +678,7 @@ public final class SanctuaryUiService {
                     .map(SanctuaryBlacklistEntry::playerId)
                     .collect(java.util.stream.Collectors.toSet());
                 return Bukkit.getOnlinePlayers().stream()
+                    .map(Player.class::cast)
                     .filter(value -> !value.getUniqueId().equals(sanctuary.ownerId()))
                     .filter(value -> !blacklisted.contains(value.getUniqueId()))
                     .sorted(Comparator.comparing(Player::getName, String.CASE_INSENSITIVE_ORDER))

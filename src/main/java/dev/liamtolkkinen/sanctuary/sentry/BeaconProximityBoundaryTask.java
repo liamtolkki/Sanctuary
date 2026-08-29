@@ -24,12 +24,12 @@ import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 
 /**
- * Draws the actual three-dimensional Anchor Proximity sentry trigger boundary.
- * This is intentionally separate from the Sanctuary territory union perimeter.
- * Both Beacon and Conduit anchors use the same sphere when that anchor has a Watcher's Eye.
+ * Draws the three-dimensional Anchor Proximity trigger as the outer surface of
+ * the union of all Watcher's Eye anchor spheres in a Sanctuary.
  */
 public final class BeaconProximityBoundaryTask implements Runnable {
     private static final long LINGER_MILLIS = 3000L;
+    private static final double UNION_EPSILON = 1.0e-6;
 
     private final SanctuaryRepository sanctuaryRepository;
     private final AnchorTerritoryService anchorTerritoryService;
@@ -83,12 +83,15 @@ public final class BeaconProximityBoundaryTask implements Runnable {
                     continue;
                 }
 
-                for (SanctuaryAnchor anchor : anchorTerritoryService.activeAnchors(sanctuary.id())) {
-                    if (anchor.position().isEmpty() || !SentryAwarenessService.hasWatcherRuntime(anchor)) {
-                        continue;
-                    }
-                    renderAnchorSphere(sanctuary, anchor, proximitySentries, now);
+                List<SanctuaryAnchor> watcherAnchors = anchorTerritoryService.activeAnchors(sanctuary.id()).stream()
+                    .filter(anchor -> anchor.position().isPresent())
+                    .filter(SentryAwarenessService::hasWatcherRuntime)
+                    .toList();
+                if (watcherAnchors.isEmpty()) {
+                    continue;
                 }
+
+                renderUnion(sanctuary, watcherAnchors, proximitySentries, now);
             }
         } catch (SQLException exception) {
             logger.log(Level.WARNING, "Failed to render Anchor Proximity boundaries", exception);
@@ -108,50 +111,64 @@ public final class BeaconProximityBoundaryTask implements Runnable {
         return List.copyOf(result);
     }
 
-    private void renderAnchorSphere(
+    private void renderUnion(
         Sanctuary sanctuary,
-        SanctuaryAnchor anchor,
+        List<SanctuaryAnchor> watcherAnchors,
         List<SentryRecord> proximitySentries,
         long now
     ) {
-        var position = anchor.position().orElseThrow();
-        World world = Bukkit.getWorld(position.world());
-        if (world == null) {
+        Map<UUID, Sphere> spheres = new HashMap<>();
+        for (SanctuaryAnchor anchor : watcherAnchors) {
+            var position = anchor.position().orElseThrow();
+            World world = Bukkit.getWorld(position.world());
+            if (world == null) {
+                continue;
+            }
+            spheres.put(anchor.id(), new Sphere(
+                anchor.id(),
+                new Location(world, position.x() + 0.5, position.y() + 0.5, position.z() + 0.5),
+                SentryService.BEACON_PROXIMITY_RADIUS
+            ));
+        }
+        if (spheres.isEmpty()) {
             return;
         }
 
-        Location center = new Location(
-            world,
-            position.x() + 0.5,
-            position.y() + 0.5,
-            position.z() + 0.5
-        );
-        double radius = SentryService.BEACON_PROXIMITY_RADIUS;
         double maximum = Math.max(
             Math.max(0.0, minimumViewerDistance.getAsDouble()),
             maximumViewerDistance.getAsDouble()
         );
         double spacing = Math.max(0.5, particleSpacing.getAsDouble());
 
-        for (Player player : world.getPlayers()) {
-            BoundaryViewerKey key = new BoundaryViewerKey(anchor.id(), player.getUniqueId());
-            double centerDistance = player.getLocation().distance(center);
-            boolean inRange = Math.abs(centerDistance - radius) <= maximum;
-            if (inRange) {
-                visibleUntil.put(key, now + LINGER_MILLIS);
-            }
-
-            Long expiry = visibleUntil.get(key);
-            if (!inRange && (expiry == null || expiry < now)) {
+        for (Sphere sphere : spheres.values()) {
+            World world = sphere.center().getWorld();
+            if (world == null) {
                 continue;
             }
+            List<Sphere> sameWorldSpheres = spheres.values().stream()
+                .filter(other -> other.center().getWorld() == world)
+                .toList();
 
-            boolean dangerous = wouldEngage(sanctuary, proximitySentries, player);
-            Particle.DustOptions dust = new Particle.DustOptions(
-                dangerous ? Color.RED : Color.WHITE,
-                1.0f
-            );
-            renderFullSphere(player, center, radius, spacing, dust);
+            for (Player player : world.getPlayers()) {
+                BoundaryViewerKey key = new BoundaryViewerKey(sphere.anchorId(), player.getUniqueId());
+                double centerDistance = player.getLocation().distance(sphere.center());
+                boolean inRange = Math.abs(centerDistance - sphere.radius()) <= maximum;
+                if (inRange) {
+                    visibleUntil.put(key, now + LINGER_MILLIS);
+                }
+
+                Long expiry = visibleUntil.get(key);
+                if (!inRange && (expiry == null || expiry < now)) {
+                    continue;
+                }
+
+                boolean dangerous = wouldEngage(sanctuary, proximitySentries, player);
+                Particle.DustOptions dust = new Particle.DustOptions(
+                    dangerous ? Color.RED : Color.WHITE,
+                    1.0f
+                );
+                renderUnionSphere(player, sphere, sameWorldSpheres, spacing, dust);
+            }
         }
     }
 
@@ -169,13 +186,15 @@ public final class BeaconProximityBoundaryTask implements Runnable {
         return false;
     }
 
-    private static void renderFullSphere(
+    private static void renderUnionSphere(
         Player player,
-        Location center,
-        double radius,
+        Sphere sphere,
+        List<Sphere> unionSpheres,
         double spacing,
         Particle.DustOptions dust
     ) {
+        Location center = sphere.center();
+        double radius = sphere.radius();
         double latitudeStep = Math.max(0.08, spacing / radius);
 
         for (double latitude = -Math.PI / 2.0;
@@ -191,9 +210,38 @@ public final class BeaconProximityBoundaryTask implements Runnable {
                 double angle = Math.PI * 2.0 * index / ringPoints;
                 double x = center.getX() + ringRadius * Math.cos(angle);
                 double z = center.getZ() + ringRadius * Math.sin(angle);
+                if (insideAnotherSphere(sphere, unionSpheres, x, y, z)) {
+                    continue;
+                }
                 player.spawnParticle(Particle.DUST, x, y, z, 1, 0.0, 0.0, 0.0, 0.0, dust);
             }
         }
+    }
+
+    private static boolean insideAnotherSphere(
+        Sphere source,
+        List<Sphere> spheres,
+        double x,
+        double y,
+        double z
+    ) {
+        for (Sphere other : spheres) {
+            if (other.anchorId().equals(source.anchorId())) {
+                continue;
+            }
+            Location center = other.center();
+            double dx = x - center.getX();
+            double dy = y - center.getY();
+            double dz = z - center.getZ();
+            double interiorRadius = Math.max(0.0, other.radius() - UNION_EPSILON);
+            if (dx * dx + dy * dy + dz * dz < interiorRadius * interiorRadius) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private record Sphere(UUID anchorId, Location center, double radius) {
     }
 
     private record BoundaryViewerKey(UUID anchorId, UUID playerId) {

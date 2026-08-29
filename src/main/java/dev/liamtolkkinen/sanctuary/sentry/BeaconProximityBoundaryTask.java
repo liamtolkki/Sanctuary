@@ -83,10 +83,12 @@ public final class BeaconProximityBoundaryTask implements Runnable {
                     continue;
                 }
 
-                List<SanctuaryAnchor> watcherAnchors = anchorTerritoryService.activeAnchors(sanctuary.id()).stream()
-                    .filter(anchor -> anchor.position().isPresent())
-                    .filter(SentryAwarenessService::hasWatcherRuntime)
-                    .toList();
+                List<SanctuaryAnchor> watcherAnchors = new ArrayList<>();
+                for (SanctuaryAnchor anchor : anchorTerritoryService.activeAnchors(sanctuary.id())) {
+                    if (anchor.position().isPresent() && SentryAwarenessService.hasWatcherRuntime(anchor)) {
+                        watcherAnchors.add(anchor);
+                    }
+                }
                 if (watcherAnchors.isEmpty()) {
                     continue;
                 }

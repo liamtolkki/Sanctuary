@@ -18,6 +18,7 @@ permissions:
 
 jobs:
   release:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
 
     steps:
@@ -33,6 +34,16 @@ jobs:
 
       - name: Checkout Sanctuary
         uses: actions/checkout@v6
+
+      - name: Verify release tag is unused
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="v${{ inputs.version }}"
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "Release tag $TAG already exists." >&2
+            exit 1
+          fi
 
       - name: Set up Java 25
         uses: actions/setup-java@v5

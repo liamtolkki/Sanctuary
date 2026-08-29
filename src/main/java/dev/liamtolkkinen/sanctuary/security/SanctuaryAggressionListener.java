@@ -20,6 +20,7 @@ import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockDamageEvent;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
+import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.projectiles.ProjectileSource;
 
 /** Tracks temporary Sanctuary hostility caused by enabled direct-defense triggers. */
@@ -94,6 +95,15 @@ public final class SanctuaryAggressionListener implements Listener {
             }
         } catch (SQLException exception) {
             logger.log(Level.WARNING, "Failed to update Sanctuary aggression after anchor damage", exception);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onPlayerDeath(PlayerDeathEvent event) {
+        try {
+            securityService.forgiveTemporaryAggression(event.getEntity().getUniqueId());
+        } catch (SQLException exception) {
+            logger.log(Level.WARNING, "Failed to forgive Sanctuary aggression after player death", exception);
         }
     }
 

@@ -5,7 +5,7 @@ import dev.liamtolkkinen.extendeditems.ExtendedItems;
 import dev.liamtolkkinen.sanctuary.defense.DefenseTargetingRules;
 import dev.liamtolkkinen.sanctuary.sanctuary.Sanctuary;
 import dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryRepository;
-import dev.liamtolkkinen.sanctuary.security.SanctuaryRelationship;
+import dev.liamtolkkinen.sanctuary.security.SanctuaryThreat;
 import dev.liamtolkkinen.sanctuary.security.SanctuarySecurityService;
 import dev.liamtolkkinen.sanctuary.territory.AnchorTerritoryService;
 import dev.liamtolkkinen.sanctuary.territory.TerritoryCalculator;
@@ -313,11 +313,27 @@ public final class SentryService {
 
     public void trigger(Sanctuary sanctuary, SentryTrigger trigger, LivingEntity target) throws SQLException {
         if (target == null || target.isDead() || isDefenseEntity(target)) return;
+
+        List<SentryRecord> sentries = repository.findBySanctuary(sanctuary.id());
         if (target instanceof Player player) {
-            SanctuaryRelationship relationship = securityService.relationship(sanctuary, player.getUniqueId());
-            if (relationship == SanctuaryRelationship.OWNER || relationship == SanctuaryRelationship.TRUSTED) return;
+            if (sanctuary.ownerId().equals(player.getUniqueId())) return;
+            if (trigger.causesPlayerAggression()) {
+                boolean aggressionEnabled = false;
+                for (SentryRecord sentry : sentries) {
+                    if (sentry.state() == SentryState.ACTIVE && effective(sentry, trigger)) {
+                        aggressionEnabled = true;
+                        break;
+                    }
+                }
+                if (aggressionEnabled) {
+                    securityService.markAggressive(sanctuary, player.getUniqueId(), Instant.now());
+                }
+            }
+            SanctuaryThreat threat = securityService.threat(sanctuary, player.getUniqueId());
+            if (threat != SanctuaryThreat.HOSTILE) return;
         }
-        for (SentryRecord sentry : repository.findBySanctuary(sanctuary.id())) {
+
+        for (SentryRecord sentry : sentries) {
             if (sentry.state() != SentryState.ACTIVE || !effective(sentry, trigger)) continue;
             SentryDefinition definition = definition(sentry).orElse(null);
             Mob mob = entity(sentry).filter(Mob.class::isInstance).map(Mob.class::cast).orElse(null);
@@ -608,10 +624,11 @@ public final class SentryService {
         if (target.getWorld() != Bukkit.getWorld(sentry.world()) || isDefenseEntity(target)) return false;
         if (target instanceof Player player) {
             try {
-                SanctuaryRelationship relationship = securityService.relationship(sanctuary, player.getUniqueId());
-                if (relationship == SanctuaryRelationship.OWNER || relationship == SanctuaryRelationship.TRUSTED) return false;
+                if (securityService.threat(sanctuary, player.getUniqueId()) != SanctuaryThreat.HOSTILE) {
+                    return false;
+                }
             } catch (SQLException exception) {
-                logger.warning("Failed sentry relationship check: " + exception.getMessage());
+                logger.warning("Failed sentry threat check: " + exception.getMessage());
                 return false;
             }
         }
@@ -626,8 +643,7 @@ public final class SentryService {
     public boolean shouldSuppressManagedWardenEffect(Player player) throws SQLException {
         Sanctuary sanctuary = sanctuaryAt(player.getLocation()).orElse(null);
         if (sanctuary == null) return false;
-        SanctuaryRelationship relationship = securityService.relationship(sanctuary, player.getUniqueId());
-        if (relationship != SanctuaryRelationship.OWNER && relationship != SanctuaryRelationship.TRUSTED) return false;
+        if (securityService.threat(sanctuary, player.getUniqueId()) != SanctuaryThreat.SAFE) return false;
         for (SentryRecord sentry : repository.findBySanctuary(sanctuary.id())) {
             if (sentry.state() != SentryState.ACTIVE) continue;
             SentryDefinition definition = definition(sentry).orElse(null);

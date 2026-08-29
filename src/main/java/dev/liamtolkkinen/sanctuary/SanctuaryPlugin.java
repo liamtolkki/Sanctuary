@@ -33,6 +33,7 @@ import dev.liamtolkkinen.sanctuary.security.SanctuaryAggressionListener;
 import dev.liamtolkkinen.sanctuary.security.SanctuarySecurityService;
 import dev.liamtolkkinen.sanctuary.sentry.BeaconProximityBoundaryTask;
 import dev.liamtolkkinen.sanctuary.sentry.SentryAwarenessService;
+import dev.liamtolkkinen.sanctuary.sentry.SentryHostilePlayerTask;
 import dev.liamtolkkinen.sanctuary.sentry.SentryListener;
 import dev.liamtolkkinen.sanctuary.sentry.SentryRecipeService;
 import dev.liamtolkkinen.sanctuary.sentry.SentryService;
@@ -280,6 +281,13 @@ public final class SanctuaryPlugin extends JavaPlugin {
                 sentryRepository,
                 repository,
                 anchorTerritoryService,
+                getLogger()
+            ).start(this);
+            new SentryHostilePlayerTask(
+                sentryService,
+                sentryRepository,
+                repository,
+                securityService,
                 getLogger()
             ).start(this);
             new BeaconProximityBoundaryTask(

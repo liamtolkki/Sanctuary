@@ -671,7 +671,7 @@ public final class AnchorUiService {
             case STRENGTH -> Material.BLAZE_POWDER;
             case HASTE -> Material.GOLDEN_PICKAXE;
             case SPEED -> Material.SUGAR;
-            case NIGHT_VISION -> Material.ENDER_EYE;
+            case CONDUIT_POWER -> Material.HEART_OF_THE_SEA;
             case DOLPHINS_GRACE -> Material.DOLPHIN_SPAWN_EGG;
             case ELYTRA_DISABLED -> Material.ELYTRA;
             case MINING_FATIGUE -> Material.IRON_PICKAXE;

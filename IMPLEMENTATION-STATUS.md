@@ -1,84 +1,301 @@
 # Sanctuary Implementation Status
 
-## Implemented
+This file tracks the current implementation on `main`. It is not a chronological changelog. Historical design notes should not be treated as current behavior when they disagree with source or tests.
 
-### Foundation
+## Foundation
 
-- Java 25 Gradle project targeting Paper 26.1.2
-- Paper plugin entry point
-- Pinned ExtendedUI `0.1.0` GitHub Release dependency
-- ExtendedItems `0.1.0-alpha.2` pinned as an exact GitHub Release JAR
-- Shaded/relocated ExtendedUI, ExtendedItems, and InvUI in the final Sanctuary JAR
-- SQLite JDBC embedded in the final Sanctuary JAR
-- SQLite database bootstrap
-- Versioned database migration system
-- Initial `sanctuaries` table and indexes
-- Immutable core Sanctuary model
-- Active/inactive/destroyed state model
-- Beacon/Conduit type model
-- SQLite Sanctuary repository
-- Read-only public `SanctuaryApi`
-- Paper `ServicesManager` registration for `SanctuaryApi`
-- `/sanctuary status`
-- `/sanctuary admin reload`
-- Unit/integration tests for model invariants, migrations, and SQLite persistence
-- Development deployment task targeting `C:\MinecraftDev\server\plugins`
-- GitHub Actions build pipeline
+Implemented:
 
-### Beacon anchor lifecycle
+- Java 25 / Paper 26.1.2 Gradle project
+- Gradle Wrapper 9.7.1
+- SQLite persistence with versioned migrations through V012
+- ExtendedUI 0.1.0 pinned from GitHub Releases
+- ExtendedItems 0.1.0-alpha.9 pinned from GitHub Releases
+- shaded/relocated ExtendedUI, ExtendedItems, InvUI, and SQLite runtime dependencies
+- read-only public `SanctuaryApi` through Paper `ServicesManager`
+- GitHub Actions build/test pipeline
+- deterministic `Sanctuary.jar` CI artifact
+- manual GitHub Release workflow with SHA-256 asset
+- Windows production deployment script with backup and rollback
 
-- `ExtendedItemIds.SANCTUARY_BEACON` consumed from ExtendedItems `0.1.0-alpha.2`
-- Sanctuary-owned PDC keys:
-  - `sanctuary:anchor_id`
-  - `sanctuary:owner_uuid`
-  - `sanctuary:tier`
-  - `sanctuary:generation`
-- Legacy generation-less phase-1 Beacon metadata is treated as generation 1
-- Unbound Beacon creation with a unique stable anchor UUID
-- First-placement ownership assignment and persistence
-- Owner/admin anchor breaking
-- Explicit bound Beacon drop with stable anchor UUID and next generation
-- `ACTIVE` to `INACTIVE` transition on break
-- Owner-only bound Beacon re-placement/reactivation
-- Existing Sanctuary record reused at the new location
-- Generation mismatch rejects superseded Beacon copies
-- Recorded bound-item destruction marks the Sanctuary `DESTROYED`
-- Destruction time and reason retained for audit
-- Owner recovery for `INACTIVE` Sanctuaries when no destruction was recorded
-- Recovery increments generation and invalidates earlier copies
-- Recovery disabled for `ACTIVE` and `DESTROYED` Sanctuaries
-- `/sanctuary admin beacons` prints the complete registered Beacon metadata set
-- Lifecycle, recovery, destruction, migration, and persistence tests
+## Sanctuary and anchor lifecycle
 
-### Territory and spacing
+Implemented:
 
-- Radius is the persisted territory primitive; V004 converted legacy area values with `sqrt(area / PI)`
-- Horizontal circle/cylinder containment with unrestricted Y
-- Configurable maximum Sanctuary radius
-- Configurable inter-owner spacing margin
-- Future-growth spacing: `2 * maximum radius + margin`
-- Different-owner spacing enforced on first placement and relocation
-- Same-owner overlap allowed
-- Only active Sanctuaries participate in spacing checks
-- Other worlds do not conflict
-- `/sanctuary admin beacons` prints the current persisted radius
+- Beacon and Conduit anchor model
+- stable anchor UUID identity
+- owner UUID, tier, generation, type, radius, and lifecycle persistence
+- `ACTIVE`, `INACTIVE`, and `DESTROYED` lifecycle states
+- bound anchor break/re-placement
+- stale-generation rejection
+- destruction audit state
+- owner recovery for eligible inactive anchors
+- orphan anchor cleanup
+- automatic naming UI for a newly created Sanctuary
+- naming UI suppressed when only adding an extender
+- persisted Sanctuary names and readable selectors
 
-### Debug support
+## Anchor graph
 
-- `/sanctuary admin debugbeacon [player]` creates an already-registered `INACTIVE` Tier V debug Sanctuary at the configured maximum radius
-- Each debug Sanctuary uses a reserved UUID version 15 synthetic owner identity
-- Admins may place a debug Beacon on behalf of its synthetic owner
-- Debug Sanctuaries participate in normal different-owner spacing checks
-- Breaking a debug Beacon drops nothing and deletes its database row
-- Destruction of the inactive debug item also deletes its database row
-- Debug Sanctuaries are marked `debug_ephemeral` by migration V003
-- Recover tab completion now only lists normal `INACTIVE` Beacons
+Implemented:
 
-## Configuration added
+- multiple active anchors per Sanctuary
+- graph connections between anchors
+- no permanent graph root
+- anchor removal allowed whenever the remaining graph stays connected
+- active graph anchors collectively define territory
+- same-owner overlap support
+- different-owner spacing based on future maximum growth
+
+## Territory geometry
+
+Implemented:
+
+- flattened 3D ellipsoid per active anchor:
+  `x^2 + 2.25y^2 + z^2 <= r^2`
+- horizontal semi-radius `r`
+- vertical semi-radius `2r/3`
+- active Sanctuary territory is the union of anchor ellipsoids
+- 3D player presence and entry/exit detection
+- 3D hard-protection location checks
+- 3D Beacon/Conduit effect coverage
+- 3D Elytra suppression coverage
+- 3D Watcher territory eligibility
+- analytic X/Z union area for the UI territory-area value
+
+Tier radii:
+
+```text
+I   20
+II  39
+III 58
+IV  77
+V   96
+```
+
+The displayed territory area remains square-block X/Z footprint area, not cubic volume.
+
+## Boundary rendering
+
+Implemented:
+
+- ellipsoid surface rendering
+- union exterior rendering across multiple anchors
+- suppression of overlapping/internal shell portions
+- viewer-specific relationship/threat particles
+- full coarse outer shell when automatic visibility is triggered
+- denser local proximity band near the viewer
+- altitude-aware hybrid automatic visibility:
+  - hidden deep inside territory
+  - visible near the 3D border
+  - visible above/below territory while horizontally over/near the footprint
+- default automatic maximum distance 16 blocks
+
+Current particle defaults:
+
+```text
+owner    SCULK_CHARGE_POP
+trusted  GLOW
+neutral  END_ROD
+hostile  REVERSE_PORTAL
+```
+
+## Trust, security, and aggression
+
+Implemented relationships:
+
+```text
+OWNER
+TRUSTED
+NEUTRAL
+BLACKLISTED
+```
+
+Implemented security modes:
+
+```text
+NORMAL
+LOCKDOWN
+```
+
+Implemented:
+
+- central effective threat resolution
+- neutral players remain neutral in Normal mode
+- blacklisted players are hostile
+- neutral players are hostile in Lockdown
+- trust/blacklist mutual exclusion through management operations
+- persisted temporary aggression per Sanctuary/player
+- 10-minute aggression timeout
+- aggression refresh on qualifying hostile acts
+- aggression persistence across logout/restart
+- death clears temporary aggression
+- death does not clear blacklist
+- hostile boundary coloring follows effective threat
+
+Qualifying aggression events include attacks on the owner, sentries, and anchors.
+
+The removed neutral-entry hostility behavior must not be reintroduced. Simply entering a Sanctuary as a neutral player is not a hostile act.
+
+## Trust and optional hard protections
+
+Implemented explicit capabilities:
+
+```text
+BUILD
+BREAK
+INTERACT
+CONTAINER
+REDSTONE
+ENTITIES
+```
+
+Implemented:
+
+- owner implicit full access
+- UUID-backed trust
+- explicit capability grants
+- capability persistence/cascade cleanup
+- optional hard claim-style protection listeners
+- hard protections default disabled
+- admin/debug tooling for solo permission testing
+
+## Beacon and Conduit effects
+
+Implemented Beacon effect pairs:
+
+1. Regeneration / Wither
+2. Resistance / Blindness
+3. Strength / Weakness
+4. Haste / Mining Fatigue
+5. Speed / Elytra Disabled
+
+Implemented Conduit effect pairs:
+
+1. Regeneration / Wither
+2. Conduit Power / Blindness
+3. Haste / Mining Fatigue
+4. Dolphin's Grace / Slowness
+5. Resistance / Weakness
+
+Implemented:
+
+- one effect pair unlocked per anchor tier
+- level 1 baseline for newly unlocked pairs
+- paired per-anchor attunement persistence
+- individual effect maximum caps
+- safe/hostile selection through effective threat
+- Conduit effects gated to water/rain
+- Elytra suppression integrated with 3D ellipsoid territory
+
+Current note: the service/persistence layer supports paired attunement levels. Player-facing Attunement Relic acquisition and upgrade semantics should remain aligned with the intended permanent-upgrade model and must not regress to free arbitrary level cycling.
+
+## Sentries
+
+Implemented:
+
+- sentry post registration inside Sanctuaries
+- Sanctuary-owned sentry identity/state
+- global sentry defaults and per-sentry overrides
+- target authorization through Sanctuary defense/security logic
+- owner, sentry, anchor, hostile-mob, interaction, and other defense triggers
+- Watcher's Eye proactive local detection
+- recall/home behavior
+- respawn cooldown
+- no normal drops/XP on managed sentry death
+- managed target/anger controls
+- protection from unmanaged mob targeting/damage
+- Warden-specific anger control
+- Wither block-damage suppression
+- Enderman teleport restrictions
+- chunk unload protection from false death/duplicate respawn
+
+Watcher’s Eye remains a true 12-block 3D sphere around each equipped active anchor and is not flattened with Sanctuary territory.
+
+Known follow-up:
+
+- some legacy `SentryService` / `SentryTask` territorial leash, path, or target-validity helpers still use horizontal compatibility containment and should be fully migrated to XYZ ellipsoid checks
+
+## Companions
+
+Implemented:
+
+- Companion Egg spawning and pickup lifecycle
+- Follow / Stay controls
+- formation following
+- delayed teleport while owner is airborne
+- safe teleport candidate search
+- collision/support/hazard checks
+- aquatic restrictions
+- owner-defense target memory
+- companion-retaliation target memory
+- transient combat relationships
+- same-owner protection
+- custom Warden behavior
+- controlled Wither targeting
+- Evoker/Vex handling
+- Creeper handling
+- Enderman teleport restrictions
+- permanent companion death
+- persisted companion health
+- display-only Companion Egg durability bar representing health
+
+Known follow-up/testing gaps:
+
+- broader automated coverage for target priority
+- transient combat relationships
+- friendly-fire protection
+- enemy companion fights
+- safe teleport candidate selection
+- profiling/optimization of broad loaded-mob and nearby-entity scans
+
+## Divine Altar, crafting, loot, and progression
+
+Implemented:
+
+- Divine Altar placed-object behavior
+- Sanctuary-owned custom crafting UI
+- protected altar lifecycle against piston/explosion/orphaning cases
+- persistent altar visual effects
+- Consecrated Shard 2x2 fragment recipe
+- altar offering persistence
+- Sanctuary custom crafting/progression support
+- structure-loot tagging/profiles
+- debug loot/relic/shard commands
+
+## Advancements
+
+Implemented:
+
+- Sanctuary advancement catalog/service
+- advancement triggers integrated with Sanctuary progression paths
+
+Known regression item:
+
+- the Warden Companion Egg obtain advancement has had prior issues and should remain in manual/automated regression testing until explicitly verified in the current gameplay build
+
+## UI
+
+Implemented through ExtendedUI:
+
+- owner anchor management
+- admin/debug anchor management
+- Sanctuary naming
+- Players & Access management
+- Security management
+- trust/capability controls
+- sentry management
+- effect/attunement presentation
+- debug controls
+- territory-area display
+
+## Configuration
+
+Current important defaults:
 
 ```yaml
 anchors:
-  initial-territory-radius: 18.0
+  initial-territory-radius: 20.0
   recovery:
     enabled: true
     cooldown-seconds: 300
@@ -86,242 +303,44 @@ anchors:
 territory:
   maximum-radius: 96.0
   spacing-margin: 16.0
+  boundary:
+    particle-spacing: 1.5
+    maximum-render-distance: 128.0
+    automatic:
+      enabled: true
+      minimum-distance: 3.0
+      maximum-distance: 16.0
+      vertical-particle-spacing: 1.5
+      update-period-ticks: 10
+
+protections:
+  hard:
+    enabled: false
 ```
 
-Recovery is only available for an `INACTIVE` Sanctuary whose Beacon destruction was not recorded. A successful recovery advances `anchor_generation`.
-
-## Sanctuary management UI completed
-
-- ExtendedUI `0.1.0` consumer integration
-- Owner right-click anchor management menu
-- Admin right-click / sneak-right-click debug menu
-- `/sanctuary admin ui <sanctuary>`
-- Boundary display action
-- Trusted-player list and online-player add screen
-- Per-player capability toggles
-- Debug self-permission controls for solo testing
-
-## Deliberately not implemented yet
-
-- Sanctuary Conduit obtain/placement lifecycle
-- Anchor tier crafting/upgrades
-- Rename dialog
-- Advancements
-- Sentry posts
-- Sentry mobs
-- Companion guards
-- Conduit-specific gameplay
-
-## Dependency boundary
-
-ExtendedItems owns the released item identity and format:
-
-```text
-extendeditems:id
-extendeditems:version
-```
-
-Sanctuary owns the stateful instance metadata and gameplay:
-
-```text
-sanctuary:anchor_id
-sanctuary:owner_uuid
-sanctuary:tier
-sanctuary:generation
-```
-
-ExtendedItems `0.1.0-alpha.2` is downloaded from its exact GitHub Release asset during the build. No fallback or alternate ExtendedItems version is configured.
-
-## Next implementation milestone
-
-Territory presence and boundary visualization are now implemented. The next major gameplay layer is trust/capability and protection behavior.
-
-## Territory presence and awareness completed
-
-Implemented after the territory/spacing milestone:
-
-- Runtime active-territory membership detection
-- Enter and exit transition tracking
-- Direct Sanctuary-to-Sanctuary transitions
-- Closest-anchor selection for overlapping same-owner territories
-- Configurable entry titles
-- Configurable exit chat messages
-- Configurable online-owner entry alerts
-- Debug-only entry chat output for ephemeral debug Sanctuaries
-- `/sanctuary boundary <name|all>` particle visualization
-- Boundary particle spacing and display-duration configuration
-- Tests for territory membership selection and boundary point calculation
-
-## Boundary Refactor
-
-Implemented:
-- Radius is the gameplay/persistence primitive (`territory_radius`).
-- V004 preserves old territory size by converting legacy area values.
-- Manual boundary particles are visible only to the invoking player.
-- Automatic local proximity boundary visualization uses distance-limited vertical blob geometry.
-- Human-readable boundary selectors prefer Sanctuary display names and owner names before short ID suffixes.
-- `/sanctuary boundary all` respects the configured maximum render distance.
-
-## Orphan cleanup and boundary refresh configuration
-
-Implemented:
-- Placed Sanctuary anchors whose UUID is missing from the database can be broken and cleaned up.
-- Orphan cleanup suppresses item drops and warns the breaking player.
-- Registered Sanctuary anchors retain normal ownership and generation validation.
-- Automatic proximity boundary refresh period is configurable with `territory.boundary.automatic.update-period-ticks`.
-- The update period is reloadable with `/sanctuary admin reload`.
-
-
-## Trust and capabilities
-
-Implemented:
-- V005 normalized `sanctuary_trust` and `sanctuary_capabilities` persistence.
-- UUID-backed trust relationships.
-- Owner implicit access to every capability.
-- Explicit `BUILD`, `BREAK`, `INTERACT`, `CONTAINER`, `REDSTONE`, and `ENTITIES` grants for trusted players.
-- Untrusted players receive no capabilities.
-- Trust removal cascades all capability grants for that player.
-- Sanctuary deletion cascades all trust/capability rows.
-- `/sanctuary trust <sanctuary> <player>`.
-- `/sanctuary trust list <sanctuary>`.
-- `/sanctuary untrust <sanctuary> <player>`.
-- `/sanctuary capability <sanctuary> <player> <capability> <allow|deny>`.
-- `/sanctuary admin permissions <sanctuary> <player>` raw effective permission inspection.
-- Human-readable Sanctuary selector autocomplete for trust commands.
-- Unit and SQLite persistence tests for permission resolution and cascading cleanup.
-
-
-## Basic player protections
-
-Implemented:
-- `BUILD`, `BREAK`, `INTERACT`, `CONTAINER`, `REDSTONE`, and `ENTITIES` are enforced by Paper event listeners.
-- Owners retain implicit full access through `SanctuaryPermissionService`.
-- Trusted players only receive explicitly granted capabilities.
-- Debug Sanctuaries enforce protections even for operators.
-- `/sanctuary admin debugtrust <debug-sanctuary> [player] <capability|all> <allow|deny>` supports solo testing.
-- Anchor blocks are excluded from generic `BREAK` protection and continue through the anchor lifecycle listener.
-- SQL permission lookup failures fail closed and cancel the attempted action.
-
-
-### Sanctuary management UI
-
-Implemented:
-- Owner right-click on an active Sanctuary anchor opens the personal ExtendedUI management screen.
-- Admin right-click and `/sanctuary admin ui <sanctuary>` open the admin/debug view.
-- Trust and capability management is available through ExtendedUI menus.
-- Debug Sanctuaries expose solo-test permission controls in the admin UI.
-- Owners can rename their Sanctuary from the management UI using the ExtendedUI text-input dialog.
-- Sanctuary names are trimmed, must be nonblank, and are limited to 32 characters.
-- Renames persist through the existing `name` column and immediately affect readable Sanctuary selectors.
-
-## Security policy foundation
-
-Implemented:
-- V006 adds persisted per-Sanctuary security mode and blacklist state.
-- Security modes are `NORMAL` and `LOCKDOWN`.
-- Player relationship is resolved centrally as `OWNER`, `TRUSTED`, `NEUTRAL`, or `BLACKLISTED`.
-- Effective threat is resolved centrally as `SAFE`, `NEUTRAL`, or `HOSTILE`.
-- In Normal mode, only explicitly blacklisted players are hostile.
-- In Lockdown mode, every player except the owner and trusted players is hostile.
-- Lockdown does not rewrite neutral players into blacklist rows. Returning to Normal restores neutral behavior.
-- Trust and blacklist are mutually exclusive through Sanctuary management operations. Trusting a player removes their blacklist entry; blacklisting a trusted player removes trust and capability grants.
-- Management UI now separates Players & Access from Security.
-- Owners/admins can manage trusted and blacklisted online players through the UI.
-- Until Beacon tier gating is implemented, Lockdown is visible but owner-locked; admins can toggle it from the admin UI for testing.
-- Manual and automatic territory boundaries are viewer-specific colors: owner blue, trusted green, neutral white, hostile red.
-- Existing hard player protections are now controlled by `protections.hard` configuration and default disabled.
-- Hard-protection configuration is reloadable with `/sanctuary admin reload`.
-
-Not implemented in this phase:
-- Beacon defense tiers.
-- Weakness, Wither, Blindness, Elytra suppression, or other proximity effects.
-- Tier-gated owner access to Lockdown.
-- Sentry trigger/response behavior.
-
-## Configurable boundary visuals
-
-Implemented:
-- Relationship-specific boundary particles are configurable under `territory.boundary.particles`.
-- Default particles are `GLOW_SQUID_INK` for owners, `GLOW` for trusted players, `END_ROD` for neutral players, and `SOUL` for hostile players.
-- Configured particles must not require additional particle data. Invalid or data-bearing particle types fall back to the relationship default with a warning.
-- Automatic boundary rendering now uses an exclusive visibility band: `minimum-distance < point distance < maximum-distance`.
-- The previous `automatic.trigger-distance` value is accepted as a compatibility fallback for `maximum-distance` when the new key is absent.
-- Boundary configuration remains reloadable with `/sanctuary admin reload`.
-
-## Layered Beacon effects
-
-Implemented:
-- Five Beacon effect tiers share the Sanctuary's tier progression.
-- Effect radius thresholds are derived from `territory.maximum-radius / 5` and are not separately configurable.
-- Each effect applies from its own radius inward, so effects stack toward the Beacon core.
-- Safe effect order, Tier I through V: Regeneration II max, Resistance II max, Strength II max, Haste II max, Speed III max.
-- Hostile effect order from outermost Tier V to innermost Tier I: Elytra Disabled I, Mining Fatigue III max, Weakness III max, Blindness I, Wither II max.
-- Newly available effects default to Level I.
-- V007 persists each Sanctuary's independently selected effect level.
-- The management UI exposes Beacon Effects and currently allows free level cycling for unlocked effects. No upgrade item is consumed yet.
-- Owner and trusted players receive safe effects.
-- Neutral players receive no Beacon effects in Normal mode.
-- Blacklisted players receive hostile effects.
-- Neutral players are treated as hostile in Lockdown through the existing threat resolver.
-- Debug Beacons are created at Tier V and the configured maximum radius so every effect tier can be tested.
-- Debug Security UI can set the current admin to Trusted, Neutral/Unconfigured, or Blacklisted for solo effect testing.
-
-## Relationship-aware territory entry feedback
-
-- Territory entry titles now describe the entering player's effective relationship:
-  - owner: `Your Sanctuary`
-  - trusted: `Trusted Territory`
-  - neutral: `Neutral Territory`
-  - blacklisted: `Restricted - Blacklisted`
-  - neutral during Lockdown: `LOCKDOWN - Unauthorized`
-- Blacklisted players receive an action-bar warning that they are blacklisted.
-- Neutral players entering a Sanctuary in Lockdown receive an action-bar warning that they do not have permission to enter.
-- Elytra suppression now displays `Sanctuary defenses active | Elytra Disabled` in the action bar while suppression is active and immediately when a blocked glide attempt occurs.
-- Elytra suppression remains event-driven with the periodic effect task retained as a safety net.
-
-## Sentry defense foundation
+## Release/deployment
 
 Implemented:
 
-- Sanctuary uses the released ExtendedItems sentry post IDs as the item identity source.
-- Sentry posts can only register when placed inside an active Sanctuary.
-- A placed sentry belongs to the Sanctuary containing its post, not to the player who placed the item.
-- Breaking a registered sentry post unregisters it, clears its per-sentry overrides, despawns its mob, and returns a clean ExtendedItems sentry post item.
-- Normal Sanctuary sentries can be managed by the Sanctuary owner. Admins can manage sentries inside debug Sanctuaries.
-- Beacon UI now exposes global sentry behavior defaults and the registered sentry list.
-- Individual sentries have three-state behavior overrides: INHERIT, ENABLED, DISABLED.
-- Implemented triggers: container opened, entity hurt by an untrusted player, hostile mob present, neutral mob present, Beacon proximity, owner attacked, block broken, block placed, redstone/interactable used, sentry attacked, Beacon attacked.
-- Each sentry type has its own target leash radius measured from its home post. Enderman currently has the largest radius at 40 blocks.
-- Sentries only acquire targets inside both their home leash and their Sanctuary.
-- Target and return-home paths are rejected if Paper pathfinding reports points outside the Sanctuary.
-- Entity movement is also checked directly. A sentry that physically crosses the Sanctuary boundary is removed and enters respawn cooldown.
-- Idle sentries continuously pathfind back to their home post.
-- Recall clears the target, blocks normal combat by entering RECALLING state, paths home, and teleports home only if it has not returned after 15 seconds.
-- Sentry death drops no items or XP and starts a 30 second respawn cooldown. Respawn occurs at the home post.
-- Disabled sentries keep registration and overrides, stop normal AI, and show a visible `[Disabled]` name marker.
-- Vanilla mobs cannot target registered sentries. Non-player mob damage against sentries is cancelled.
-- Managed Wardens cannot build anger toward targets that Sanctuary has not authorized.
-- Managed Wither explosions do not damage blocks.
-- Home-chunk unloads do not count as sentry death, avoiding duplicate respawns after chunk reload.
+- normal CI build/test on pushes and pull requests
+- `Sanctuary.jar` as the deterministic deployable CI artifact
+- manual `Release` workflow from `main`
+- versioned Git tag and GitHub Release creation
+- `Sanctuary.jar.sha256` checksum asset
+- production PowerShell deployer using public GitHub Releases
+- backup retention
+- service stop/install/start sequence
+- rollback on deployment/startup failure
 
-## Admin sentry give command
+See `docs/DEPLOYMENT.md`.
 
-For testing, admins can create released ExtendedItems sentry post items with:
+## Current follow-up work
 
-```text
-/sanctuary admin givesentry <player> <type|all>
-```
+Priority follow-up items:
 
-The command accepts short sentry names such as `skeleton`, `enderman`, and `warden`, as well as full `sentry_*` IDs. `all` gives the complete released sentry post catalog. This is admin/debug tooling only and does not define normal gameplay acquisition.
-
-## Sentry AI control update
-
-- Sanctuary now owns sentry target selection. On spawn, vanilla TARGET goals are removed while native combat goals remain so mob-specific attacks still work.
-- Managed pathfinding is restricted to the registered home post or the currently authorized Sanctuary target.
-- Managed sentries may only damage the currently authorized target.
-- Warden anger changes are rejected unless they concern the authorized target, and the authorized target is reasserted by the sentry task.
-- Managed Enderman escape/teleport behavior is suppressed; recall fallback teleport remains Sanctuary-authorized.
-- Wither and managed projectile explosions retain entity damage but cannot destroy blocks.
-- Hostile mob classification now uses Bukkit/Paper Enemy, which includes Slimes and Magma Cubes.
-- Creaking is no longer in the active Sanctuary sentry roster. Its ExtendedItems identity remains untouched.
-- Piglin Brute sentry placement is Nether-only, and managed sentry transformations are cancelled as an additional safety net.
+1. finish migrating all sentry territorial leash/path/target checks to full XYZ ellipsoid containment
+2. continue in-game regression testing of the new hybrid boundary visibility rules across multi-anchor Sanctuaries
+3. expand companion behavior tests and profile companion task performance
+4. finish/verify player-facing Attunement Relic progression semantics against the permanent-upgrade design
+5. verify the Warden Companion Egg advancement in-game
+6. keep README, DEVELOPMENT, and this file updated in the same changes that materially alter gameplay semantics

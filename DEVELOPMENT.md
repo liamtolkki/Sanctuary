@@ -1,36 +1,20 @@
 # Sanctuary Development
 
-## Repository layout
+This document covers the development environment, build/release workflow, architecture checkpoints, and runtime validation for the current Sanctuary implementation.
 
-Sanctuary consumes stable shared-library releases directly. A sibling ExtendedUI checkout is not required.
+## Platform and dependencies
 
-ExtendedUI is pinned and downloaded from the exact GitHub Release asset:
+Use:
 
-```text
-ExtendedUI 0.1.0
-extendedui-0.1.0.jar
-```
+- JDK 25
+- Paper 26.1.2
+- Gradle Wrapper 9.7.1
+- ExtendedUI 0.1.0
+- ExtendedItems 0.1.0-alpha.9
 
-ExtendedItems is also pinned and downloaded from its exact GitHub Release asset:
+Sanctuary downloads the pinned ExtendedUI and ExtendedItems GitHub Release JARs during the build and shades/relocates them into the final plugin. They are not installed separately in Paper's `plugins` directory.
 
-```text
-ExtendedItems 0.1.0-alpha.2
-extendeditems-0.1.0-alpha.2.jar
-```
-
-It is not resolved from an unspecified latest build and is not installed as a separate Paper plugin.
-
-## First setup
-
-Use JDK 25 for both the IntelliJ Project SDK and Gradle JVM.
-
-If the Gradle wrapper JAR must be reconstructed, run:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\bootstrap-wrapper.ps1
-```
-
-Verify Java 25:
+Verify Java:
 
 ```powershell
 .\gradlew.bat -q javaToolchains
@@ -39,12 +23,16 @@ Verify Java 25:
 Build and test:
 
 ```powershell
-.\gradlew.bat clean build
+.\gradlew.bat clean build --no-daemon
 ```
 
-The first build needs network access to download the pinned ExtendedItems release JAR. Subsequent builds reuse Gradle task output unless `clean` removes it.
+If the wrapper JAR ever needs reconstruction:
 
-## Development deployment
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\bootstrap-wrapper.ps1
+```
+
+## Development server deployment
 
 The default development Paper plugin directory is:
 
@@ -52,177 +40,288 @@ The default development Paper plugin directory is:
 C:\MinecraftDev\server\plugins
 ```
 
-Build and copy the shaded plugin there with:
+Build and deploy:
 
 ```powershell
 .\gradlew.bat clean deployDev
 ```
 
-Use a full Paper server restart after deploying. Do not use `/reload` as the normal development loop.
+Use a full Paper restart after deployment. Do not use `/reload` as the normal development loop.
 
-## Runtime validation for the Beacon lifecycle
+## GitHub Actions
 
-After the server starts, create and place an unbound Beacon:
+`.github/workflows/build.yml` runs on pushes and pull requests. It:
 
-```text
-/sanctuary admin givebeacon <player>
-```
+1. checks out Sanctuary
+2. sets up Java 25
+3. sets up Gradle
+4. runs `./gradlew clean build --no-daemon`
+5. selects exactly one shaded Sanctuary JAR
+6. publishes it as `Sanctuary.jar` inside the Actions artifact
 
-Then validate the complete lifecycle:
+The build intentionally excludes the `-plain.jar` output from the deployable artifact.
 
-1. First placement creates one `ACTIVE` Sanctuary.
-2. `/sanctuary admin beacons` shows generation 1 and the placed location.
-3. Owner mining changes the Sanctuary to `INACTIVE`, advances the generation, and drops the sole current bound Sanctuary Beacon.
-4. Re-place that Beacon elsewhere and verify the same Sanctuary ID becomes `ACTIVE` at the new location.
-5. Mine it again and leave the bound item on the ground until it despawns. The registry should show `DESTROYED` with a destruction reason.
-6. A `DESTROYED` Sanctuary must reject `/sanctuary recover <id>`.
-7. For recovery testing without waiting, temporarily set `anchors.recovery.cooldown-seconds: 0`, mine a different Beacon, keep or hide the old item, and run `/sanctuary recover <id>`.
-8. The registry should advance the generation. The recovered Beacon should place successfully; the older copy should be rejected as stale.
-9. Restart Paper and verify active, inactive, destroyed, generation, and destruction audit state remain in `sanctuary.db`.
+`.github/workflows/release.yml` is manual and should be run from `main`. It:
 
-Recovery settings:
+1. validates the supplied version
+2. builds/tests with `-PreleaseVersion=<version>`
+3. creates `Sanctuary.jar`
+4. creates `Sanctuary.jar.sha256`
+5. tags the commit as `v<version>`
+6. creates a GitHub Release with both assets
 
-```yaml
-anchors:
-  recovery:
-    enabled: true
-    cooldown-seconds: 300
-```
+See `docs/DEPLOYMENT.md` for production deployment.
 
-The SQLite database is under:
+## Persistence
+
+SQLite database:
 
 ```text
 plugins/Sanctuary/sanctuary.db
 ```
 
-## GitHub Actions
-
-The workflow checks out Sanctuary, sets up Java 25, downloads the pinned ExtendedUI and ExtendedItems releases through Gradle, and runs:
+Current migrations extend through:
 
 ```text
-./gradlew clean build --no-daemon
+V012__sanctuary_aggression.sql
 ```
 
-The Sanctuary build downloads the exact ExtendedItems `0.1.0-alpha.2` release JAR itself.
+The database stores Sanctuary lifecycle, anchors and graph data, trust/capabilities, security state, effect levels, sentries, altar progression, upgrades, and temporary aggression.
 
-Before CI, verify the wrapper executable bit:
+## Anchor lifecycle validation
 
-```powershell
-git update-index --chmod=+x gradlew
-git ls-files -s gradlew
-```
+Create a test Beacon with the admin tooling, then verify:
 
-The mode should be `100755`.
+1. first placement creates an active Sanctuary
+2. the naming UI opens for a newly created Sanctuary
+3. breaking an owned anchor produces the bound current-generation item
+4. re-placement reactivates the same Sanctuary/anchor identity
+5. older generations are rejected as stale
+6. recorded destruction prevents normal recovery
+7. eligible inactive anchors can be recovered
+8. lifecycle state survives restart
 
-## Runtime validation for territory and spacing
+The exact admin/debug subcommands evolve during development. Use command autocomplete and `plugin.yml` as the current command source of truth rather than copying old examples from historical docs.
 
-Territory settings:
+## Anchor graph validation
 
-```yaml
-territory:
-  maximum-radius: 96.0
-  spacing-margin: 16.0
-```
+A Sanctuary can contain multiple active anchors. There is no permanent graph root.
 
-The current Sanctuary radius is stored directly in `territory_radius`. New Sanctuaries use `anchors.initial-territory-radius`, currently `18.0`.
+Validate at least these cases:
 
-Spacing does not use the current 18-block radius. It reserves future growth using:
+- a newly placed extender joins the existing Sanctuary rather than creating a second Sanctuary
+- adding an extender does not reopen the Sanctuary naming UI
+- same-owner connected anchors may overlap
+- removing an anchor is allowed whenever the remaining graph stays connected
+- removing an anchor that would disconnect the graph is rejected
+- a node with only one graph connection may be removed even if it was the first anchor ever placed
+- adding an intermediate connection can make a formerly critical anchor removable
+
+## Territory geometry
+
+Each active anchor contributes a flattened ellipsoid:
 
 ```text
-minimum anchor distance = 2 * maximum-radius + spacing-margin
+x^2 + 2.25y^2 + z^2 <= r^2
 ```
 
-The defaults therefore require `208` horizontal blocks between anchors owned by different owners.
-
-For a faster manual spacing test, temporarily use:
-
-```yaml
-territory:
-  maximum-radius: 10.0
-  spacing-margin: 5.0
-```
-
-The resulting minimum different-owner anchor distance is `25` blocks. Reload with:
+Equivalent semi-axes:
 
 ```text
-/sanctuary admin reload
+horizontal = r
+vertical   = 2r / 3
 ```
 
-Then test:
+Territory membership is the union of the active anchor ellipsoids.
 
-1. Run `/sanctuary admin debugbeacon` and place it in an open area.
-2. Run `/sanctuary admin beacons` and verify it appears as `DEBUG-EPHEMERAL`, has a synthetic owner, and reports the expected derived territory radius.
-3. Obtain a normal Beacon with `/sanctuary admin givebeacon <player>`.
-4. Try to place the normal Beacon 24 blocks horizontally from the debug Beacon. Placement must be rejected.
-5. Place it exactly 25 blocks horizontally away. Placement must succeed.
-6. Vertical separation does not change the result. A Beacon with less than 25 blocks of horizontal separation is still rejected even at a very different Y coordinate.
-7. Give yourself another normal Beacon and place it adjacent to your existing normal Sanctuary. Same-owner overlap must be accepted.
-8. Break the debug Beacon. It must drop no Beacon item.
-9. Run `/sanctuary admin beacons` again. The debug Sanctuary must be gone from the registry.
+Tier radii:
 
-Restore the intended production values after testing.
+```text
+I   20
+II  39
+III 58
+IV  77
+V   96
+```
 
-## Runtime validation for recover autocomplete
+Tier V therefore has a vertical semi-radius of 64 blocks.
 
-1. Have one normal `INACTIVE` Sanctuary and one `DESTROYED` Sanctuary owned by your player.
-2. Type `/sanctuary recover ` and request tab completion.
-3. The `INACTIVE` Sanctuary ID should be listed.
-4. The `DESTROYED` Sanctuary ID must not be listed.
-5. Active and ephemeral debug Sanctuaries must not be listed either.
+Runtime checks should include:
 
-## Runtime validation for territory awareness
+- horizontal entry/exit
+- pure vertical entry/exit
+- flying above the top of the ellipsoid
+- moving below the bottom of the ellipsoid
+- overlap between anchors at similar and different Y levels
+- holes between multiple anchors remain outside territory
 
-Build and deploy, fully restart Paper, then use `/sanctuary admin beacons` to obtain an active Sanctuary ID.
+The territory area shown in the UI is the analytic union of the anchors' X/Z circles in square blocks. It is intentionally not 3D volume.
 
-Test normal entry by walking from outside the calculated radius to inside it. With `territory.awareness.entry-title: true`, the Sanctuary name should appear as a title once per entry. Walk back out and re-enter to verify a second transition.
+## Boundary rendering validation
 
-Test debug entry with `/sanctuary admin debugbeacon`, place it, walk outside its territory, then enter it. The entering player should receive a `[Sanctuary Debug]` chat line in addition to normal configured awareness behavior. Normal Sanctuary entries must not print this debug line.
+Boundary particles should trace only the exposed outer surface of the ellipsoid union. Surfaces hidden inside another anchor should not render.
 
-Test boundary visualization with `/sanctuary boundary <name|all>`. The particle ring should be centered on the Beacon block and match the same horizontal radius used by entry detection.
+Test:
 
-## Radius-Based Territory and Proximity Boundaries
+- single anchor
+- two overlapping anchors
+- contained/near-duplicate anchors
+- anchors at different heights
+- viewer inside near the surface
+- viewer deep inside
+- viewer above the Sanctuary center
+- viewer below the Sanctuary center
+- viewer outside the horizontal render distance
 
-Territory progression now stores radius directly. V004 converts existing `territory_area` values to an equivalent `territory_radius` so existing physical boundaries do not move during upgrade.
+Automatic visibility rules:
 
-Boundary particles are viewer-scoped with `Player.spawnParticle`, so manual and automatic boundary rendering is visible only to the player receiving it.
+- deep inside the 3D Sanctuary: full shell hidden
+- inside near the real 3D surface: shell visible
+- vertically outside but horizontally over/near the footprint: shell visible
+- horizontally farther than the automatic maximum distance: shell hidden
 
-Automatic proximity rendering draws only cylinder-surface points within the configured trigger distance. For each horizontal boundary point at distance `d` from the viewer, the vertical half-height is `sqrt(triggerDistance^2 - d^2)`. This produces a local curved patch that grows as the viewer approaches and disappears outside the trigger distance.
-
-`/sanctuary boundary <name>` uses human-readable name selectors. `/sanctuary boundary all` renders all eligible active boundaries whose boundary edge is within `territory.boundary.maximum-render-distance` of the viewer.
-
-## Orphan anchor cleanup
-
-A placed Sanctuary Beacon can outlive its SQLite record after manual database repair, rollback, or other exceptional state loss. `AnchorBreakListener` checks the anchor UUID before entering the normal break lifecycle. If the UUID is not registered, the block is treated as an orphan: the break is allowed, normal drops are suppressed, the player receives a warning, and the server log records the orphan anchor ID and location. Registered Sanctuaries continue through normal ownership, generation, and lifecycle validation.
-
-## Automatic boundary refresh period
-
-Automatic proximity rendering is controlled by:
+Current defaults:
 
 ```yaml
 territory:
   boundary:
+    particle-spacing: 1.5
     automatic:
+      minimum-distance: 3.0
+      maximum-distance: 16.0
+      vertical-particle-spacing: 1.5
       update-period-ticks: 10
 ```
 
-The scheduler itself ticks once per server tick and gates the rendering work using the configured period. This keeps the period reloadable through `/sanctuary admin reload`. Minecraft runs at 20 ticks per second under normal server conditions, so `10` ticks is approximately 0.5 seconds, `20` is approximately 1 second, and `2` is approximately 0.1 second.
+The full shell is rendered at a deliberately coarser spacing than the detailed local proximity band.
 
+## Security and aggression validation
 
-## Runtime validation for trust and capabilities
-
-Trust data is stored by player UUID. The owner always resolves to every capability. A trusted non-owner starts with no capabilities until grants are added explicitly.
-
-Commands:
+Relationships:
 
 ```text
-/sanctuary trust <sanctuary> <player>
-/sanctuary trust list <sanctuary>
-/sanctuary untrust <sanctuary> <player>
-/sanctuary capability <sanctuary> <player> <capability> <allow|deny>
-/sanctuary admin permissions <sanctuary> <player>
+OWNER
+TRUSTED
+NEUTRAL
+BLACKLISTED
 ```
 
-Capabilities:
+Security modes:
+
+```text
+NORMAL
+LOCKDOWN
+```
+
+Verify:
+
+- neutral entry in Normal mode does not itself create hostility
+- blacklisted players are hostile
+- neutral players become hostile under Lockdown
+- owner remains safe
+- qualifying attacks create temporary aggression
+- temporary aggression lasts 10 minutes and refreshes on another qualifying attack
+- aggressive trusted or neutral players are treated as hostile while aggression is active
+- death clears temporary aggression but does not remove blacklist state
+- logout/restart does not clear active aggression
+- boundary color follows effective threat, not only stored relationship
+
+## Anchor effects and attunement validation
+
+Beacon pairs:
+
+```text
+Regeneration / Wither
+Resistance / Blindness
+Strength / Weakness
+Haste / Mining Fatigue
+Speed / Elytra Disabled
+```
+
+Conduit pairs:
+
+```text
+Regeneration / Wither
+Conduit Power / Blindness
+Haste / Mining Fatigue
+Dolphin's Grace / Slowness
+Resistance / Weakness
+```
+
+Each unlocked pair begins at level 1. Paired attunement state is persisted per anchor.
+
+Verify:
+
+- each pair unlocks at the correct anchor tier
+- both sides of a pair use the shared attunement level, capped by the individual effect maximum
+- effect coverage follows the flattened 3D territory model
+- Beacon and Conduit use their own effect catalogs
+- Conduit effects only apply while the player is in water or rain
+- Elytra suppression stops outside the ellipsoid so players can fly over the Sanctuary
+
+Any remaining player-facing Attunement Relic acquisition/upgrade behavior should be tested against the current implementation rather than the old free level-cycling documentation.
+
+## Sentry validation
+
+Test sentries against both security behavior and territory boundaries.
+
+Important cases:
+
+- sentry registers only inside a valid Sanctuary
+- sentry belongs to the containing Sanctuary
+- normal mobs cannot freely target/damage managed sentries
+- sentry target is authorized by Sanctuary threat/trigger rules
+- recall returns the sentry home
+- death starts respawn cooldown and does not drop normal loot/XP
+- home chunk unload does not count as death
+- Watcher's Eye proactive awareness is local to each equipped anchor
+- Watcher's Eye uses a true 12-block sphere, not the flattened territory ellipsoid
+
+Known follow-up: some older sentry leash/path/target containment helpers still use horizontal-only territory checks. When changing sentry territorial behavior, migrate those paths to full XYZ ellipsoid containment instead of adding more compatibility calls.
+
+## Companion validation
+
+Companion behavior should be tested with at least:
+
+- Follow and Stay mode switching
+- longer follow distance
+- delayed catch-up teleport while owner is airborne
+- safe landing/collision checks for teleport destinations
+- no aquatic companion spawning/teleporting onto land
+- owner attacker priority
+- multiple attackers and target priority
+- companion retaliation memory
+- same-owner friendly-fire protection
+- enemy companion combat relationships
+- Warden, Wither, Evoker/Vex, Creeper, Enderman special handling
+- permanent companion death
+- persisted health when picked up
+- Companion Egg durability bar reflects health but never breaks the egg item
+
+Performance note: `CompanionTask` still deserves profiling because broad loaded-mob scans and nearby-entity scans can become expensive with many worlds/entities.
+
+## Divine Altar, crafting, loot, and advancements
+
+The Divine Altar provides Sanctuary-owned recipe/progression UI where vanilla recipe-book behavior is not a good fit.
+
+Validate:
+
+- eligible recipes display when their requirements are met
+- crafting consumes the intended custom items
+- Consecrated Shard uses the current 2x2 fragment pattern
+- altar persistent particles remain active while placed
+- normal breaking returns the altar block
+- pistons/explosions/other movement cannot orphan an altar
+- structure loot profiles produce the expected tagged items
+- advancement triggers fire for the current item/progression paths
+
+The Warden Companion Egg advancement has had previous issues, so keep it in the runtime regression set until explicitly verified in-game.
+
+## Optional hard protection validation
+
+Hard protection defaults off.
+
+When enabled, validate explicit capability enforcement for:
 
 ```text
 BUILD
@@ -233,9 +332,53 @@ REDSTONE
 ENTITIES
 ```
 
-For runtime validation, trust a second player, verify `/sanctuary admin permissions` shows all capabilities denied, grant two capabilities, verify only those two show `ALLOWED`, restart Paper, and verify the same result persists. Then untrust the player and verify all capabilities return to `DENIED`. The owner should always show every capability as `ALLOWED` without trust rows.
+Owner access remains implicit. Trusted players only receive capabilities that were granted.
 
+## Configuration defaults
 
-## Protection testing
+Current important defaults:
 
-For solo testing, create and place an ephemeral debug Sanctuary, then use `/sanctuary admin debugtrust` to grant the operator specific capabilities. `sanctuary.admin` intentionally does not bypass normal territory protection checks. This lets one operator test denied and allowed behavior without a second account.
+```yaml
+anchors:
+  initial-territory-radius: 20.0
+  recovery:
+    enabled: true
+    cooldown-seconds: 300
+
+territory:
+  maximum-radius: 96.0
+  spacing-margin: 16.0
+  awareness:
+    entry-title: true
+    exit-message: false
+    owner-entry-alerts: true
+  boundary:
+    particle-spacing: 1.5
+    display-seconds: 10
+    maximum-render-distance: 128.0
+    particles:
+      owner: SCULK_CHARGE_POP
+      trusted: GLOW
+      neutral: END_ROD
+      hostile: REVERSE_PORTAL
+    automatic:
+      enabled: true
+      minimum-distance: 3.0
+      maximum-distance: 16.0
+      vertical-particle-spacing: 1.5
+      update-period-ticks: 10
+
+protections:
+  hard:
+    enabled: false
+```
+
+Reload supported configuration with:
+
+```text
+/sanctuary admin reload
+```
+
+## Source-of-truth rule
+
+When this document and implementation disagree, current `main` source and tests are authoritative. Update the documentation in the same change whenever gameplay semantics materially change.

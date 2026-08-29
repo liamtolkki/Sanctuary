@@ -1,81 +1,49 @@
 # Sanctuary
 
-Sanctuary is a Paper plugin that creates persistent player-owned protected territories anchored by special Beacon and Conduit items.
+Sanctuary is a Paper plugin for persistent player-owned territories built around Beacon and Conduit anchors. A Sanctuary can grow into a graph of connected anchors, apply safe or hostile effects, manage trusted players, operate sentry defenses, and support companion and Divine Altar progression.
 
-The project is part of the shared Minecraft plugin ecosystem:
+Sanctuary is part of a shared plugin ecosystem:
 
 ```text
 ExtendedUI
-    Shared UI library
+    Shared inventory and dialog UI library
 
 ExtendedItems
-    Shared persistent item identity library
-
-God
-    AI, Favor, quests, divine rewards
+    Shared persistent custom-item identity library
 
 Sanctuary
-    Anchors, territory, protections, trust, guards, advancements
+    Anchors, territory, security, sentries, companions, altar progression
+
+GodPlugin
+    Planned player-facing wiki and guide for supported plugins
 ```
 
-Sanctuary does not depend on God at runtime. Shared physical item identity comes from ExtendedItems; Sanctuary owns Sanctuary-specific persistent state and gameplay behavior.
+Sanctuary does not depend on GodPlugin at runtime. ExtendedUI and ExtendedItems are consumed as pinned GitHub Release artifacts and shaded into the final Sanctuary plugin JAR.
 
-## Current implementation
+## Platform
 
-Implemented foundation:
+- Java 25
+- Paper 26.1.2
+- Gradle 9.7.1
+- SQLite persistence
+- ExtendedUI 0.1.0
+- ExtendedItems 0.1.0-alpha.9
 
-- Java 25 / Paper 26.1.2 Gradle project
-- Plugin bootstrap and configuration
-- SQLite initialization and versioned migrations
-- Immutable Sanctuary model
-- SQLite repository
-- Read-only public `SanctuaryApi`
-- Development deployment task and GitHub Actions build
+Build and test:
 
-Implemented Beacon lifecycle:
-
-- ExtendedItems `0.1.0-alpha.2` pinned from its GitHub Release
-- Sanctuary Beacon identity through `ExtendedItemIds.SANCTUARY_BEACON`
-- Sanctuary-owned `anchor_id`, `owner_uuid`, `tier`, and `generation` PDC metadata
-- Unique unbound Beacon creation and first-placement ownership assignment
-- Existing anchor UUID used as the Sanctuary UUID
-- Explicit owner/admin breaking with an intentionally generated bound Beacon drop
-- `ACTIVE` to `INACTIVE` transition when the anchor is mined
-- Bound Beacon re-placement/reactivation without recreating the Sanctuary
-- Generation validation that rejects superseded recovered Beacon copies
-- Recorded item destruction transitions the Sanctuary to `DESTROYED`
-- Safe owner recovery for unrecorded disappearance, with generation advancement
-- Configurable recovery enablement and cooldown
-- `/sanctuary admin beacons` metadata registry output
-- Radius-based territory calculation with horizontal cylinder containment
-- Different-owner future-growth spacing validation on first placement and re-placement
-- Same-owner overlap allowed
-- Ephemeral registered debug Beacons with synthetic non-player owners
-- Debug Beacon deletion on break with no item drop
-- Recover autocomplete limited to recoverable `INACTIVE` Sanctuaries
-- Automated model, migration, repository, territory, spacing, debug, first-placement, and lifecycle tests
-
-## Anchor identity contract
-
-ExtendedItems owns shared item identity:
-
-```text
-extendeditems:id = sanctuary_beacon
-extendeditems:version = 1
+```powershell
+.\gradlew.bat clean build --no-daemon
 ```
 
-Sanctuary owns instance state:
+The shaded plugin is produced under `build/libs`.
 
-```text
-sanctuary:anchor_id = <UUID>
-sanctuary:owner_uuid = <UUID when bound>
-sanctuary:tier = 1
-sanctuary:generation = <positive integer>
-```
+## Sanctuary anchors
 
-The anchor UUID is the Sanctuary identity and remains stable across breaking, relocation, recovery, upgrades, and re-placement. Each successful break emits the next Beacon generation, and recovery advances it again when needed. Older physical copies are permanently stale.
+A Sanctuary begins with a special Beacon or Conduit anchor. Anchor item identity comes from ExtendedItems while Sanctuary owns the persistent instance state.
 
-Lifecycle states:
+Sanctuary-owned anchor state includes a stable UUID, owner UUID, tier, generation, type, territory radius, graph connections, and upgrade/effect state.
+
+Anchor lifecycle states are:
 
 ```text
 ACTIVE
@@ -83,180 +51,185 @@ INACTIVE
 DESTROYED
 ```
 
-`DESTROYED` is retained as an audit record rather than deleting the row immediately. Normal gameplay recovery is not allowed once destruction was recorded.
+Breaking a normal anchor produces the current bound anchor item and advances its generation. Older physical copies become stale. Recovery is available only for eligible inactive anchors whose destruction was not recorded.
 
-## Build requirements
+A newly created Sanctuary automatically opens the naming UI after its first anchor is placed. Adding an extender anchor does not reopen the naming dialog.
 
-- JDK 25
-- Gradle Wrapper 9.7.1
-- Paper 26.1.2 target
-- ExtendedUI pinned to stable release `0.1.0` and downloaded from GitHub Releases during the build
-- Network access to download the pinned ExtendedUI and ExtendedItems GitHub Release assets on first build
+## Anchor graph and territory
 
-Build and test:
+A Sanctuary is a graph of active anchors. There is no permanent root anchor. An anchor may be removed whenever the remaining graph stays connected.
 
-```powershell
-.\gradlew.bat clean build
-```
-
-The build downloads exactly:
+Each active anchor contributes a flattened 3D ellipsoid:
 
 ```text
-ExtendedUI 0.1.0
-ExtendedItems 0.1.0-alpha.2
+x^2 + 2.25y^2 + z^2 <= r^2
 ```
 
-from the release asset:
+This gives each anchor:
 
 ```text
-v0.1.0-alpha.2/extendeditems-0.1.0-alpha.2.jar
+horizontal radius = r
+vertical radius   = 2r / 3
 ```
 
-It is shaded and relocated into the final Sanctuary plugin JAR. ExtendedItems is not installed separately in Paper's `plugins` directory.
+Territory is the union of the active anchor ellipsoids. Overlap is counted once and gaps remain outside the Sanctuary.
 
+Anchor tier radii are:
 
-## Management UI
+| Tier | Horizontal radius | Vertical radius |
+| --- | ---: | ---: |
+| I | 20 | 13.33 |
+| II | 39 | 26 |
+| III | 58 | 38.67 |
+| IV | 77 | 51.33 |
+| V | 96 | 64 |
 
-Right-click your active Sanctuary anchor to open the owner management UI. The menu is rendered through ExtendedUI `0.1.0`.
+The management UI reports territory area as the analytic union of the anchors' X/Z footprints in square blocks. That value is intentionally a land-footprint measurement, not ellipsoid volume.
 
-Owners can manage the territory boundary, trusted players, and individual capabilities without using the command-line debug tools.
-
-An administrator can right-click another player's registered anchor to open the admin/debug view. An administrator can also sneak-right-click their own anchor to force the admin view, or run:
-
-```text
-/sanctuary admin ui <sanctuary>
-```
-
-Debug-ephemeral Sanctuaries include a **My Debug Permissions** screen with per-capability toggles, **Allow All Debug Capabilities**, and **Clear My Debug Trust** for single-player testing.
-
-Commands remain available as administrative and offline-UUID fallbacks.
-
-## Development deployment
-
-Default development server plugin path:
-
-```text
-C:\MinecraftDev\server\plugins
-```
-
-Build and deploy:
-
-```powershell
-.\gradlew.bat clean deployDev
-```
-
-Fully restart Paper after deployment. Do not use `/reload` as the normal development loop.
-
-## Commands
-
-```text
-/sanctuary status
-/sanctuary recover <sanctuary-id>
-/sanctuary boundary <name|all>
-/sanctuary trust <sanctuary> <player>
-/sanctuary trust list <sanctuary>
-/sanctuary untrust <sanctuary> <player>
-/sanctuary capability <sanctuary> <player> <capability> <allow|deny>
-/sanctuary admin permissions <sanctuary> <player>
-/sanctuary admin reload
-/sanctuary admin beacons
-/sanctuary admin ui <sanctuary>
-/sanctuary admin givebeacon <player>
-/sanctuary admin debugbeacon [player]
-/sanctuary admin debugtrust <debug-sanctuary> [player] <capability|all> <allow|deny>
-```
-
-Administrative commands require:
-
-```text
-sanctuary.admin
-```
-
-## Beacon lifecycle behavior
-
-```text
-Unbound Sanctuary Beacon
-        ↓ first placement
-ACTIVE Sanctuary
-        ↓ owner/admin breaks anchor
-INACTIVE Sanctuary + bound Beacon item
-        ↓ owner re-places matching generation
-ACTIVE Sanctuary at new location
-```
-
-If the inactive bound item is explicitly removed by a recorded destructive Paper removal cause, the Sanctuary becomes `DESTROYED` and normal recovery is permanently blocked. Pickup, chunk unload, and item merge are not destruction.
-
-If an inactive Beacon disappears without a recorded destruction, the owner may use:
-
-```text
-/sanctuary recover <sanctuary-id>
-```
-
-Recovery creates a new bound Beacon generation. Any older copy that later reappears is stale and cannot activate the Sanctuary.
-
-Recovery and territory configuration:
-
-```yaml
-anchors:
-  initial-territory-radius: 18.0
-  recovery:
-    enabled: true
-    cooldown-seconds: 300
-
-territory:
-  maximum-radius: 96.0
-  spacing-margin: 16.0
-```
-
-Territory radius is persisted directly and is the progression primitive. Existing legacy area values were converted to equivalent radii by migration V004.
-
-Different owners reserve enough room for future growth:
+Different owners reserve horizontal room for future growth. With the default configuration:
 
 ```text
 minimum anchor distance = 2 * maximum-radius + spacing-margin
+                        = 2 * 96 + 16
+                        = 208 blocks
 ```
 
-With the default values, different-owner anchors must be at least 208 blocks apart horizontally. Y distance is intentionally ignored. Same-owner overlap is allowed.
+Same-owner overlap is allowed.
 
-## Public API
+## Boundary visualization
 
-Sanctuary registers a read-only `SanctuaryApi` through Paper's `ServicesManager`.
+Boundary particles follow the exposed outer surface of the ellipsoid union. Internal surfaces hidden inside another anchor are suppressed.
 
-Current queries are:
-
-```java
-Optional<SanctuaryView> getSanctuary(UUID sanctuaryId);
-List<SanctuaryView> getPlayerSanctuaries(UUID playerId);
-```
-
-Other plugins should use the public API rather than Sanctuary's database or internal repositories.
-
-## Persistence
-
-SQLite database:
+Viewer-specific colors are based on effective threat and relationship:
 
 ```text
-plugins/Sanctuary/sanctuary.db
+owner       configured owner particle
+trusted     configured trusted particle
+neutral     configured neutral particle
+hostile     configured hostile particle
 ```
 
-The existing migration framework and `sanctuaries` table remain authoritative. Migration V002 adds anchor generation and destruction audit fields. Migration V003 adds the internal ephemeral-debug marker, V004 adds radius-based territory persistence, and V005 adds normalized trust/capability tables with cascading cleanup.
+Temporary aggression, blacklist state, and Lockdown can therefore make the boundary hostile-colored without changing the player's stored relationship.
 
-## Debug territory testing
+Automatic visualization uses two densities:
 
-Create a pre-registered Beacon owned by a reserved synthetic non-player identity:
+- a coarse full outer shell so the Sanctuary's height and fly-over path are readable
+- a denser local band near the viewer
+
+Visibility is intentionally different for players inside and outside the territory:
+
+- while comfortably inside the actual 3D Sanctuary, the full shell remains hidden
+- when an inside player approaches the 3D surface, the shell appears
+- when a player is vertically outside the Sanctuary, the shell may remain visible based on horizontal X/Z distance even far above or below it
+
+Default automatic maximum visibility distance is 16 blocks.
+
+## Security
+
+Stored relationships are:
 
 ```text
-/sanctuary admin debugbeacon
-/sanctuary admin debugbeacon <player>
+OWNER
+TRUSTED
+NEUTRAL
+BLACKLISTED
 ```
 
-Admins may place the debug Beacon even though its synthetic owner is not the player. It participates in normal different-owner spacing checks. When broken, it drops nothing and its database row is deleted. If the inactive debug item is destroyed before placement, its row is also cleaned up.
+Effective threat is resolved separately as safe, neutral, or hostile.
 
-## Trust and capabilities
+Security modes are:
 
-Sanctuary now persists trust relationships by UUID and evaluates explicit capabilities through one permission service. The owner always has every capability. Trusting another player does not grant gameplay capabilities automatically. Grant only the capabilities that player should receive.
+```text
+NORMAL
+LOCKDOWN
+```
 
-Current capabilities:
+In Normal mode, neutral players remain neutral and blacklisted players are hostile. In Lockdown, neutral non-owner, non-trusted players are hostile.
+
+### Temporary aggression
+
+Qualifying hostile acts create a temporary Sanctuary-specific aggression state for 10 minutes. This state is persisted, survives logout and restart, and refreshes on another qualifying act.
+
+Current aggression triggers include attacks on:
+
+- the Sanctuary owner
+- a sentry
+- a Sanctuary anchor
+
+Temporary aggression ends when its timer expires or when the aggressive player dies. Death does not remove blacklist state.
+
+Simply entering neutral territory is not itself hostile behavior.
+
+## Effects and attunement
+
+Beacon and Conduit anchors unlock one safe/hostile effect pair per tier.
+
+Beacon pairs:
+
+1. Regeneration / Wither
+2. Resistance / Blindness
+3. Strength / Weakness
+4. Haste / Mining Fatigue
+5. Speed / Elytra Disabled
+
+Conduit pairs:
+
+1. Regeneration / Wither
+2. Conduit Power / Blindness
+3. Haste / Mining Fatigue
+4. Dolphin's Grace / Slowness
+5. Resistance / Weakness
+
+Each newly unlocked pair begins at attunement level 1. Paired attunement state is persisted per anchor and the active effect is capped by that effect's own maximum level.
+
+Conduit effects only apply while the player is in water or rain.
+
+## Sentries
+
+Sanctuary supports registered sentry posts and managed sentry mobs. Sentries belong to the Sanctuary containing their post and use Sanctuary threat/security state when deciding what may be attacked.
+
+Implemented sentry behavior includes:
+
+- global Sanctuary sentry defaults and per-sentry overrides
+- Sanctuary-local target authorization
+- owner, sentry, anchor, hostile-mob, interaction, and other defense triggers
+- recall and return-home behavior
+- respawn cooldown after sentry death
+- protection from unmanaged mob targeting and damage
+- mob-specific handling for Wardens, Withers, Endermen, Vexes, and other special cases
+- Watcher's Eye proactive local awareness
+
+Watcher-equipped active anchors use a true 12-block 3D sphere for their local proactive awareness. This is separate from the flattened Sanctuary territory ellipsoid.
+
+## Companions
+
+Companion Eggs spawn persistent owner-bound companion mobs with Follow and Stay control modes.
+
+Current companion behavior includes:
+
+- formation following
+- delayed catch-up teleport while the owner is airborne
+- safe teleport candidate search and hazard rejection
+- aquatic placement restrictions
+- owner-defense targeting
+- short-lived combat relationships between hostile companions
+- custom handling for Warden, Wither, Evoker/Vex, Creeper, Enderman, and aquatic companions
+- permanent companion death
+- persisted companion health
+
+Companion Egg durability bars are display-only health indicators. They must not break the egg item.
+
+## Divine Altar, crafting, loot, and advancements
+
+Sanctuary includes a Divine Altar and Sanctuary-owned UI for custom progression recipes that do not fit the vanilla recipe book cleanly.
+
+The altar is a protected placed object with persistent visual effects and cleanup behavior for breaking, pistons, explosions, and other movement/destruction cases.
+
+The project also contains Sanctuary advancement, crafting, and structure-loot systems used for progression and custom items.
+
+## Trust and optional hard protections
+
+Trusted players can receive explicit capabilities:
 
 ```text
 BUILD
@@ -267,43 +240,21 @@ REDSTONE
 ENTITIES
 ```
 
-Removing trust deletes all capability grants for that player in that Sanctuary. Deleting a Sanctuary also cascades its trust/capability rows. Debug-ephemeral Sanctuaries do not participate in trust management.
+The owner always has every capability. Trust by itself does not grant every capability.
 
-## Next milestone
+Optional claim-style protections are controlled through `protections.hard` and default to disabled. When enabled, ordinary building, breaking, interaction, container, redstone, and entity actions can be cancelled according to the capability system.
 
-The permission foundation is now established. The next protection phase can route block, interaction, container, redstone, and entity events through the authoritative capability service.
+## Configuration
 
-UI, protection unlock/progression, advancements, sentries, companions, and Conduit-specific gameplay remain later work.
-
-See `IMPLEMENTATION-STATUS.md`, `DEVELOPMENT.md`, and `docs/Minecraft-Plugin-Architecture-and-Development-Plan.md` for additional project detail.
-
-## Territory presence and awareness
-
-Active Sanctuary territory is now evaluated while players move horizontally through the world.
-
-- Entering an active Sanctuary may show an entry title.
-- Leaving may print a configurable exit message.
-- An online owner may receive a configurable alert when another player enters.
-- Direct movement from one Sanctuary into another is handled as an exit followed by an entry.
-- If same-owner territories overlap, the closest anchor is selected deterministically.
-- `INACTIVE` and `DESTROYED` Sanctuaries never count as current territory.
-- Entering a `DEBUG-EPHEMERAL` Sanctuary additionally prints a debug chat message to the entering player.
-
-Boundary visualization:
-
-```text
-/sanctuary boundary <name|all>
-```
-
-Owners may display their own active Sanctuary boundary. Players with `sanctuary.admin` may display any active Sanctuary boundary. The boundary is drawn with `END_ROD` particles around the horizontal territory circle.
-
-Automatic boundary rendering refreshes according to `territory.boundary.automatic.update-period-ticks`. The default `10` ticks is approximately 0.5 seconds. The value is read dynamically, so `/sanctuary admin reload` applies changes without restarting Paper.
-
-If a placed block contains valid Sanctuary anchor metadata but its anchor UUID no longer exists in SQLite, breaking it performs orphan cleanup: the block is allowed to break, no Beacon item drops, and the breaking player receives a warning. This does not bypass ownership or stale-generation checks for Sanctuaries that still have a registered database row.
-
-Awareness and boundary configuration:
+Current defaults:
 
 ```yaml
+anchors:
+  initial-territory-radius: 20.0
+  recovery:
+    enabled: true
+    cooldown-seconds: 300
+
 territory:
   maximum-radius: 96.0
   spacing-margin: 16.0
@@ -316,78 +267,17 @@ territory:
     display-seconds: 10
     maximum-render-distance: 128.0
     particles:
-      owner: GLOW_SQUID_INK
+      owner: SCULK_CHARGE_POP
       trusted: GLOW
       neutral: END_ROD
-      hostile: SOUL
+      hostile: REVERSE_PORTAL
     automatic:
       enabled: true
       minimum-distance: 3.0
-      maximum-distance: 12.0
+      maximum-distance: 16.0
       vertical-particle-spacing: 1.5
       update-period-ticks: 10
-```
 
-## Basic player protections
-
-Implemented:
-
-- Block placement requires `BUILD`.
-- Ordinary block breaking requires `BREAK`.
-- Inventory-bearing block access requires `CONTAINER`.
-- Buttons, levers, repeaters, comparators, and daylight detectors require `REDSTONE`.
-- Other right-click block interactions require `INTERACT`.
-- Entity interaction and player-caused entity damage require `ENTITIES`.
-- Sanctuary anchor blocks remain governed by the dedicated anchor lifecycle rules.
-- Permission lookup uses the active Sanctuary at the action location and the existing trust/capability engine.
-- Protection denial messages are throttled per player/capability to avoid chat spam.
-- `sanctuary.admin` does not bypass territory protections, so operators can test outsider behavior.
-- `/sanctuary admin debugtrust` grants or revokes capabilities on debug-ephemeral Sanctuaries for solo testing.
-- `/sanctuary admin permissions` can inspect debug Sanctuaries as well as normal Sanctuaries.
-
-
-## Sanctuary naming
-
-Owners can rename a Sanctuary from its management UI. Names are persisted, limited to 32 characters, and are used as the preferred human-readable selector for Sanctuary commands. Duplicate names are allowed; selectors automatically add owner or short-ID disambiguation when necessary.
-
-## Security policy
-
-Sanctuary separates relationship/security policy from optional hard claim-style protection.
-
-Relationships are:
-
-```text
-OWNER
-TRUSTED
-NEUTRAL
-BLACKLISTED
-```
-
-Security modes are:
-
-```text
-NORMAL
-LOCKDOWN
-```
-
-In Normal mode, blacklisted players are hostile and neutral players remain neutral. In Lockdown mode, every player who is not the owner or explicitly trusted is treated as hostile. Lockdown is persisted independently from the blacklist, so disabling Lockdown does not alter explicit blacklist entries.
-
-Boundary colors are viewer-specific:
-
-```text
-blue   owner
-green  trusted
-white  neutral
-red    hostile
-```
-
-The owner UI exposes Players & Access and Security screens. Lockdown is intended to become a higher-tier Beacon feature; until tier progression is implemented, admins can toggle it from the admin UI for testing.
-
-### Optional hard protections
-
-Hard claim-style protection is server-configurable and defaults off:
-
-```yaml
 protections:
   hard:
     enabled: false
@@ -399,10 +289,85 @@ protections:
     entities: true
 ```
 
-When `enabled` is `false`, Sanctuary does not physically cancel those ordinary player actions. Existing capability grants remain persisted for servers that choose to enable hard protection. Changes are applied after `/sanctuary admin reload`.
+Use `/sanctuary admin reload` for reloadable configuration changes.
 
-## Boundary particle configuration
+## Commands
 
-Boundary visuals are relationship-specific and reloadable. The configured particle names use Paper `Particle` enum names and must be particle types that do not require extra particle data. Invalid values fall back to the built-in default and log a warning.
+Primary command:
 
-Automatic proximity rendering uses a distance band instead of a simple upper bound. A perimeter point is rendered only when `minimum-distance < distance < maximum-distance`, producing a donut-like local patch around the viewer.
+```text
+/sanctuary status
+/sanctuary recover <sanctuary-id>
+/sanctuary boundary <name|all>
+/sanctuary trust <sanctuary> <player>
+/sanctuary trust list <sanctuary>
+/sanctuary untrust <sanctuary> <player>
+/sanctuary capability <sanctuary> <player> <capability> <allow|deny>
+/sanctuary admin ...
+```
+
+Debug commands registered by the plugin also include:
+
+```text
+/sanctuarydebugcompanions [player]
+/sanctuarydebugshards [player]
+/sanctuarydebugrelics [player]
+/sanctuarydebugloot <profile|all> [player]
+```
+
+Administrative/debug commands require `sanctuary.admin`.
+
+## Development deployment
+
+The default development Paper plugin directory is:
+
+```text
+C:\MinecraftDev\server\plugins
+```
+
+Build and copy the shaded plugin there with:
+
+```powershell
+.\gradlew.bat clean deployDev
+```
+
+Use a full Paper restart after deployment. Do not use `/reload` as the normal development loop.
+
+## Production releases and deployment
+
+Normal pushes to `main` build and test Sanctuary on GitHub-hosted runners and upload a deterministic `Sanctuary.jar` CI artifact.
+
+Deployable builds are created manually through the `Release` GitHub Actions workflow. A release contains:
+
+```text
+Sanctuary.jar
+Sanctuary.jar.sha256
+```
+
+The Windows production deployment script is:
+
+```text
+scripts/deploy-sanctuary.ps1
+```
+
+It downloads a selected public GitHub Release, verifies SHA-256, backs up the current plugin, stops the Minecraft service, installs the new JAR, starts the service, and rolls back if deployment fails.
+
+See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for the full production procedure.
+
+## Persistence and API
+
+SQLite database:
+
+```text
+plugins/Sanctuary/sanctuary.db
+```
+
+Sanctuary currently has migrations through `V012__sanctuary_aggression.sql`.
+
+A read-only `SanctuaryApi` is registered through Paper's `ServicesManager`. Other plugins should use the public API instead of reading Sanctuary's SQLite database directly.
+
+## More documentation
+
+- [DEVELOPMENT.md](DEVELOPMENT.md) for development and runtime validation
+- [IMPLEMENTATION-STATUS.md](IMPLEMENTATION-STATUS.md) for current implementation state and known follow-up work
+- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for production releases and deployment

@@ -43,8 +43,7 @@ public final class AnchorItemRemovalListener implements Listener {
         }
 
         AnchorMetadata metadata = metadataResult.orElseThrow();
-        boolean tierFiveBeacon = anchorItemService.isSanctuaryBeacon(item.getItemStack())
-            && metadata.tier() >= 5;
+        boolean tierFiveAnchor = metadata.tier() >= 5;
 
         try {
             graphService.recordDestruction(metadata, destructionReason.orElseThrow())
@@ -54,9 +53,9 @@ public final class AnchorItemRemovalListener implements Listener {
                             + " anchor " + anchor.id() + " was permanently destroyed: "
                             + anchor.destructionReason().orElse("unknown")
                     );
-                    if (tierFiveBeacon) {
+                    if (tierFiveAnchor) {
                         Bukkit.getPluginManager().callEvent(
-                            new TierFiveSanctuaryBeaconDestroyedEvent(
+                            new TierFiveSanctuaryAnchorDestroyedEvent(
                                 metadata.ownerId().orElseThrow()
                             )
                         );

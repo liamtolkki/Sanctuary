@@ -28,6 +28,10 @@ public final class CompanionRuntime {
             plugin
         );
         plugin.getServer().getPluginManager().registerEvents(
+            new CompanionCombatHooks(service),
+            plugin
+        );
+        plugin.getServer().getPluginManager().registerEvents(
             new ManagedElderGuardianEffectListener(plugin),
             plugin
         );

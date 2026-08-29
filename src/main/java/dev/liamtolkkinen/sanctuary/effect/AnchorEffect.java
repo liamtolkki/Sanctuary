@@ -6,7 +6,7 @@ public enum AnchorEffect {
     STRENGTH(Target.SAFE, 2),
     HASTE(Target.SAFE, 2),
     SPEED(Target.SAFE, 3),
-    NIGHT_VISION(Target.SAFE, 1),
+    CONDUIT_POWER(Target.SAFE, 1),
     DOLPHINS_GRACE(Target.SAFE, 1),
 
     ELYTRA_DISABLED(Target.HOSTILE, 1),

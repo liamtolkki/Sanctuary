@@ -30,7 +30,7 @@ public final class SanctuaryEffectService {
     );
     private static final List<AnchorEffectDefinition> CONDUIT_SAFE = List.of(
         definition(AnchorEffect.REGENERATION, 1),
-        definition(AnchorEffect.NIGHT_VISION, 2),
+        definition(AnchorEffect.CONDUIT_POWER, 2),
         definition(AnchorEffect.HASTE, 3),
         definition(AnchorEffect.DOLPHINS_GRACE, 4),
         definition(AnchorEffect.RESISTANCE, 5)

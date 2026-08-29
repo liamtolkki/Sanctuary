@@ -6,7 +6,7 @@ import dev.liamtolkkinen.extendeditems.ExtendedItems;
 import dev.liamtolkkinen.sanctuary.anchor.AnchorItemService;
 import dev.liamtolkkinen.sanctuary.anchor.AnchorTierUpgradedEvent;
 import dev.liamtolkkinen.sanctuary.anchor.SanctuaryExtendedEvent;
-import dev.liamtolkkinen.sanctuary.anchor.TierFiveSanctuaryBeaconDestroyedEvent;
+import dev.liamtolkkinen.sanctuary.anchor.TierFiveSanctuaryAnchorDestroyedEvent;
 import dev.liamtolkkinen.sanctuary.companion.CompanionDefinition;
 import dev.liamtolkkinen.sanctuary.crafting.SanctuaryRecipeCatalog;
 import dev.liamtolkkinen.sanctuary.sentry.SentryRecipeCatalog;
@@ -32,58 +32,268 @@ import org.bukkit.inventory.Recipe;
 import org.bukkit.plugin.java.JavaPlugin;
 
 public final class SanctuaryAdvancementService implements Listener {
-    private static final String ROOT_BACKGROUND="minecraft:gui/advancements/backgrounds/stone";
+    private static final String ROOT_BACKGROUND = "minecraft:gui/advancements/backgrounds/stone";
+
     private final JavaPlugin plugin;
     private final String namespace;
     private final AnchorItemService anchorItemService;
 
-    public SanctuaryAdvancementService(JavaPlugin plugin){
-        this.plugin=Objects.requireNonNull(plugin,"plugin");
-        this.namespace=plugin.getName().toLowerCase(Locale.ROOT);
-        this.anchorItemService=new AnchorItemService(plugin);
+    public SanctuaryAdvancementService(JavaPlugin plugin) {
+        this.plugin = Objects.requireNonNull(plugin, "plugin");
+        this.namespace = plugin.getName().toLowerCase(Locale.ROOT);
+        this.anchorItemService = new AnchorItemService(plugin);
     }
 
-    public void start(){registerAdvancements();plugin.getServer().getPluginManager().registerEvents(this,plugin);for(Player player:plugin.getServer().getOnlinePlayers())refreshPossessionMilestones(player);}
-    public void recordOfferingProgress(Player player,int completedOfferings){Objects.requireNonNull(player,"player");if(completedOfferings<0||completedOfferings>12)throw new IllegalArgumentException("completedOfferings must be between 0 and 12");if(completedOfferings>=1)grantCompleted(player,SanctuaryAdvancementCatalog.FIRST_OFFERING);if(completedOfferings>=6)grantCompleted(player,SanctuaryAdvancementCatalog.HALF_OFFERINGS);if(completedOfferings>=12)grantCompleted(player,SanctuaryAdvancementCatalog.ALL_OFFERINGS);}
-    public void recordDivineRelicReceived(Player player){Objects.requireNonNull(player,"player");grantCompleted(player,SanctuaryAdvancementCatalog.DIVINE_RELIC);}
-    public void recordSentryCraft(Player player){Objects.requireNonNull(player,"player");grantCompleted(player,SanctuaryAdvancementCatalog.FIRST_SENTRY);}
-    public void recordCompanionObtained(Player player,ExtendedItemId companionId){Objects.requireNonNull(player,"player");Objects.requireNonNull(companionId,"companionId");if(CompanionDefinition.byItemId(companionId).isEmpty())return;grantCompleted(player,SanctuaryAdvancementCatalog.FIRST_COMPANION);if(companionId.equals(ExtendedItemIds.COMPANION_WARDEN))grantCompleted(player,SanctuaryAdvancementCatalog.WARDEN_COMPANION);if(companionId.equals(ExtendedItemIds.COMPANION_WITHER))grantCompleted(player,SanctuaryAdvancementCatalog.WITHER_COMPANION);}
-    public void recordTierFiveAnchor(Player player){Objects.requireNonNull(player,"player");grantCompleted(player,SanctuaryAdvancementCatalog.TIER_FIVE_ANCHOR);}
-
-    @EventHandler(priority=EventPriority.MONITOR,ignoreCancelled=true) public void onCraft(CraftItemEvent event){if(!(event.getWhoClicked() instanceof Player player))return;String recipeKey=recipeKey(event.getRecipe());if(recipeKey==null)return;SanctuaryRecipeCatalog.findByKey(recipeKey).ifPresent(definition->recordSanctuaryCraft(player,definition.result()));if(SentryRecipeCatalog.sentryConversions().stream().anyMatch(conversion->conversion.key().equals(recipeKey)))recordSentryCraft(player);}
-    @EventHandler(priority=EventPriority.MONITOR,ignoreCancelled=true) public void onBlockPlace(BlockPlaceEvent event){if(ExtendedItems.is(event.getItemInHand(),ExtendedItemIds.SANCTUARY_BEACON))grantCompleted(event.getPlayer(),SanctuaryAdvancementCatalog.SANCTUARY_BEACON);anchorItemService.readAnchor(event.getItemInHand()).filter(metadata->metadata.tier()>=5).ifPresent(metadata->recordTierFiveAnchor(event.getPlayer()));}
-    @EventHandler(priority=EventPriority.MONITOR,ignoreCancelled=true) public void onItemPickup(EntityPickupItemEvent event){if(event.getEntity() instanceof Player player)observePossession(player,event.getItem().getItemStack());}
-    @EventHandler(priority=EventPriority.MONITOR) public void onPlayerJoin(PlayerJoinEvent event){scheduleRefresh(event.getPlayer());}
-    @EventHandler(priority=EventPriority.MONITOR,ignoreCancelled=true) public void onInventoryClick(InventoryClickEvent event){if(event.getWhoClicked() instanceof Player player)scheduleRefresh(player);}
-    @EventHandler(priority=EventPriority.MONITOR,ignoreCancelled=true) public void onInventoryDrag(InventoryDragEvent event){if(event.getWhoClicked() instanceof Player player)scheduleRefresh(player);}
-    @EventHandler(priority=EventPriority.MONITOR) public void onSanctuaryExtended(SanctuaryExtendedEvent event){grantCompleted(event.player(),SanctuaryAdvancementCatalog.SANCTUARY_EXTENDED);}
-    @EventHandler(priority=EventPriority.MONITOR) public void onAnchorTierUpgraded(AnchorTierUpgradedEvent event){if(event.anchor().tier()>=5)recordTierFiveAnchor(event.player());}
-    @EventHandler(priority=EventPriority.MONITOR) public void onTierFiveBeaconDestroyed(TierFiveSanctuaryBeaconDestroyedEvent event){Player player=Bukkit.getPlayer(event.ownerId());if(player!=null&&player.isOnline())grantCompleted(player,SanctuaryAdvancementCatalog.WHAT_A_WASTE);}
-
-    public void recordSanctuaryCraft(Player player,ExtendedItemId result){
-        if(result.equals(ExtendedItemIds.CONSECRATED_SHARD)){grantCompleted(player,SanctuaryAdvancementCatalog.FIRST_FRAGMENT);grantCompleted(player,SanctuaryAdvancementCatalog.FIRST_SHARD);return;}
-        if(result.equals(ExtendedItemIds.DIVINE_ALTAR)){grantCompleted(player,SanctuaryAdvancementCatalog.DIVINE_ALTAR);return;}
-        if(result.equals(ExtendedItemIds.SANCTUARY_BEACON)){grantCompleted(player,SanctuaryAdvancementCatalog.SANCTUARY_BEACON);return;}
-        if(result.equals(ExtendedItemIds.SANCTUARY_CONDUIT)){grantCompleted(player,SanctuaryAdvancementCatalog.SANCTUARY_CONDUIT);return;}
-        SanctuaryAdvancementCatalog.masterArtifactCriterion(result).ifPresent(criterion->{grantCompleted(player,SanctuaryAdvancementCatalog.FIRST_ARTIFACT);grantCriterion(player,SanctuaryAdvancementCatalog.MASTER_ARTIFICER,criterion);});
+    public void start() {
+        registerAdvancements();
+        plugin.getServer().getPluginManager().registerEvents(this, plugin);
+        for (Player player : plugin.getServer().getOnlinePlayers()) {
+            refreshPossessionMilestones(player);
+        }
     }
 
-    private void refreshPossessionMilestones(Player player){for(ItemStack item:player.getInventory().getContents())observePossession(player,item);}
-
-    private void observePossession(Player player,ItemStack item){
-        if(item==null||item.getType().isAir())return;
-        if(ExtendedItems.is(item,ExtendedItemIds.CONSECRATED_SHARD_FRAGMENT))grantCompleted(player,SanctuaryAdvancementCatalog.FIRST_FRAGMENT);
-        if(ExtendedItems.is(item,ExtendedItemIds.SANCTUARY_BEACON))grantCompleted(player,SanctuaryAdvancementCatalog.SANCTUARY_BEACON);
-        if(ExtendedItems.is(item,ExtendedItemIds.DIVINE_RELIC))grantCompleted(player,SanctuaryAdvancementCatalog.DIVINE_RELIC);
-        ExtendedItems.getId(item).ifPresent(id->recordCompanionObtained(player,id));
-        anchorItemService.readAnchor(item).filter(metadata->metadata.tier()>=5).ifPresent(metadata->recordTierFiveAnchor(player));
+    public void recordOfferingProgress(Player player, int completedOfferings) {
+        Objects.requireNonNull(player, "player");
+        if (completedOfferings < 0 || completedOfferings > 12) {
+            throw new IllegalArgumentException("completedOfferings must be between 0 and 12");
+        }
+        if (completedOfferings >= 1) grantCompleted(player, SanctuaryAdvancementCatalog.FIRST_OFFERING);
+        if (completedOfferings >= 6) grantCompleted(player, SanctuaryAdvancementCatalog.HALF_OFFERINGS);
+        if (completedOfferings >= 12) grantCompleted(player, SanctuaryAdvancementCatalog.ALL_OFFERINGS);
     }
 
-    private void scheduleRefresh(Player player){plugin.getServer().getScheduler().runTask(plugin,()->{if(player.isOnline())refreshPossessionMilestones(player);});}
-    private String recipeKey(Recipe recipe){if(!(recipe instanceof Keyed keyed))return null;NamespacedKey key=keyed.getKey();return key.getNamespace().equals(namespace)?key.getKey():null;}
-    private void grantCompleted(Player player,String advancementKey){var definition=SanctuaryAdvancementCatalog.find(advancementKey).orElseThrow();for(String criterion:definition.criteria())grantCriterion(player,advancementKey,criterion);}
-    private void grantCriterion(Player player,String advancementKey,String criterion){Advancement advancement=Bukkit.getAdvancement(key(advancementKey));if(advancement==null)throw new IllegalStateException("Sanctuary advancement is not loaded: "+advancementKey);AdvancementProgress progress=player.getAdvancementProgress(advancement);if(!progress.getAwardedCriteria().contains(criterion))progress.awardCriteria(criterion);}
-    @SuppressWarnings("deprecation") private void registerAdvancements(){for(var definition:SanctuaryAdvancementCatalog.definitions()){NamespacedKey key=key(definition.key());if(Bukkit.getAdvancement(key)!=null)continue;Advancement loaded=Bukkit.getUnsafe().loadAdvancement(key,toJson(definition));if(loaded==null)throw new IllegalStateException("Failed to load Sanctuary advancement "+key);}}
-    private String toJson(SanctuaryAdvancementCatalog.Definition d){StringBuilder j=new StringBuilder("{");if(d.parentKey()!=null)j.append("\"parent\":\"").append(key(d.parentKey())).append("\",");j.append("\"display\":{\"icon\":{\"id\":\"").append(d.icon().getKey()).append("\"},\"title\":{\"text\":\"").append(escapeJson(d.title())).append("\"},\"description\":{\"text\":\"").append(escapeJson(d.description())).append("\"},\"frame\":\"").append(d.frame().jsonName()).append("\",\"show_toast\":true,\"announce_to_chat\":").append(d.announceToChat()).append(",\"hidden\":false");if(d.parentKey()==null)j.append(",\"background\":\"").append(ROOT_BACKGROUND).append("\"");j.append("},\"criteria\":{");for(int i=0;i<d.criteria().size();i++){if(i>0)j.append(',');j.append('"').append(escapeJson(d.criteria().get(i))).append("\":{\"trigger\":\"minecraft:impossible\"}");}j.append("},\"requirements\":[");for(int i=0;i<d.criteria().size();i++){if(i>0)j.append(',');j.append("[\"").append(escapeJson(d.criteria().get(i))).append("\"]");}return j.append("],\"sends_telemetry_event\":false}").toString();}
-    private NamespacedKey key(String value){return new NamespacedKey(plugin,value);} private String escapeJson(String value){return value.replace("\\","\\\\").replace("\"","\\\"").replace("\n","\\n").replace("\r","\\r").replace("\t","\\t");}
+    public void recordDivineRelicReceived(Player player) {
+        Objects.requireNonNull(player, "player");
+        grantCompleted(player, SanctuaryAdvancementCatalog.DIVINE_RELIC);
+    }
+
+    public void recordSentryCraft(Player player) {
+        Objects.requireNonNull(player, "player");
+        grantCompleted(player, SanctuaryAdvancementCatalog.FIRST_SENTRY);
+    }
+
+    public void recordCompanionObtained(Player player, ExtendedItemId companionId) {
+        Objects.requireNonNull(player, "player");
+        Objects.requireNonNull(companionId, "companionId");
+        if (CompanionDefinition.byItemId(companionId).isEmpty()) return;
+        grantCompleted(player, SanctuaryAdvancementCatalog.FIRST_COMPANION);
+        if (companionId.equals(ExtendedItemIds.COMPANION_WARDEN)) {
+            grantCompleted(player, SanctuaryAdvancementCatalog.WARDEN_COMPANION);
+        }
+        if (companionId.equals(ExtendedItemIds.COMPANION_WITHER)) {
+            grantCompleted(player, SanctuaryAdvancementCatalog.WITHER_COMPANION);
+        }
+    }
+
+    public void recordTierFiveAnchor(Player player) {
+        Objects.requireNonNull(player, "player");
+        grantCompleted(player, SanctuaryAdvancementCatalog.TIER_FIVE_ANCHOR);
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onCraft(CraftItemEvent event) {
+        if (!(event.getWhoClicked() instanceof Player player)) return;
+        String recipeKey = recipeKey(event.getRecipe());
+        if (recipeKey == null) return;
+        SanctuaryRecipeCatalog.findByKey(recipeKey)
+            .ifPresent(definition -> recordSanctuaryCraft(player, definition.result()));
+        if (SentryRecipeCatalog.sentryConversions().stream()
+            .anyMatch(conversion -> conversion.key().equals(recipeKey))) {
+            recordSentryCraft(player);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onBlockPlace(BlockPlaceEvent event) {
+        ItemStack placedItem = event.getItemInHand();
+        if (isSanctuaryAnchorItem(placedItem)) {
+            grantCompleted(event.getPlayer(), SanctuaryAdvancementCatalog.SANCTUARY_BEACON);
+        }
+        anchorItemService.readAnchor(placedItem)
+            .filter(metadata -> metadata.tier() >= 5)
+            .ifPresent(metadata -> recordTierFiveAnchor(event.getPlayer()));
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onItemPickup(EntityPickupItemEvent event) {
+        if (event.getEntity() instanceof Player player) {
+            observePossession(player, event.getItem().getItemStack());
+        }
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onPlayerJoin(PlayerJoinEvent event) {
+        scheduleRefresh(event.getPlayer());
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onInventoryClick(InventoryClickEvent event) {
+        if (event.getWhoClicked() instanceof Player player) scheduleRefresh(player);
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onInventoryDrag(InventoryDragEvent event) {
+        if (event.getWhoClicked() instanceof Player player) scheduleRefresh(player);
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onSanctuaryExtended(SanctuaryExtendedEvent event) {
+        grantCompleted(event.player(), SanctuaryAdvancementCatalog.SANCTUARY_EXTENDED);
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onAnchorTierUpgraded(AnchorTierUpgradedEvent event) {
+        if (event.anchor().tier() >= 5) recordTierFiveAnchor(event.player());
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onTierFiveAnchorDestroyed(TierFiveSanctuaryAnchorDestroyedEvent event) {
+        Player player = Bukkit.getPlayer(event.ownerId());
+        if (player != null && player.isOnline()) {
+            grantCompleted(player, SanctuaryAdvancementCatalog.WHAT_A_WASTE);
+        }
+    }
+
+    public void recordSanctuaryCraft(Player player, ExtendedItemId result) {
+        if (result.equals(ExtendedItemIds.CONSECRATED_SHARD)) {
+            grantCompleted(player, SanctuaryAdvancementCatalog.FIRST_FRAGMENT);
+            grantCompleted(player, SanctuaryAdvancementCatalog.FIRST_SHARD);
+            return;
+        }
+        if (result.equals(ExtendedItemIds.DIVINE_ALTAR)) {
+            grantCompleted(player, SanctuaryAdvancementCatalog.DIVINE_ALTAR);
+            return;
+        }
+        if (result.equals(ExtendedItemIds.SANCTUARY_BEACON)) {
+            grantCompleted(player, SanctuaryAdvancementCatalog.SANCTUARY_BEACON);
+            return;
+        }
+        if (result.equals(ExtendedItemIds.SANCTUARY_CONDUIT)) {
+            grantCompleted(player, SanctuaryAdvancementCatalog.SANCTUARY_BEACON);
+            grantCompleted(player, SanctuaryAdvancementCatalog.SANCTUARY_CONDUIT);
+            return;
+        }
+        SanctuaryAdvancementCatalog.masterArtifactCriterion(result).ifPresent(criterion -> {
+            grantCompleted(player, SanctuaryAdvancementCatalog.FIRST_ARTIFACT);
+            grantCriterion(player, SanctuaryAdvancementCatalog.MASTER_ARTIFICER, criterion);
+        });
+    }
+
+    private void refreshPossessionMilestones(Player player) {
+        for (ItemStack item : player.getInventory().getContents()) {
+            observePossession(player, item);
+        }
+    }
+
+    private void observePossession(Player player, ItemStack item) {
+        if (item == null || item.getType().isAir()) return;
+        if (ExtendedItems.is(item, ExtendedItemIds.CONSECRATED_SHARD_FRAGMENT)) {
+            grantCompleted(player, SanctuaryAdvancementCatalog.FIRST_FRAGMENT);
+        }
+        if (isSanctuaryAnchorItem(item)) {
+            grantCompleted(player, SanctuaryAdvancementCatalog.SANCTUARY_BEACON);
+        }
+        if (ExtendedItems.is(item, ExtendedItemIds.DIVINE_RELIC)) {
+            grantCompleted(player, SanctuaryAdvancementCatalog.DIVINE_RELIC);
+        }
+        ExtendedItems.getId(item).ifPresent(id -> recordCompanionObtained(player, id));
+        anchorItemService.readAnchor(item)
+            .filter(metadata -> metadata.tier() >= 5)
+            .ifPresent(metadata -> recordTierFiveAnchor(player));
+    }
+
+    private boolean isSanctuaryAnchorItem(ItemStack item) {
+        return ExtendedItems.is(item, ExtendedItemIds.SANCTUARY_BEACON)
+            || ExtendedItems.is(item, ExtendedItemIds.SANCTUARY_CONDUIT);
+    }
+
+    private void scheduleRefresh(Player player) {
+        plugin.getServer().getScheduler().runTask(plugin, () -> {
+            if (player.isOnline()) refreshPossessionMilestones(player);
+        });
+    }
+
+    private String recipeKey(Recipe recipe) {
+        if (!(recipe instanceof Keyed keyed)) return null;
+        NamespacedKey key = keyed.getKey();
+        return key.getNamespace().equals(namespace) ? key.getKey() : null;
+    }
+
+    private void grantCompleted(Player player, String advancementKey) {
+        var definition = SanctuaryAdvancementCatalog.find(advancementKey).orElseThrow();
+        for (String criterion : definition.criteria()) {
+            grantCriterion(player, advancementKey, criterion);
+        }
+    }
+
+    private void grantCriterion(Player player, String advancementKey, String criterion) {
+        Advancement advancement = Bukkit.getAdvancement(key(advancementKey));
+        if (advancement == null) {
+            throw new IllegalStateException("Sanctuary advancement is not loaded: " + advancementKey);
+        }
+        AdvancementProgress progress = player.getAdvancementProgress(advancement);
+        if (!progress.getAwardedCriteria().contains(criterion)) {
+            progress.awardCriteria(criterion);
+        }
+    }
+
+    @SuppressWarnings("deprecation")
+    private void registerAdvancements() {
+        for (var definition : SanctuaryAdvancementCatalog.definitions()) {
+            NamespacedKey key = key(definition.key());
+            if (Bukkit.getAdvancement(key) != null) continue;
+            Advancement loaded = Bukkit.getUnsafe().loadAdvancement(key, toJson(definition));
+            if (loaded == null) {
+                throw new IllegalStateException("Failed to load Sanctuary advancement " + key);
+            }
+        }
+    }
+
+    private String toJson(SanctuaryAdvancementCatalog.Definition definition) {
+        StringBuilder json = new StringBuilder("{");
+        if (definition.parentKey() != null) {
+            json.append("\"parent\":\"").append(key(definition.parentKey())).append("\",");
+        }
+        json.append("\"display\":{\"icon\":{\"id\":\"")
+            .append(definition.icon().getKey())
+            .append("\"},\"title\":{\"text\":\"")
+            .append(escapeJson(definition.title()))
+            .append("\"},\"description\":{\"text\":\"")
+            .append(escapeJson(definition.description()))
+            .append("\"},\"frame\":\"")
+            .append(definition.frame().jsonName())
+            .append("\",\"show_toast\":true,\"announce_to_chat\":")
+            .append(definition.announceToChat())
+            .append(",\"hidden\":false");
+        if (definition.parentKey() == null) {
+            json.append(",\"background\":\"").append(ROOT_BACKGROUND).append("\"");
+        }
+        json.append("},\"criteria\":{");
+        for (int index = 0; index < definition.criteria().size(); index++) {
+            if (index > 0) json.append(',');
+            json.append('"')
+                .append(escapeJson(definition.criteria().get(index)))
+                .append("\":{\"trigger\":\"minecraft:impossible\"}");
+        }
+        json.append("},\"requirements\":[");
+        for (int index = 0; index < definition.criteria().size(); index++) {
+            if (index > 0) json.append(',');
+            json.append("[\"")
+                .append(escapeJson(definition.criteria().get(index)))
+                .append("\"]");
+        }
+        return json.append("],\"sends_telemetry_event\":false}").toString();
+    }
+
+    private NamespacedKey key(String value) {
+        return new NamespacedKey(plugin, value);
+    }
+
+    private String escapeJson(String value) {
+        return value.replace("\\", "\\\\")
+            .replace("\"", "\\\"")
+            .replace("\n", "\\n")
+            .replace("\r", "\\r")
+            .replace("\t", "\\t");
+    }
 }

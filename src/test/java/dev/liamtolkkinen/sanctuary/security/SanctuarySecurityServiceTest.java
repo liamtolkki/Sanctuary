@@ -127,6 +127,50 @@ class SanctuarySecurityServiceTest {
     }
 
     @Test
+    void deathClearsTemporaryAggressionAcrossSanctuaries() throws Exception {
+        UUID player = UUID.randomUUID();
+        Sanctuary first = sanctuary(UUID.randomUUID());
+        Sanctuary second = sanctuary(UUID.randomUUID());
+        MemorySecurityRepository security = new MemorySecurityRepository();
+        SanctuarySecurityService service = new SanctuarySecurityService(
+            security,
+            new SanctuaryPermissionService(new MemoryTrustRepository())
+        );
+        Instant now = Instant.parse("2026-08-29T02:00:00Z");
+
+        service.markAggressive(first, player, now);
+        service.markAggressive(second, player, now);
+        assertTrue(service.isAggressive(first, player, now.plusSeconds(1)));
+        assertTrue(service.isAggressive(second, player, now.plusSeconds(1)));
+
+        service.forgiveTemporaryAggression(player);
+
+        assertFalse(service.isAggressive(first, player, now.plusSeconds(1)));
+        assertFalse(service.isAggressive(second, player, now.plusSeconds(1)));
+    }
+
+    @Test
+    void deathForgivenessDoesNotRemoveBlacklist() throws Exception {
+        UUID owner = UUID.randomUUID();
+        UUID player = UUID.randomUUID();
+        Sanctuary sanctuary = sanctuary(owner);
+        MemorySecurityRepository security = new MemorySecurityRepository();
+        SanctuarySecurityService service = new SanctuarySecurityService(
+            security,
+            new SanctuaryPermissionService(new MemoryTrustRepository())
+        );
+        Instant now = Instant.parse("2026-08-29T02:00:00Z");
+
+        service.blacklist(sanctuary, player, now);
+        service.markAggressive(sanctuary, player, now);
+        service.forgiveTemporaryAggression(player);
+
+        assertFalse(service.isAggressive(sanctuary, player, now.plusSeconds(1)));
+        assertEquals(SanctuaryRelationship.BLACKLISTED, service.relationship(sanctuary, player));
+        assertEquals(SanctuaryThreat.HOSTILE, service.threat(sanctuary, player, now.plusSeconds(1)));
+    }
+
+    @Test
     void blacklistRemovesTrustAndTrustPreparationRemovesBlacklist() throws Exception {
         UUID owner = UUID.randomUUID();
         UUID player = UUID.randomUUID();
@@ -207,6 +251,13 @@ class SanctuarySecurityServiceTest {
         @Override
         public void clearAggression(UUID sanctuaryId, UUID playerId) {
             aggression.computeIfAbsent(sanctuaryId, ignored -> new HashMap<>()).remove(playerId);
+        }
+
+        @Override
+        public void clearAggressionForPlayer(UUID playerId) {
+            for (Map<UUID, Instant> sanctuaryAggression : aggression.values()) {
+                sanctuaryAggression.remove(playerId);
+            }
         }
     }
 

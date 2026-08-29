@@ -117,6 +117,12 @@ class SanctuaryAdvancementCatalogTest {
 
     @Test
     void anchorBranchContainsConduitExtensionTierFiveAndWasteMilestones() {
+        var firstAnchor = SanctuaryAdvancementCatalog.find(
+            SanctuaryAdvancementCatalog.SANCTUARY_BEACON
+        ).orElseThrow();
+        assertEquals(Material.RESPAWN_ANCHOR, firstAnchor.icon());
+        assertEquals("Craft or place your first Sanctuary anchor.", firstAnchor.description());
+
         assertEquals(
             SanctuaryAdvancementCatalog.SANCTUARY_BEACON,
             parentOf(SanctuaryAdvancementCatalog.SANCTUARY_CONDUIT)
@@ -137,7 +143,7 @@ class SanctuaryAdvancementCatalogTest {
             SanctuaryAdvancementCatalog.WHAT_A_WASTE
         ).orElseThrow();
         assertEquals("What a Waste", waste.title());
-        assertEquals("Destroy a Tier V Sanctuary Beacon.", waste.description());
+        assertEquals("Permanently destroy a Tier V Sanctuary anchor.", waste.description());
         assertEquals(SanctuaryAdvancementCatalog.Frame.CHALLENGE, waste.frame());
     }
 

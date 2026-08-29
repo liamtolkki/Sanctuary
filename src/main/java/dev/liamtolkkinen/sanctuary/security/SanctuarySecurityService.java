@@ -117,6 +117,10 @@ public final class SanctuarySecurityService {
         return true;
     }
 
+    public void forgiveTemporaryAggression(UUID playerId) throws SQLException {
+        repository.clearAggressionForPlayer(Objects.requireNonNull(playerId, "playerId"));
+    }
+
     public List<SanctuaryBlacklistEntry> blacklistedPlayers(Sanctuary sanctuary) throws SQLException {
         Objects.requireNonNull(sanctuary, "sanctuary");
         return repository.findBlacklistedPlayers(sanctuary.id());

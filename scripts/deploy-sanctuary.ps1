@@ -117,27 +117,25 @@ function Wait-ServiceState {
 
 function Get-ExistingSanctuaryJars {
     if (-not (Test-Path $PluginsPath)) {
-        return @()
+        return
     }
 
-    return @(
-        Get-ChildItem -Path $PluginsPath -File -Filter "*.jar" |
-            Where-Object {
-                $_.Name -ieq $PluginFileName -or
-                $_.Name -match "^sanctuary[-.].*\.jar$"
-            }
-    )
+    Get-ChildItem -Path $PluginsPath -File -Filter "*.jar" |
+        Where-Object {
+            $_.Name -ieq $PluginFileName -or
+            $_.Name -match "^sanctuary[-.].*\.jar$"
+        }
 }
 
 function Restore-Backup {
     param(
         [string]$BackupFile,
-        [string[]]$PreviousPluginPaths
+        [string[]]$PathsToRemove
     )
 
     Write-Warning "Deployment failed. Restoring previous Sanctuary plugin."
 
-    foreach ($Path in $PreviousPluginPaths) {
+    foreach ($Path in $PathsToRemove) {
         if (Test-Path $Path) {
             Remove-Item -Path $Path -Force
         }
@@ -153,6 +151,10 @@ $IsAdministrator = ([Security.Principal.WindowsPrincipal] [Security.Principal.Wi
 )
 if (-not $IsAdministrator) {
     throw "Run this script from PowerShell as Administrator."
+}
+
+if (-not (Test-Path $PluginsPath)) {
+    throw "Minecraft plugins directory does not exist: $PluginsPath"
 }
 
 New-Item -ItemType Directory -Path $DeployPath -Force | Out-Null
@@ -200,15 +202,13 @@ if ($ActualHash -ne $ExpectedHash) {
     throw "Sanctuary.jar checksum verification failed. Expected $ExpectedHash, got $ActualHash."
 }
 
-$ExistingJars = Get-ExistingSanctuaryJars
+$ExistingJars = @(Get-ExistingSanctuaryJars)
 if ($ExistingJars.Count -gt 1) {
     $Names = ($ExistingJars | ForEach-Object { $_.FullName }) -join [Environment]::NewLine
     throw "Multiple Sanctuary plugin JARs were found. Remove the duplicates before deploying:`n$Names"
 }
 
-$PreviousPluginPaths = @($ExistingJars | ForEach-Object { $_.FullName })
 $BackupFile = $null
-
 if ($ExistingJars.Count -eq 1) {
     $Timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
     $BackupFile = Join-Path $BackupPath "Sanctuary-$Timestamp.jar"
@@ -262,7 +262,7 @@ catch {
             Wait-ServiceState -Service $Service -Status ([System.ServiceProcess.ServiceControllerStatus]::Stopped)
         }
 
-        Restore-Backup -BackupFile $BackupFile -PreviousPluginPaths @($PluginPath)
+        Restore-Backup -BackupFile $BackupFile -PathsToRemove @($PluginPath)
 
         if ($ServiceWasRunning) {
             Start-Service -Name $ServiceName

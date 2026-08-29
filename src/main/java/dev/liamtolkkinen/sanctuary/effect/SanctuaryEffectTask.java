@@ -4,6 +4,7 @@ import dev.liamtolkkinen.sanctuary.anchor.SanctuaryAnchor;
 import dev.liamtolkkinen.sanctuary.sanctuary.Sanctuary;
 import dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryPosition;
 import dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryRepository;
+import dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryType;
 import dev.liamtolkkinen.sanctuary.territory.AnchorTerritoryService;
 import dev.liamtolkkinen.sanctuary.territory.TerritoryPresenceService;
 import java.sql.SQLException;
@@ -92,9 +93,14 @@ public final class SanctuaryEffectTask implements Runnable {
             return;
         }
 
+        boolean conduitEnvironmentActive = player.isInWater() || player.isInRain();
         Map<AnchorEffect, SanctuaryEffectService.ActiveAnchorEffect> strongest =
             new EnumMap<>(AnchorEffect.class);
         for (SanctuaryAnchor anchor : anchors) {
+            if (anchor.type() == SanctuaryType.CONDUIT && !conduitEnvironmentActive) {
+                continue;
+            }
+
             Sanctuary sanctuary = repository.findById(anchor.sanctuaryId()).orElse(null);
             if (sanctuary == null || anchor.position().isEmpty()) {
                 continue;

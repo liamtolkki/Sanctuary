@@ -93,10 +93,6 @@ public final class CompanionTask implements Runnable {
             grantDolphinsGrace(companion, owner);
         }
 
-        // Guardian, Elder Guardian, Axolotl and Dolphin companions are strictly
-        // aquatic. They stay where they are when their owner leaves the water
-        // instead of pathing or teleporting onto land. Drowned are intentionally
-        // excluded because their definition is amphibious.
         if (strictAquatic && !isWater(owner.getLocation())) {
             clearSpecialCombat(companionId);
             service.clearTarget(companion);
@@ -105,12 +101,24 @@ public final class CompanionTask implements Runnable {
             return;
         }
 
-        LivingEntity target = service.findTarget(companion, owner, now);
+        LivingEntity target = CompanionCombatMemory.target(owner, now)
+            .filter(value -> service.validTarget(companion, owner, value))
+            .orElse(null);
         if (target != null && !targetAllowed(companion, owner, target)) {
             target = null;
         }
         if (strictAquatic && target != null && !isWater(target.getLocation())) {
             target = null;
+        }
+
+        if (target == null) {
+            target = service.findTarget(companion, owner, now);
+            if (target != null && !targetAllowed(companion, owner, target)) {
+                target = null;
+            }
+            if (strictAquatic && target != null && !isWater(target.getLocation())) {
+                target = null;
+            }
         }
 
         if (target == null) {

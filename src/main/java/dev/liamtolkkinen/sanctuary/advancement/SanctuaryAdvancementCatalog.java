@@ -93,51 +93,16 @@ public final class SanctuaryAdvancementCatalog {
         );
 
     private static final List<Definition> DEFINITIONS = List.of(
-        d(
-            FIRST_FRAGMENT,
-            null,
-            Material.SMALL_AMETHYST_BUD,
-            "A Spark of Consecration",
-            "Discover a Consecrated Shard Fragment.",
-            Frame.TASK,
-            true
-        ),
-        d(
-            FIRST_SHARD,
-            FIRST_FRAGMENT,
-            Material.AMETHYST_SHARD,
-            "Made Whole",
-            "Combine four fragments into a Consecrated Shard.",
-            Frame.TASK,
-            true
-        ),
-        d(
-            DIVINE_ALTAR,
-            FIRST_SHARD,
-            Material.LECTERN,
-            "An Audience with the Divine",
-            "Craft a Divine Altar.",
-            Frame.GOAL,
-            true
-        ),
-        d(
-            SANCTUARY_BEACON,
-            FIRST_SHARD,
-            Material.BEACON,
-            "Light the Sanctuary",
-            "Craft or place your first Sanctuary Beacon.",
-            Frame.GOAL,
-            true
-        ),
-        d(
-            FIRST_ARTIFACT,
-            FIRST_SHARD,
-            Material.ECHO_SHARD,
-            "Arcane Artificer",
-            "Craft your first Sanctuary progression artifact.",
-            Frame.TASK,
-            true
-        ),
+        d(FIRST_FRAGMENT, null, Material.SMALL_AMETHYST_BUD, "A Spark of Consecration",
+            "Discover a Consecrated Shard Fragment.", Frame.TASK, true),
+        d(FIRST_SHARD, FIRST_FRAGMENT, Material.AMETHYST_SHARD, "Made Whole",
+            "Combine four fragments into a Consecrated Shard.", Frame.TASK, true),
+        d(DIVINE_ALTAR, FIRST_SHARD, Material.LECTERN, "An Audience with the Divine",
+            "Craft a Divine Altar.", Frame.GOAL, true),
+        d(SANCTUARY_BEACON, FIRST_SHARD, Material.RESPAWN_ANCHOR, "Light the Sanctuary",
+            "Craft or place your first Sanctuary anchor.", Frame.GOAL, true),
+        d(FIRST_ARTIFACT, FIRST_SHARD, Material.ECHO_SHARD, "Arcane Artificer",
+            "Craft your first Sanctuary progression artifact.", Frame.TASK, true),
         new Definition(
             MASTER_ARTIFICER,
             FIRST_ARTIFACT,
@@ -148,114 +113,30 @@ public final class SanctuaryAdvancementCatalog {
             true,
             List.copyOf(MASTER_ARTIFACT_CRITERIA.values())
         ),
-        d(
-            SANCTUARY_CONDUIT,
-            SANCTUARY_BEACON,
-            Material.CONDUIT,
-            "Sanctuary Below",
-            "Craft a Sanctuary Conduit.",
-            Frame.GOAL,
-            true
-        ),
-        d(
-            SANCTUARY_EXTENDED,
-            SANCTUARY_BEACON,
-            Material.LODESTONE,
-            "Beyond the First Light",
-            "Extend a Sanctuary with another anchor.",
-            Frame.GOAL,
-            true
-        ),
-        d(
-            TIER_FIVE_ANCHOR,
-            SANCTUARY_BEACON,
-            Material.RESPAWN_ANCHOR,
-            "A Sanctuary Perfected",
-            "Raise a Sanctuary anchor to Tier V.",
-            Frame.CHALLENGE,
-            true
-        ),
-        d(
-            WHAT_A_WASTE,
-            TIER_FIVE_ANCHOR,
-            Material.FIRE_CHARGE,
-            "What a Waste",
-            "Destroy a Tier V Sanctuary Beacon.",
-            Frame.CHALLENGE,
-            true
-        ),
-        d(
-            FIRST_COMPANION,
-            DIVINE_ALTAR,
-            Material.IRON_GOLEM_SPAWN_EGG,
-            "A Faithful Companion",
-            "Obtain your first Companion Egg.",
-            Frame.TASK,
-            true
-        ),
-        d(
-            WARDEN_COMPANION,
-            FIRST_COMPANION,
-            Material.WARDEN_SPAWN_EGG,
-            "The Deep Answers",
-            "Obtain a Warden Companion Egg.",
-            Frame.CHALLENGE,
-            true
-        ),
-        d(
-            WITHER_COMPANION,
-            FIRST_COMPANION,
-            Material.WITHER_SPAWN_EGG,
-            "Death, Bound",
-            "Obtain a Wither Companion Egg.",
-            Frame.CHALLENGE,
-            true
-        ),
-        d(
-            FIRST_SENTRY,
-            FIRST_COMPANION,
-            Material.ARMOR_STAND,
-            "Standing Guard",
-            "Craft your first Sentry Post.",
-            Frame.TASK,
-            true
-        ),
-        d(
-            FIRST_OFFERING,
-            DIVINE_ALTAR,
-            Material.GOLD_INGOT,
-            "The First Offering",
-            "Complete the first sacred offering.",
-            Frame.TASK,
-            true
-        ),
-        d(
-            HALF_OFFERINGS,
-            FIRST_OFFERING,
-            Material.EXPERIENCE_BOTTLE,
-            "Halfway to Grace",
-            "Complete six of the twelve sacred offerings.",
-            Frame.GOAL,
-            true
-        ),
-        d(
-            ALL_OFFERINGS,
-            HALF_OFFERINGS,
-            Material.NETHER_STAR,
-            "The Final Offering",
-            "Complete all twelve sacred offerings and earn divine favor.",
-            Frame.CHALLENGE,
-            true
-        ),
-        d(
-            DIVINE_RELIC,
-            ALL_OFFERINGS,
-            Material.TOTEM_OF_UNDYING,
-            "Divine Favor",
-            "Receive your first Divine Relic and unlock its altar recipe.",
-            Frame.CHALLENGE,
-            true
-        )
+        d(SANCTUARY_CONDUIT, SANCTUARY_BEACON, Material.CONDUIT, "Sanctuary Below",
+            "Craft a Sanctuary Conduit anchor.", Frame.GOAL, true),
+        d(SANCTUARY_EXTENDED, SANCTUARY_BEACON, Material.LODESTONE, "Beyond the First Light",
+            "Extend a Sanctuary with another anchor.", Frame.GOAL, true),
+        d(TIER_FIVE_ANCHOR, SANCTUARY_BEACON, Material.RESPAWN_ANCHOR, "A Sanctuary Perfected",
+            "Raise a Sanctuary anchor to Tier V.", Frame.CHALLENGE, true),
+        d(WHAT_A_WASTE, TIER_FIVE_ANCHOR, Material.FIRE_CHARGE, "What a Waste",
+            "Permanently destroy a Tier V Sanctuary anchor.", Frame.CHALLENGE, true),
+        d(FIRST_COMPANION, DIVINE_ALTAR, Material.IRON_GOLEM_SPAWN_EGG, "A Faithful Companion",
+            "Obtain your first Companion Egg.", Frame.TASK, true),
+        d(WARDEN_COMPANION, FIRST_COMPANION, Material.WARDEN_SPAWN_EGG, "The Deep Answers",
+            "Obtain a Warden Companion Egg.", Frame.CHALLENGE, true),
+        d(WITHER_COMPANION, FIRST_COMPANION, Material.WITHER_SPAWN_EGG, "Death, Bound",
+            "Obtain a Wither Companion Egg.", Frame.CHALLENGE, true),
+        d(FIRST_SENTRY, FIRST_COMPANION, Material.ARMOR_STAND, "Standing Guard",
+            "Craft your first Sentry Post.", Frame.TASK, true),
+        d(FIRST_OFFERING, DIVINE_ALTAR, Material.GOLD_INGOT, "The First Offering",
+            "Complete the first sacred offering.", Frame.TASK, true),
+        d(HALF_OFFERINGS, FIRST_OFFERING, Material.EXPERIENCE_BOTTLE, "Halfway to Grace",
+            "Complete six of the twelve sacred offerings.", Frame.GOAL, true),
+        d(ALL_OFFERINGS, HALF_OFFERINGS, Material.NETHER_STAR, "The Final Offering",
+            "Complete all twelve sacred offerings and earn divine favor.", Frame.CHALLENGE, true),
+        d(DIVINE_RELIC, ALL_OFFERINGS, Material.TOTEM_OF_UNDYING, "Divine Favor",
+            "Receive your first Divine Relic and unlock its altar recipe.", Frame.CHALLENGE, true)
     );
 
     private static final Map<String, Definition> BY_KEY;

@@ -182,4 +182,18 @@ public final class SqliteSanctuarySecurityRepository implements SanctuarySecurit
             statement.executeUpdate();
         }
     }
+
+    @Override
+    public void clearAggressionForPlayer(UUID playerId) throws SQLException {
+        try (
+            Connection connection = databaseManager.openConnection();
+            var statement = connection.prepareStatement("""
+                DELETE FROM sanctuary_aggression
+                WHERE player_uuid = ?
+                """)
+        ) {
+            statement.setString(1, playerId.toString());
+            statement.executeUpdate();
+        }
+    }
 }

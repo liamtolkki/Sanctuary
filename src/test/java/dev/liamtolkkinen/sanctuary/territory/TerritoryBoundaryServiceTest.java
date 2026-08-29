@@ -58,6 +58,66 @@ class TerritoryBoundaryServiceTest {
     }
 
     @Test
+    void automaticBoundaryStaysHiddenDeepInsideTerritory() {
+        assertFalse(
+            TerritoryBoundaryService.automaticBoundaryVisible(
+                true,
+                24.0,
+                0.0,
+                16.0
+            )
+        );
+    }
+
+    @Test
+    void automaticBoundaryShowsNearSurfaceFromInside() {
+        assertTrue(
+            TerritoryBoundaryService.automaticBoundaryVisible(
+                true,
+                8.0,
+                0.0,
+                16.0
+            )
+        );
+    }
+
+    @Test
+    void automaticBoundaryShowsOutsideVolumeWhenHorizontallyOverFootprint() {
+        assertTrue(
+            TerritoryBoundaryService.automaticBoundaryVisible(
+                false,
+                80.0,
+                0.0,
+                16.0
+            )
+        );
+    }
+
+    @Test
+    void automaticBoundaryShowsOutsideVolumeNearHorizontalFootprintEdge() {
+        assertTrue(
+            TerritoryBoundaryService.automaticBoundaryVisible(
+                false,
+                80.0,
+                15.99,
+                16.0
+            )
+        );
+    }
+
+    @Test
+    void automaticBoundaryHidesOutsideVolumeBeyondHorizontalRange() {
+        assertFalse(
+            TerritoryBoundaryService.automaticBoundaryVisible(
+                false,
+                8.0,
+                16.0,
+                16.0
+            )
+        );
+    }
+
+    @Test
     void proximityBandRejectsInvalidBounds() {
         assertThrows(
             IllegalArgumentException.class,

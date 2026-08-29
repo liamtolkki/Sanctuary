@@ -30,7 +30,7 @@ territory:
     automatic:
       enabled: true
       minimum-distance: 3.0
-      maximum-distance: 12.0
+      maximum-distance: 16.0
       vertical-particle-spacing: 1.5
       update-period-ticks: 10
 

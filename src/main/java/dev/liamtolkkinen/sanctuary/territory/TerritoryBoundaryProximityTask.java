@@ -79,23 +79,21 @@ public final class TerritoryBoundaryProximityTask implements Runnable {
         try {
             for (Player player : Bukkit.getOnlinePlayers()) {
                 for (Sanctuary sanctuary : repository.findActiveInWorld(player.getWorld().getName())) {
-                    // Boundary visibility intentionally ignores altitude. If the viewer's X/Z
-                    // position is close enough to the Sanctuary footprint boundary, show the
-                    // complete 3D shell no matter how far above or below it they are.
-                    if (!boundaryService.isWithinRenderDistance(
+                    if (!boundaryService.isWithinAutomaticRenderDistance(
                         sanctuary,
                         player.getWorld().getName(),
                         player.getLocation().getX(),
+                        player.getLocation().getY(),
                         player.getLocation().getZ(),
                         maximum
                     )) {
                         continue;
                     }
 
-                    // Once the viewer is close enough to any part of the Sanctuary footprint,
-                    // show the entire outer union shell at a deliberately lighter density. This
-                    // makes the ellipsoid's height and fly-over path readable without sending the
-                    // dense proximity particle pattern across the whole Sanctuary.
+                    // Show the entire outer union shell at a deliberately lighter density. Players
+                    // inside the Sanctuary only reach this point near the real 3D boundary, while
+                    // players outside the volume can still see it from above or below when their
+                    // X/Z position is over or near the Sanctuary footprint.
                     boundaryService.showProximity(
                         player,
                         sanctuary,
@@ -106,7 +104,7 @@ public final class TerritoryBoundaryProximityTask implements Runnable {
                     );
 
                     // Keep the existing dense local band so the nearby edge remains precise when
-                    // the viewer is also physically close to the 3D shell.
+                    // the viewer is physically close to the 3D shell.
                     boundaryService.showProximity(
                         player,
                         sanctuary,

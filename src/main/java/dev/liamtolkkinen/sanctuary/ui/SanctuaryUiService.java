@@ -11,7 +11,6 @@ import dev.liamtolkkinen.extendedui.ExtendedTextInputDialog;
 import dev.liamtolkkinen.extendedui.ExtendedUI;
 import dev.liamtolkkinen.extendedui.StandardButtons;
 import dev.liamtolkkinen.sanctuary.SanctuaryPlugin;
-import dev.liamtolkkinen.sanctuary.effect.SanctuaryEffect;
 import dev.liamtolkkinen.sanctuary.effect.SanctuaryEffectService;
 import dev.liamtolkkinen.sanctuary.sanctuary.Sanctuary;
 import dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryPosition;
@@ -43,7 +42,7 @@ import org.bukkit.ChatColor;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
 
-/** Sanctuary-owned management menus rendered through ExtendedUI 0.1.0. */
+/** Shared Sanctuary management UI. Anchor-local settings remain in AnchorUiService. */
 public final class SanctuaryUiService {
     private static final List<Integer> LIST_SLOTS = createListSlots();
 
@@ -52,6 +51,7 @@ public final class SanctuaryUiService {
     private final SanctuaryRepository repository;
     private final SanctuaryPermissionService permissionService;
     private final SanctuarySecurityService securityService;
+    @SuppressWarnings("unused")
     private final SanctuaryEffectService effectService;
     private final TerritoryBoundaryService boundaryService;
     private final SentryUiService sentryUiService;
@@ -130,7 +130,7 @@ public final class SanctuaryUiService {
         private final boolean adminMode;
 
         private MainMenu(UUID sanctuaryId, boolean adminMode) {
-            super(5, adminMode ? "<dark_red>Sanctuary Admin" : "<gold>Sanctuary");
+            super(6, adminMode ? "<dark_red>Sanctuary Admin" : "<gold>Sanctuary");
             this.sanctuaryId = sanctuaryId;
             this.adminMode = adminMode;
         }
@@ -138,9 +138,7 @@ public final class SanctuaryUiService {
         @Override
         public String title(ExtendedMenuContext context) {
             Sanctuary sanctuary = loadForMenu(context.player(), sanctuaryId, adminMode);
-            if (sanctuary == null) {
-                return "<red>Sanctuary unavailable";
-            }
+            if (sanctuary == null) return "<red>Sanctuary unavailable";
             return (adminMode ? "<dark_red>Admin | " : "<gold>") + mini(sanctuary.name());
         }
 
@@ -149,64 +147,95 @@ public final class SanctuaryUiService {
             menu.fillBackground();
             Sanctuary sanctuary = loadForMenu(context.player(), sanctuaryId, adminMode);
             if (sanctuary == null) {
-                menu.set(22, button(Material.BARRIER, "<red>Sanctuary unavailable", List.of(
-                    "<gray>The database record is missing or access changed."
-                ), click -> click.menu().close()));
+                menu.set(22, button(Material.BARRIER, "<red>Sanctuary unavailable", List.of(), click -> click.menu().close()));
                 return;
             }
 
             menu.set(4, infoButton(sanctuary, adminMode));
 
-            if (sanctuary.ownerId().equals(context.player().getUniqueId())) {
-                menu.set(18, button(
-                    Material.NAME_TAG,
-                    "<yellow>Rename Sanctuary",
-                    List.of(
-                        "<gray>Current name: <white>" + mini(sanctuary.name()),
-                        "<gray>Click to choose a new name."
-                    ),
-                    click -> showRenameDialog(click.menu(), sanctuary, adminMode)
-                ));
+            try {
+                SanctuarySecurityMode mode = securityService.mode(sanctuary);
+                boolean lockdownUnlocked = adminMode || SanctuarySecurityService.lockdownUnlocked(sanctuary);
+                menu.set(10, lockdownButton(sanctuary, mode, lockdownUnlocked));
+            } catch (SQLException exception) {
+                menuError(context.player(), "Failed to load Sanctuary security mode", exception);
             }
 
-            menu.set(20, button(
+            menu.set(12, button(
+                Material.COMPARATOR,
+                "<yellow>Sentry Behavior",
+                List.of(
+                    "<gray>Direct access to Sanctuary-wide sentry defaults.",
+                    "<gray>Individual sentries can still override them."
+                ),
+                click -> sentryUiService.openBehavior(click.player(), sanctuary)
+            ));
+
+            menu.set(14, button(
+                Material.ARMOR_STAND,
+                "<gold>Sentry Posts",
+                List.of(
+                    "<gray>View every registered sentry post.",
+                    "<gray>Edit individual behavior, recall, or disable."
+                ),
+                click -> sentryUiService.openPosts(click.player(), sanctuary)
+            ));
+
+            menu.set(16, button(
                 sanctuary.state() == SanctuaryState.ACTIVE ? Material.ENDER_EYE : Material.GRAY_DYE,
                 "<aqua>Show Boundary",
                 sanctuary.state() == SanctuaryState.ACTIVE
-                    ? List.of("<gray>Display this boundary only to you.")
+                    ? List.of("<gray>Display the full Sanctuary perimeter only to you.")
                     : List.of("<dark_gray>Unavailable while " + sanctuary.state() + "."),
                 click -> showBoundary(click.player(), sanctuary)
             ));
-            menu.set(22, button(
-                Material.PLAYER_HEAD,
-                "<gold>Players & Access",
-                List.of("<gray>Manage trusted and blacklisted players."),
-                click -> click.menu().open(new AccessMenu(sanctuary.id(), adminMode))
+
+            menu.set(20, button(
+                Material.LIME_DYE,
+                "<green>Trusted Players",
+                List.of(
+                    "<gray>Manage trusted players and their capabilities.",
+                    "<gray>Trusted players remain safe during Lockdown."
+                ),
+                click -> click.menu().open(new TrustMenu(sanctuary.id(), adminMode))
             ));
+
+            menu.set(22, button(
+                Material.RED_DYE,
+                "<red>Blacklist",
+                List.of("<gray>Manage players who are always treated as hostile."),
+                click -> click.menu().open(new BlacklistMenu(sanctuary.id(), adminMode))
+            ));
+
             menu.set(24, button(
                 Material.SHIELD,
-                "<red>Security",
-                List.of("<gray>View security mode and threat policy."),
+                "<red>Security Details",
+                List.of(
+                    "<gray>Review threat policy, hard protections,",
+                    "<gray>relationship colors, and current security state."
+                ),
                 click -> click.menu().open(new SecurityMenu(sanctuary.id(), adminMode))
             ));
-            menu.set(30, button(
-                Material.ARMOR_STAND,
-                "<yellow>Sentries",
-                List.of("<gray>Manage global sentry behavior and", "<gray>registered sentry posts."),
-                click -> sentryUiService.openDashboard(click.player(), sanctuary)
+
+            menu.set(31, button(
+                Material.WRITABLE_BOOK,
+                "<yellow>Sanctuary Settings",
+                List.of(
+                    "<gray>Rename the Sanctuary and access lower-frequency",
+                    "<gray>shared management actions."
+                ),
+                click -> click.menu().open(new SettingsMenu(sanctuary.id(), adminMode))
             ));
 
             if (adminMode && sanctuary.debugEphemeral()) {
-                menu.set(26, button(
+                menu.set(33, button(
                     Material.COMMAND_BLOCK,
-                    "<light_purple>My Debug Permissions",
-                    List.of("<gray>Toggle your own permissions for", "<gray>solo protection testing."),
-                    click -> click.menu().open(
-                        new CapabilityMenu(sanctuary.id(), true, click.player().getUniqueId())
-                    )
+                    "<light_purple>Debug Tools",
+                    List.of("<gray>Relationship and permission controls for testing."),
+                    click -> click.menu().open(new DebugToolsMenu(sanctuary.id()))
                 ));
             } else if (adminMode) {
-                menu.set(26, button(
+                menu.set(33, button(
                     Material.PAPER,
                     "<yellow>Admin View",
                     List.of("<gray>You are inspecting this Sanctuary as an admin."),
@@ -214,16 +243,16 @@ public final class SanctuaryUiService {
                 ));
             }
 
-            menu.set(40, StandardButtons.close(context.theme()));
+            menu.set(49, StandardButtons.close(context.theme()));
         }
     }
 
-    private final class AccessMenu extends ExtendedInventoryMenu {
+    private final class SettingsMenu extends ExtendedInventoryMenu {
         private final UUID sanctuaryId;
         private final boolean adminMode;
 
-        private AccessMenu(UUID sanctuaryId, boolean adminMode) {
-            super(3, "<gold>Players & Access");
+        private SettingsMenu(UUID sanctuaryId, boolean adminMode) {
+            super(3, "<yellow>Sanctuary Settings");
             this.sanctuaryId = sanctuaryId;
             this.adminMode = adminMode;
         }
@@ -236,21 +265,187 @@ public final class SanctuaryUiService {
                 menu.set(13, button(Material.BARRIER, "<red>Sanctuary unavailable", List.of(), null));
                 return;
             }
-            menu.set(11, button(
-                Material.LIME_DYE,
-                "<green>Trusted Players",
-                List.of("<gray>Trusted players remain safe even during Lockdown.",
-                    "<gray>Hard-protection capabilities are managed here too."),
-                click -> click.menu().open(new TrustMenu(sanctuaryId, adminMode))
+
+            boolean owner = sanctuary.ownerId().equals(context.player().getUniqueId());
+            menu.set(10, button(
+                owner ? Material.NAME_TAG : Material.GRAY_DYE,
+                owner ? "<yellow>Rename Sanctuary" : "<dark_gray>Rename Sanctuary",
+                List.of(
+                    "<gray>Current name: <white>" + mini(sanctuary.name()),
+                    owner ? "<yellow>Click to choose a new name." : "<dark_gray>Only the owner can rename it."
+                ),
+                owner ? click -> showRenameDialog(click.menu(), sanctuary, adminMode) : null
             ));
-            menu.set(15, button(
-                Material.RED_DYE,
-                "<red>Blacklist",
-                List.of("<gray>Blacklisted players are always treated as hostile."),
-                click -> click.menu().open(new BlacklistMenu(sanctuaryId, adminMode))
+
+            menu.set(13, button(
+                sanctuary.state() == SanctuaryState.ACTIVE ? Material.ENDER_EYE : Material.GRAY_DYE,
+                "<aqua>Show Boundary",
+                sanctuary.state() == SanctuaryState.ACTIVE
+                    ? List.of("<gray>Display the full Sanctuary perimeter only to you.")
+                    : List.of("<dark_gray>Unavailable while " + sanctuary.state() + "."),
+                click -> showBoundary(click.player(), sanctuary)
             ));
+
+            menu.set(16, button(
+                Material.SHIELD,
+                "<red>Security Details",
+                List.of("<gray>Open the detailed security status screen."),
+                click -> click.menu().open(new SecurityMenu(sanctuary.id(), adminMode))
+            ));
+
             menu.set(18, StandardButtons.back(context.theme()));
             menu.set(26, StandardButtons.close(context.theme()));
+        }
+    }
+
+    private final class SecurityMenu extends ExtendedInventoryMenu {
+        private final UUID sanctuaryId;
+        private final boolean adminMode;
+
+        private SecurityMenu(UUID sanctuaryId, boolean adminMode) {
+            super(4, "<red>Security Details");
+            this.sanctuaryId = sanctuaryId;
+            this.adminMode = adminMode;
+        }
+
+        @Override
+        public void build(ExtendedMenuContext context, ExtendedMenuBuilder menu) {
+            menu.fillBackground();
+            Sanctuary sanctuary = loadForMenu(context.player(), sanctuaryId, adminMode);
+            if (sanctuary == null) {
+                menu.set(13, button(Material.BARRIER, "<red>Sanctuary unavailable", List.of(), null));
+                return;
+            }
+
+            try {
+                SanctuarySecurityMode mode = securityService.mode(sanctuary);
+                SanctuaryRelationship relationship = securityService.relationship(
+                    sanctuary,
+                    context.player().getUniqueId()
+                );
+                SanctuaryThreat threat = securityService.threat(
+                    sanctuary,
+                    context.player().getUniqueId()
+                );
+                boolean lockdownUnlocked = adminMode || SanctuarySecurityService.lockdownUnlocked(sanctuary);
+
+                menu.set(4, button(
+                    mode == SanctuarySecurityMode.LOCKDOWN ? Material.REDSTONE_TORCH : Material.TORCH,
+                    "<gold>Security Mode: " + modeDisplayName(mode),
+                    List.of(
+                        mode == SanctuarySecurityMode.NORMAL
+                            ? "<gray>Only explicitly blacklisted players are hostile."
+                            : "<red>All players except owner/trusted are hostile.",
+                        "<gray>Your relationship: <white>" + relationship,
+                        "<gray>Your effective threat: <white>" + threat
+                    ),
+                    null
+                ));
+
+                menu.set(11, lockdownButton(sanctuary, mode, lockdownUnlocked));
+
+                menu.set(13, button(
+                    plugin.areHardProtectionsEnabled() ? Material.IRON_DOOR : Material.OAK_DOOR,
+                    plugin.areHardProtectionsEnabled()
+                        ? "<yellow>Hard Protections: Enabled"
+                        : "<gray>Hard Protections: Disabled",
+                    plugin.areHardProtectionsEnabled()
+                        ? List.of(
+                            "<gray>Server config may physically block selected actions.",
+                            "<dark_gray>Configured under protections.hard."
+                        )
+                        : List.of(
+                            "<gray>Ordinary actions are not physically blocked.",
+                            "<gray>Defense comes from anchor effects and sentries."
+                        ),
+                    null
+                ));
+
+                menu.set(15, button(
+                    Material.WHITE_DYE,
+                    "<white>Boundary Threat Colors",
+                    List.of(
+                        "<gray>Normal territory boundary uses relationship particles.",
+                        "<white>Anchor Proximity: white when safe, red when hostile.",
+                        "<gray>Anchor Proximity is enabled by a Watcher's Eye."
+                    ),
+                    null
+                ));
+
+                menu.set(22, button(
+                    Material.BEACON,
+                    "<aqua>Anchor Effects",
+                    List.of(
+                        "<gray>Effects are configured on each individual anchor.",
+                        "<gray>Right-click a Beacon or Conduit to manage its effects.",
+                        "<gray>Conduit effects require water contact or rain."
+                    ),
+                    null
+                ));
+            } catch (SQLException exception) {
+                menuError(context.player(), "Failed to load Sanctuary security", exception);
+            }
+
+            menu.set(27, StandardButtons.back(context.theme()));
+            menu.set(35, StandardButtons.close(context.theme()));
+        }
+    }
+
+    private ExtendedButton lockdownButton(
+        Sanctuary sanctuary,
+        SanctuarySecurityMode mode,
+        boolean unlocked
+    ) {
+        if (!unlocked) {
+            return button(
+                Material.IRON_BARS,
+                "<dark_gray>Lockdown Locked",
+                List.of(
+                    "<gray>Reach Sanctuary Tier " + roman(SanctuarySecurityService.LOCKDOWN_UNLOCK_TIER)
+                        + " to unlock Lockdown."
+                ),
+                null
+            );
+        }
+
+        boolean enabled = mode == SanctuarySecurityMode.LOCKDOWN;
+        return button(
+            enabled ? Material.REDSTONE_TORCH : Material.LEVER,
+            enabled ? "<red>Lockdown: Enabled" : "<yellow>Lockdown: Available",
+            List.of(
+                enabled
+                    ? "<red>Neutral outsiders are currently hostile."
+                    : "<gray>Neutral outsiders are currently neutral.",
+                "<yellow>Click to switch to " + (enabled ? "Normal" : "Lockdown") + "."
+            ),
+            click -> toggleLockdown(click.player(), sanctuary.id(), click.menu())
+        );
+    }
+
+    private void toggleLockdown(Player player, UUID sanctuaryId, ExtendedMenuContext context) {
+        try {
+            Sanctuary sanctuary = repository.findById(sanctuaryId).orElse(null);
+            if (sanctuary == null) {
+                player.sendMessage(ChatColor.RED + "That Sanctuary no longer exists.");
+                return;
+            }
+            boolean admin = player.hasPermission("sanctuary.admin");
+            if (!admin && !SanctuarySecurityService.lockdownUnlocked(sanctuary)) {
+                player.sendMessage(
+                    ChatColor.RED + "Lockdown unlocks at Sanctuary Tier "
+                        + SanctuarySecurityService.LOCKDOWN_UNLOCK_TIER + "."
+                );
+                return;
+            }
+            SanctuarySecurityMode current = securityService.mode(sanctuary);
+            SanctuarySecurityMode next = current == SanctuarySecurityMode.NORMAL
+                ? SanctuarySecurityMode.LOCKDOWN
+                : SanctuarySecurityMode.NORMAL;
+            securityService.setMode(sanctuary, next);
+            player.sendMessage(ChatColor.YELLOW + "Security mode set to " + modeDisplayName(next) + ".");
+            context.refresh();
+        } catch (SQLException exception) {
+            menuError(player, "Failed to update security mode", exception);
         }
     }
 
@@ -259,7 +454,7 @@ public final class SanctuaryUiService {
         private final boolean adminMode;
 
         private TrustMenu(UUID sanctuaryId, boolean adminMode) {
-            super(6, "<gold>Trust & Capabilities", LIST_SLOTS, 47, 51);
+            super(6, "<green>Trusted Players", LIST_SLOTS, 47, 51);
             this.sanctuaryId = sanctuaryId;
             this.adminMode = adminMode;
         }
@@ -267,9 +462,7 @@ public final class SanctuaryUiService {
         @Override
         protected List<SanctuaryTrustEntry> items(ExtendedMenuContext context) {
             Sanctuary sanctuary = loadForMenu(context.player(), sanctuaryId, adminMode);
-            if (sanctuary == null) {
-                return List.of();
-            }
+            if (sanctuary == null) return List.of();
             try {
                 return permissionService.trustedPlayers(sanctuary).stream()
                     .sorted(Comparator.comparing(
@@ -302,11 +495,9 @@ public final class SanctuaryUiService {
             lore.add("<yellow>Click to edit permissions.");
             return button(
                 Material.PLAYER_HEAD,
-                "<gold>" + mini(playerLabel(entry.playerId())),
+                "<green>" + mini(playerLabel(entry.playerId())),
                 lore,
-                click -> click.menu().open(
-                    new CapabilityMenu(sanctuaryId, adminMode, entry.playerId())
-                )
+                click -> click.menu().open(new CapabilityMenu(sanctuaryId, adminMode, entry.playerId()))
             );
         }
 
@@ -314,15 +505,13 @@ public final class SanctuaryUiService {
         protected void buildStatic(ExtendedMenuContext context, ExtendedMenuBuilder menu) {
             Sanctuary sanctuary = loadForMenu(context.player(), sanctuaryId, adminMode);
             if (sanctuary == null) {
-                menu.set(22, button(Material.BARRIER, "<red>Sanctuary unavailable", List.of(), null));
                 menu.set(53, StandardButtons.close(context.theme()));
                 return;
             }
-
             menu.set(4, button(
                 Material.GOLDEN_HELMET,
                 "<gold>Owner: " + mini(playerLabel(sanctuary.ownerId())),
-                List.of("<green>All capabilities are always allowed."),
+                List.of("<green>The owner always has all capabilities."),
                 null
             ));
             menu.set(45, StandardButtons.back(context.theme()));
@@ -349,15 +538,12 @@ public final class SanctuaryUiService {
         @Override
         protected List<Player> items(ExtendedMenuContext context) {
             Sanctuary sanctuary = loadForMenu(context.player(), sanctuaryId, adminMode);
-            if (sanctuary == null) {
-                return List.of();
-            }
+            if (sanctuary == null) return List.of();
             try {
                 Set<UUID> trusted = permissionService.trustedPlayers(sanctuary).stream()
                     .map(SanctuaryTrustEntry::playerId)
                     .collect(java.util.stream.Collectors.toSet());
                 return Bukkit.getOnlinePlayers().stream()
-                    .map(Player.class::cast)
                     .filter(value -> !value.getUniqueId().equals(sanctuary.ownerId()))
                     .filter(value -> !trusted.contains(value.getUniqueId()))
                     .sorted(Comparator.comparing(Player::getName, String.CASE_INSENSITIVE_ORDER))
@@ -379,18 +565,14 @@ public final class SanctuaryUiService {
                 )
                 .onClick(click -> {
                     Sanctuary sanctuary = loadForMenu(click.player(), sanctuaryId, adminMode);
-                    if (sanctuary == null) {
-                        return;
-                    }
+                    if (sanctuary == null) return;
                     try {
                         securityService.prepareForTrust(sanctuary, target.getUniqueId());
                         permissionService.trust(sanctuary, target.getUniqueId(), Instant.now());
                         click.player().sendMessage(
                             ChatColor.GREEN + "Trusted " + target.getName() + " in " + sanctuary.name() + "."
                         );
-                        click.menu().open(
-                            new CapabilityMenu(sanctuaryId, adminMode, target.getUniqueId())
-                        );
+                        click.menu().open(new CapabilityMenu(sanctuaryId, adminMode, target.getUniqueId()));
                     } catch (SQLException | IllegalArgumentException exception) {
                         click.player().sendMessage(ChatColor.RED + exception.getMessage());
                     }
@@ -418,9 +600,7 @@ public final class SanctuaryUiService {
         @Override
         protected List<SanctuaryBlacklistEntry> items(ExtendedMenuContext context) {
             Sanctuary sanctuary = loadForMenu(context.player(), sanctuaryId, adminMode);
-            if (sanctuary == null) {
-                return List.of();
-            }
+            if (sanctuary == null) return List.of();
             try {
                 return securityService.blacklistedPlayers(sanctuary).stream()
                     .sorted(Comparator.comparing(
@@ -451,13 +631,12 @@ public final class SanctuaryUiService {
                 ),
                 click -> {
                     Sanctuary sanctuary = loadForMenu(click.player(), sanctuaryId, adminMode);
-                    if (sanctuary == null) {
-                        return;
-                    }
+                    if (sanctuary == null) return;
                     try {
                         securityService.unblacklist(sanctuary, entry.playerId());
-                        click.player().sendMessage(ChatColor.YELLOW + "Removed "
-                            + playerLabel(entry.playerId()) + " from the blacklist.");
+                        click.player().sendMessage(
+                            ChatColor.YELLOW + "Removed " + playerLabel(entry.playerId()) + " from the blacklist."
+                        );
                         click.menu().refresh();
                     } catch (SQLException | IllegalArgumentException exception) {
                         click.player().sendMessage(ChatColor.RED + exception.getMessage());
@@ -492,15 +671,12 @@ public final class SanctuaryUiService {
         @Override
         protected List<Player> items(ExtendedMenuContext context) {
             Sanctuary sanctuary = loadForMenu(context.player(), sanctuaryId, adminMode);
-            if (sanctuary == null) {
-                return List.of();
-            }
+            if (sanctuary == null) return List.of();
             try {
                 Set<UUID> blacklisted = securityService.blacklistedPlayers(sanctuary).stream()
                     .map(SanctuaryBlacklistEntry::playerId)
                     .collect(java.util.stream.Collectors.toSet());
                 return Bukkit.getOnlinePlayers().stream()
-                    .map(Player.class::cast)
                     .filter(value -> !value.getUniqueId().equals(sanctuary.ownerId()))
                     .filter(value -> !blacklisted.contains(value.getUniqueId()))
                     .sorted(Comparator.comparing(Player::getName, String.CASE_INSENSITIVE_ORDER))
@@ -517,19 +693,20 @@ public final class SanctuaryUiService {
                     ExtendedItemBuilder.of(Material.PLAYER_HEAD)
                         .playerHead(target)
                         .name("<red>" + mini(target.getName()))
-                        .lore("<gray>Click to blacklist this player.",
-                            "<yellow>If trusted, trust will be removed.")
+                        .lore(
+                            "<gray>Click to blacklist this player.",
+                            "<yellow>If trusted, trust will be removed."
+                        )
                         .build()
                 )
                 .onClick(click -> {
                     Sanctuary sanctuary = loadForMenu(click.player(), sanctuaryId, adminMode);
-                    if (sanctuary == null) {
-                        return;
-                    }
+                    if (sanctuary == null) return;
                     try {
                         securityService.blacklist(sanctuary, target.getUniqueId(), Instant.now());
-                        click.player().sendMessage(ChatColor.RED + "Blacklisted "
-                            + target.getName() + " in " + sanctuary.name() + ".");
+                        click.player().sendMessage(
+                            ChatColor.RED + "Blacklisted " + target.getName() + " in " + sanctuary.name() + "."
+                        );
                         click.menu().goBack();
                     } catch (SQLException | IllegalArgumentException exception) {
                         click.player().sendMessage(ChatColor.RED + exception.getMessage());
@@ -545,14 +722,16 @@ public final class SanctuaryUiService {
         }
     }
 
-    private final class SecurityMenu extends ExtendedInventoryMenu {
+    private final class CapabilityMenu extends ExtendedInventoryMenu {
         private final UUID sanctuaryId;
         private final boolean adminMode;
+        private final UUID targetPlayerId;
 
-        private SecurityMenu(UUID sanctuaryId, boolean adminMode) {
-            super(4, "<red>Sanctuary Security");
+        private CapabilityMenu(UUID sanctuaryId, boolean adminMode, UUID targetPlayerId) {
+            super(4, "<gold>Player Capabilities");
             this.sanctuaryId = sanctuaryId;
             this.adminMode = adminMode;
+            this.targetPlayerId = targetPlayerId;
         }
 
         @Override
@@ -560,167 +739,110 @@ public final class SanctuaryUiService {
             menu.fillBackground();
             Sanctuary sanctuary = loadForMenu(context.player(), sanctuaryId, adminMode);
             if (sanctuary == null) {
-                menu.set(13, button(Material.BARRIER, "<red>Sanctuary unavailable", List.of(), null));
+                menu.set(35, StandardButtons.close(context.theme()));
                 return;
             }
+
+            boolean owner = sanctuary.ownerId().equals(targetPlayerId);
+            boolean trusted;
+            Set<SanctuaryCapability> effective;
             try {
-                SanctuarySecurityMode mode = securityService.mode(sanctuary);
-                SanctuaryRelationship relationship = securityService.relationship(
-                    sanctuary, context.player().getUniqueId());
-                SanctuaryThreat threat = securityService.threat(sanctuary, context.player().getUniqueId());
-
-                menu.set(4, button(
-                    mode == SanctuarySecurityMode.LOCKDOWN ? Material.REDSTONE_TORCH : Material.TORCH,
-                    "<gold>Security Mode: " + modeDisplayName(mode),
-                    List.of(
-                        mode == SanctuarySecurityMode.NORMAL
-                            ? "<gray>Only explicitly blacklisted players are hostile."
-                            : "<red>All players except owner/trusted are hostile.",
-                        "<gray>Your relationship: <white>" + relationship,
-                        "<gray>Your effective threat: <white>" + threat
-                    ),
-                    null
-                ));
-
-                boolean canDebugToggle = adminMode && context.player().hasPermission("sanctuary.admin");
-                menu.set(13, button(
-                    canDebugToggle ? Material.LEVER : Material.IRON_BARS,
-                    canDebugToggle ? "<yellow>Admin: Toggle Security Mode" : "<dark_gray>Lockdown Upgrade",
-                    canDebugToggle
-                        ? List.of("<gray>Admin/debug control until Beacon tier gating is implemented.",
-                            "<yellow>Click to switch Normal / Lockdown.")
-                        : List.of("<gray>Lockdown will unlock at a higher Beacon tier."),
-                    canDebugToggle ? click -> {
-                        try {
-                            SanctuarySecurityMode next = mode == SanctuarySecurityMode.NORMAL
-                                ? SanctuarySecurityMode.LOCKDOWN
-                                : SanctuarySecurityMode.NORMAL;
-                            securityService.setMode(sanctuary, next);
-                            click.player().sendMessage(ChatColor.YELLOW + "Security mode set to " + next + ".");
-                            click.menu().refresh();
-                        } catch (SQLException exception) {
-                            menuError(click.player(), "Failed to update security mode", exception);
-                        }
-                    } : null
-                ));
-
-                menu.set(20, button(
-                    plugin.areHardProtectionsEnabled() ? Material.IRON_DOOR : Material.OAK_DOOR,
-                    plugin.areHardProtectionsEnabled()
-                        ? "<yellow>Hard Protections: Enabled"
-                        : "<gray>Hard Protections: Disabled",
-                    plugin.areHardProtectionsEnabled()
-                        ? List.of(
-                            "<gray>Server config may physically block selected actions.",
-                            "<dark_gray>Configured under protections.hard."
-                        )
-                        : List.of(
-                            "<gray>Sanctuary does not physically block ordinary actions.",
-                            "<gray>Defense will come from Beacon effects and sentries."
-                        ),
-                    null
-                ));
-
-                menu.set(22, button(
-                    Material.BEACON,
-                    "<aqua>Beacon Effects",
-                    List.of(
-                        "<gray>View and select each unlocked effect level.",
-                        "<gray>Effect radii are derived from the maximum radius."
-                    ),
-                    click -> click.menu().open(new EffectMenu(sanctuary.id(), adminMode))
-                ));
-
-                menu.set(24, button(
-                    Material.WHITE_DYE,
-                    "<white>Boundary Relationship Colors",
-                    List.of(
-                        "<blue>Blue <gray>- owner",
-                        "<green>Green <gray>- trusted",
-                        "<white>White <gray>- neutral",
-                        "<red>Red <gray>- hostile / blacklisted / lockdown outsider"
-                    ),
-                    null
-                ));
-
-                if (adminMode && sanctuary.debugEphemeral()) {
-                    menu.set(31, button(
-                        Material.PLAYER_HEAD,
-                        "<light_purple>My Debug Relationship",
-                        List.of(
-                            "<gray>Switch yourself between Trusted,",
-                            "<gray>Neutral, and Blacklisted for effect testing."
-                        ),
-                        click -> click.menu().open(new DebugRelationshipMenu(sanctuary.id()))
-                    ));
-                }
+                trusted = permissionService.isTrusted(sanctuary, targetPlayerId);
+                effective = permissionService.effectiveCapabilities(sanctuary, targetPlayerId);
             } catch (SQLException exception) {
-                menuError(context.player(), "Failed to load Sanctuary security", exception);
+                menuError(context.player(), "Failed to load capabilities", exception);
+                return;
             }
+
+            menu.set(4, button(
+                Material.PLAYER_HEAD,
+                "<gold>" + mini(playerLabel(targetPlayerId)),
+                List.of(
+                    "<gray>Owner: " + (owner ? "<green>yes" : "<red>no"),
+                    "<gray>Trusted: " + (trusted ? "<green>yes" : "<red>no")
+                ),
+                null
+            ));
+
+            SanctuaryCapability[] capabilities = SanctuaryCapability.values();
+            for (int index = 0; index < capabilities.length; index++) {
+                SanctuaryCapability capability = capabilities[index];
+                boolean allowed = effective.contains(capability);
+                menu.set(
+                    10 + index,
+                    button(
+                        allowed ? Material.LIME_DYE : Material.GRAY_DYE,
+                        (allowed ? "<green>" : "<red>") + capabilityDisplayName(capability),
+                        owner
+                            ? List.of("<green>ALLOWED", "<dark_gray>The owner always has this capability.")
+                            : List.of(
+                                allowed ? "<green>ALLOWED" : "<red>DENIED",
+                                "<yellow>Click to " + (allowed ? "deny" : "allow") + "."
+                            ),
+                        owner ? null : click -> toggleCapability(
+                            click.player(), sanctuary, targetPlayerId, capability, click.menu()
+                        )
+                    )
+                );
+            }
+
+            if (!owner) {
+                menu.set(22, button(
+                    Material.RED_DYE,
+                    "<red>Remove Trust",
+                    List.of("<gray>Remove this player and all capability grants."),
+                    click -> {
+                        try {
+                            permissionService.untrust(sanctuary, targetPlayerId);
+                            click.player().sendMessage(
+                                ChatColor.YELLOW + "Removed trust for " + playerLabel(targetPlayerId) + "."
+                            );
+                            click.menu().goBack();
+                        } catch (SQLException | IllegalArgumentException exception) {
+                            click.player().sendMessage(ChatColor.RED + exception.getMessage());
+                        }
+                    }
+                ));
+            }
+
             menu.set(27, StandardButtons.back(context.theme()));
             menu.set(35, StandardButtons.close(context.theme()));
         }
     }
 
-    private final class EffectMenu extends ExtendedInventoryMenu {
+    private final class DebugToolsMenu extends ExtendedInventoryMenu {
         private final UUID sanctuaryId;
-        private final boolean adminMode;
 
-        private EffectMenu(UUID sanctuaryId, boolean adminMode) {
-            super(6, "<aqua>Beacon Effects");
+        private DebugToolsMenu(UUID sanctuaryId) {
+            super(3, "<light_purple>Debug Tools");
             this.sanctuaryId = sanctuaryId;
-            this.adminMode = adminMode;
         }
 
         @Override
         public void build(ExtendedMenuContext context, ExtendedMenuBuilder menu) {
             menu.fillBackground();
-            Sanctuary sanctuary = loadForMenu(context.player(), sanctuaryId, adminMode);
-            if (sanctuary == null) {
-                menu.set(22, button(Material.BARRIER, "<red>Sanctuary unavailable", List.of(), null));
+            Sanctuary sanctuary = loadForMenu(context.player(), sanctuaryId, true);
+            if (sanctuary == null || !sanctuary.debugEphemeral()) {
+                menu.set(13, button(Material.BARRIER, "<red>Debug Sanctuary unavailable", List.of(), null));
                 return;
             }
 
-            double maximumRadius = plugin.getMaximumTerritoryRadius();
-            menu.set(4, button(
-                Material.BEACON,
-                "<gold>Beacon Tier " + roman(sanctuary.tier()),
-                List.of(
-                    "<gray>Maximum configured radius: <white>" + formatRadius(maximumRadius),
-                    "<gray>Segment delta: <white>" + formatRadius(effectService.segmentDelta(maximumRadius)),
-                    "<gray>Effects stack inward toward the Beacon."
-                ),
-                null
+            menu.set(11, button(
+                Material.PLAYER_HEAD,
+                "<light_purple>My Debug Relationship",
+                List.of("<gray>Switch yourself between Trusted, Neutral, and Blacklisted."),
+                click -> click.menu().open(new DebugRelationshipMenu(sanctuaryId))
             ));
-
-            SanctuaryEffect[] positive = {
-                SanctuaryEffect.REGENERATION,
-                SanctuaryEffect.RESISTANCE,
-                SanctuaryEffect.STRENGTH,
-                SanctuaryEffect.HASTE,
-                SanctuaryEffect.SPEED
-            };
-            SanctuaryEffect[] hostile = {
-                SanctuaryEffect.WITHER,
-                SanctuaryEffect.BLINDNESS,
-                SanctuaryEffect.WEAKNESS,
-                SanctuaryEffect.MINING_FATIGUE,
-                SanctuaryEffect.ELYTRA_DISABLED
-            };
-
-            for (int index = 0; index < positive.length; index++) {
-                menu.set(10 + index, effectButton(context.player(), sanctuary, positive[index], maximumRadius));
-                menu.set(28 + index, effectButton(context.player(), sanctuary, hostile[index], maximumRadius));
-            }
-
-            menu.set(18, button(Material.LIME_DYE, "<green>Safe Effects", List.of(
-                "<gray>Owner and trusted players receive these effects."
-            ), null));
-            menu.set(36, button(Material.RED_DYE, "<red>Hostile Effects", List.of(
-                "<gray>Blacklisted players and Lockdown outsiders receive these effects."
-            ), null));
-            menu.set(45, StandardButtons.back(context.theme()));
-            menu.set(53, StandardButtons.close(context.theme()));
+            menu.set(15, button(
+                Material.COMMAND_BLOCK,
+                "<light_purple>My Debug Permissions",
+                List.of("<gray>Edit your own hard-protection capabilities."),
+                click -> click.menu().open(
+                    new CapabilityMenu(sanctuaryId, true, click.player().getUniqueId())
+                )
+            ));
+            menu.set(18, StandardButtons.back(context.theme()));
+            menu.set(26, StandardButtons.close(context.theme()));
         }
     }
 
@@ -783,157 +905,6 @@ public final class SanctuaryUiService {
         }
     }
 
-    private final class CapabilityMenu extends ExtendedInventoryMenu {
-        private final UUID sanctuaryId;
-        private final boolean adminMode;
-        private final UUID targetPlayerId;
-
-        private CapabilityMenu(UUID sanctuaryId, boolean adminMode, UUID targetPlayerId) {
-            super(4, "<gold>Player Capabilities");
-            this.sanctuaryId = sanctuaryId;
-            this.adminMode = adminMode;
-            this.targetPlayerId = targetPlayerId;
-        }
-
-        @Override
-        public void build(ExtendedMenuContext context, ExtendedMenuBuilder menu) {
-            menu.fillBackground();
-            Sanctuary sanctuary = loadForMenu(context.player(), sanctuaryId, adminMode);
-            if (sanctuary == null) {
-                menu.set(13, button(Material.BARRIER, "<red>Sanctuary unavailable", List.of(), null));
-                menu.set(35, StandardButtons.close(context.theme()));
-                return;
-            }
-
-            boolean owner = sanctuary.ownerId().equals(targetPlayerId);
-            boolean trusted;
-            Set<SanctuaryCapability> effective;
-            try {
-                trusted = permissionService.isTrusted(sanctuary, targetPlayerId);
-                effective = permissionService.effectiveCapabilities(sanctuary, targetPlayerId);
-            } catch (SQLException exception) {
-                menuError(context.player(), "Failed to load capabilities", exception);
-                return;
-            }
-
-            menu.set(4, button(
-                Material.PLAYER_HEAD,
-                "<gold>" + mini(playerLabel(targetPlayerId)),
-                List.of(
-                    "<gray>Owner: " + (owner ? "<green>yes" : "<red>no"),
-                    "<gray>Trusted: " + (trusted ? "<green>yes" : "<red>no")
-                ),
-                null
-            ));
-
-            SanctuaryCapability[] capabilities = SanctuaryCapability.values();
-            for (int index = 0; index < capabilities.length; index++) {
-                SanctuaryCapability capability = capabilities[index];
-                boolean allowed = effective.contains(capability);
-                List<String> lore = new ArrayList<>();
-                lore.add(allowed ? "<green>ALLOWED" : "<red>DENIED");
-                if (owner) {
-                    lore.add("<dark_gray>The owner always has this capability.");
-                } else {
-                    lore.add("<gray>Click to " + (allowed ? "deny" : "allow") + ".");
-                }
-                menu.set(
-                    10 + index,
-                    button(
-                        allowed ? Material.LIME_DYE : Material.GRAY_DYE,
-                        (allowed ? "<green>" : "<red>") + capabilityDisplayName(capability),
-                        lore,
-                        owner ? null : click -> toggleCapability(
-                            click.player(), sanctuary, targetPlayerId, capability, click.menu()
-                        )
-                    )
-                );
-            }
-
-            if (!owner) {
-                menu.set(22, button(
-                    Material.RED_DYE,
-                    "<red>Remove Trust",
-                    List.of("<gray>Remove this player and all capability grants."),
-                    click -> {
-                        try {
-                            permissionService.untrust(sanctuary, targetPlayerId);
-                            click.player().sendMessage(
-                                ChatColor.YELLOW + "Removed trust for " + playerLabel(targetPlayerId) + "."
-                            );
-                            click.menu().goBack();
-                        } catch (SQLException | IllegalArgumentException exception) {
-                            click.player().sendMessage(ChatColor.RED + exception.getMessage());
-                        }
-                    }
-                ));
-            }
-
-            if (adminMode && sanctuary.debugEphemeral() && targetPlayerId.equals(context.player().getUniqueId())) {
-                menu.set(30, button(
-                    Material.LIME_CONCRETE,
-                    "<green>Allow All Debug Capabilities",
-                    List.of("<gray>Useful for solo protection testing."),
-                    click -> allowAllDebug(click.player(), sanctuary, click.menu())
-                ));
-                menu.set(32, button(
-                    Material.RED_CONCRETE,
-                    "<red>Clear My Debug Trust",
-                    List.of("<gray>Return yourself to outsider behavior."),
-                    click -> clearDebugTrust(click.player(), sanctuary, click.menu())
-                ));
-            }
-
-            menu.set(27, StandardButtons.back(context.theme()));
-            menu.set(35, StandardButtons.close(context.theme()));
-        }
-    }
-
-
-    private ExtendedButton effectButton(
-        Player player,
-        Sanctuary sanctuary,
-        SanctuaryEffect effect,
-        double maximumRadius
-    ) {
-        boolean unlocked = effectService.isUnlocked(sanctuary, effect);
-        int level = 1;
-        if (unlocked) {
-            try {
-                level = effectService.level(sanctuary, effect);
-            } catch (SQLException exception) {
-                menuError(player, "Failed to load Beacon effect level", exception);
-            }
-        }
-
-        List<String> lore = new ArrayList<>();
-        lore.add("<gray>Effect tier: <white>" + roman(effect.tier()));
-        lore.add("<gray>Radius: <white>" + formatRadius(effectService.radiusForTier(maximumRadius, effect.tier())));
-        lore.add("<gray>Maximum level: <white>" + roman(effect.maximumLevel()));
-        if (!unlocked) {
-            lore.add("<red>Locked until Beacon Tier " + roman(effect.tier()) + ".");
-        } else {
-            lore.add("<green>Current level: " + roman(level));
-            if (effect.maximumLevel() > 1) {
-                lore.add("<yellow>Click to select the next level.");
-                lore.add("<dark_gray>Debug/free selection for now. No item is consumed.");
-            } else {
-                lore.add("<dark_gray>This effect has no amplifier upgrades.");
-            }
-        }
-
-        int currentLevel = level;
-        return button(
-            effectMaterial(effect),
-            (effect.target() == SanctuaryEffect.EffectTarget.SAFE ? "<green>" : "<red>")
-                + effectDisplayName(effect),
-            lore,
-            unlocked && effect.maximumLevel() > 1
-                ? click -> cycleEffectLevel(click.player(), sanctuary, effect, currentLevel, click.menu())
-                : null
-        );
-    }
-
     private ExtendedButton debugRelationshipButton(
         Sanctuary sanctuary,
         SanctuaryRelationship relationship,
@@ -947,23 +918,6 @@ public final class SanctuaryUiService {
             List.of("<gray>Click to make yourself " + relationship.name().toLowerCase(Locale.ROOT) + "."),
             click -> setDebugRelationship(click.player(), sanctuary, relationship, click.menu())
         );
-    }
-
-    private void cycleEffectLevel(
-        Player player,
-        Sanctuary sanctuary,
-        SanctuaryEffect effect,
-        int currentLevel,
-        ExtendedMenuContext context
-    ) {
-        int nextLevel = currentLevel >= effect.maximumLevel() ? 1 : currentLevel + 1;
-        try {
-            effectService.setLevel(sanctuary, effect, nextLevel);
-            player.sendMessage(ChatColor.AQUA + effectDisplayName(effect) + " set to " + roman(nextLevel) + ".");
-            context.refresh();
-        } catch (SQLException | IllegalArgumentException | IllegalStateException exception) {
-            player.sendMessage(ChatColor.RED + exception.getMessage());
-        }
     }
 
     private void setDebugRelationship(
@@ -988,13 +942,41 @@ public final class SanctuaryUiService {
                 }
                 case BLACKLISTED -> securityService.blacklist(sanctuary, playerId, Instant.now());
                 case NEUTRAL -> {
-                    // Removing both explicit states is the neutral/unconfigured state.
                 }
                 case OWNER -> throw new IllegalArgumentException("Debug users cannot become the synthetic owner.");
             }
             player.sendMessage(ChatColor.YELLOW + "Debug relationship set to " + relationship + ".");
             context.refresh();
         } catch (SQLException | IllegalArgumentException exception) {
+            player.sendMessage(ChatColor.RED + exception.getMessage());
+        }
+    }
+
+    private void toggleCapability(
+        Player player,
+        Sanctuary sanctuary,
+        UUID targetPlayerId,
+        SanctuaryCapability capability,
+        ExtendedMenuContext context
+    ) {
+        try {
+            Set<SanctuaryCapability> effective = permissionService.effectiveCapabilities(
+                sanctuary,
+                targetPlayerId
+            );
+            boolean currentlyAllowed = effective.contains(capability);
+            if (!currentlyAllowed && !permissionService.isTrusted(sanctuary, targetPlayerId)) {
+                securityService.prepareForTrust(sanctuary, targetPlayerId);
+                permissionService.trust(sanctuary, targetPlayerId, Instant.now());
+            }
+            permissionService.setCapability(
+                sanctuary,
+                targetPlayerId,
+                capability,
+                !currentlyAllowed
+            );
+            context.refresh();
+        } catch (SQLException | IllegalArgumentException | IllegalStateException exception) {
             player.sendMessage(ChatColor.RED + exception.getMessage());
         }
     }
@@ -1019,7 +1001,6 @@ public final class SanctuaryUiService {
             .cancelText(Component.text("Cancel"))
             .onConfirm((player, value) -> renameSanctuary(player, sanctuary.id(), value, adminMode))
             .build();
-
         context.showDialog(dialog);
     }
 
@@ -1051,7 +1032,7 @@ public final class SanctuaryUiService {
                 return;
             }
 
-            Sanctuary renamed = new Sanctuary(
+            repository.save(new Sanctuary(
                 current.id(),
                 current.ownerId(),
                 current.type(),
@@ -1066,8 +1047,7 @@ public final class SanctuaryUiService {
                 current.debugEphemeral(),
                 current.createdAt(),
                 Instant.now()
-            );
-            repository.save(renamed);
+            ));
             player.sendMessage(ChatColor.GREEN + "Sanctuary renamed to " + name + ".");
             refreshOrReopen(player, sanctuaryId, adminMode);
         } catch (SQLException | IllegalArgumentException exception) {
@@ -1084,57 +1064,8 @@ public final class SanctuaryUiService {
         ui.open(player, new MainMenu(sanctuaryId, adminMode));
     }
 
-    private void toggleCapability(
-        Player player,
-        Sanctuary sanctuary,
-        UUID targetPlayerId,
-        SanctuaryCapability capability,
-        ExtendedMenuContext context
-    ) {
-        try {
-            Set<SanctuaryCapability> effective = permissionService.effectiveCapabilities(sanctuary, targetPlayerId);
-            boolean currentlyAllowed = effective.contains(capability);
-            if (!currentlyAllowed && !permissionService.isTrusted(sanctuary, targetPlayerId)) {
-                securityService.prepareForTrust(sanctuary, targetPlayerId);
-                permissionService.trust(sanctuary, targetPlayerId, Instant.now());
-            }
-            permissionService.setCapability(sanctuary, targetPlayerId, capability, !currentlyAllowed);
-            context.refresh();
-        } catch (SQLException | IllegalArgumentException | IllegalStateException exception) {
-            player.sendMessage(ChatColor.RED + exception.getMessage());
-        }
-    }
-
-    private void allowAllDebug(Player player, Sanctuary sanctuary, ExtendedMenuContext context) {
-        try {
-            if (!permissionService.isTrusted(sanctuary, player.getUniqueId())) {
-                securityService.prepareForTrust(sanctuary, player.getUniqueId());
-                permissionService.trust(sanctuary, player.getUniqueId(), Instant.now());
-            }
-            for (SanctuaryCapability capability : SanctuaryCapability.values()) {
-                permissionService.setCapability(sanctuary, player.getUniqueId(), capability, true);
-            }
-            player.sendMessage(ChatColor.GREEN + "All debug capabilities enabled.");
-            context.refresh();
-        } catch (SQLException | IllegalArgumentException | IllegalStateException exception) {
-            player.sendMessage(ChatColor.RED + exception.getMessage());
-        }
-    }
-
-    private void clearDebugTrust(Player player, Sanctuary sanctuary, ExtendedMenuContext context) {
-        try {
-            if (permissionService.isTrusted(sanctuary, player.getUniqueId())) {
-                permissionService.untrust(sanctuary, player.getUniqueId());
-            }
-            player.sendMessage(ChatColor.YELLOW + "Debug trust cleared.");
-            context.refresh();
-        } catch (SQLException | IllegalArgumentException exception) {
-            player.sendMessage(ChatColor.RED + exception.getMessage());
-        }
-    }
-
     private void showBoundary(Player player, Sanctuary sanctuary) {
-        if (sanctuary.state() != SanctuaryState.ACTIVE || sanctuary.position().isEmpty()) {
+        if (sanctuary.state() != SanctuaryState.ACTIVE) {
             player.sendMessage(ChatColor.RED + "Only an active Sanctuary has a boundary to display.");
             return;
         }
@@ -1154,12 +1085,8 @@ public final class SanctuaryUiService {
     private Sanctuary loadForMenu(Player player, UUID sanctuaryId, boolean adminMode) {
         try {
             Sanctuary sanctuary = repository.findById(sanctuaryId).orElse(null);
-            if (sanctuary == null) {
-                return null;
-            }
-            if (adminMode) {
-                return player.hasPermission("sanctuary.admin") ? sanctuary : null;
-            }
+            if (sanctuary == null) return null;
+            if (adminMode) return player.hasPermission("sanctuary.admin") ? sanctuary : null;
             return sanctuary.ownerId().equals(player.getUniqueId()) ? sanctuary : null;
         } catch (SQLException exception) {
             menuError(player, "Failed to load Sanctuary", exception);
@@ -1171,10 +1098,14 @@ public final class SanctuaryUiService {
         List<String> lore = new ArrayList<>();
         lore.add("<gray>State: <white>" + sanctuary.state());
         lore.add("<gray>Owner: <white>" + mini(playerLabel(sanctuary.ownerId())));
-        lore.add("<gray>Tier: <white>" + sanctuary.tier());
-        lore.add("<gray>Generation: <white>" + sanctuary.anchorGeneration());
-        lore.add("<gray>Radius: <white>" + String.format(Locale.ROOT, "%.2f", sanctuary.territoryRadius()) + " blocks");
-        lore.add("<gray>Location: <white>" + mini(formatPosition(sanctuary.position())));
+        lore.add("<gray>Shared progression tier: <white>" + roman(sanctuary.tier()));
+        lore.add("<gray>Anchor generation: <white>" + sanctuary.anchorGeneration());
+        lore.add("<gray>Legacy radius summary: <white>" + String.format(
+            Locale.ROOT,
+            "%.2f",
+            sanctuary.territoryRadius()
+        ) + " blocks");
+        lore.add("<gray>Compatibility location: <white>" + mini(formatPosition(sanctuary.position())));
         if (adminMode) {
             lore.add("");
             lore.add("<dark_gray>ID: " + sanctuary.id());
@@ -1182,8 +1113,6 @@ public final class SanctuaryUiService {
             lore.add("<dark_gray>Debug ephemeral: " + sanctuary.debugEphemeral());
             lore.add("<dark_gray>Created: " + sanctuary.createdAt());
             lore.add("<dark_gray>Updated: " + sanctuary.updatedAt());
-            sanctuary.destroyedAt().ifPresent(value -> lore.add("<red>Destroyed: " + value));
-            sanctuary.destructionReason().ifPresent(value -> lore.add("<red>Reason: " + mini(value)));
         } else {
             lore.add("<dark_gray>ID: " + sanctuary.id().toString().substring(0, 8));
         }
@@ -1198,16 +1127,12 @@ public final class SanctuaryUiService {
     ) {
         ExtendedItemProvider provider = () -> {
             ExtendedItemBuilder builder = ExtendedItemBuilder.of(material).name(name);
-            if (!lore.isEmpty()) {
-                builder.lore(lore.toArray(String[]::new));
-            }
+            if (!lore.isEmpty()) builder.lore(lore.toArray(String[]::new));
             return builder.build();
         };
-        ExtendedButton.Builder button = ExtendedButton.builder(provider);
-        if (onClick != null) {
-            button.onClick(onClick);
-        }
-        return button.build();
+        ExtendedButton.Builder result = ExtendedButton.builder(provider);
+        if (onClick != null) result.onClick(onClick);
+        return result.build();
     }
 
     private void menuError(Player player, String message, Exception exception) {
@@ -1242,9 +1167,8 @@ public final class SanctuaryUiService {
         long sameName = candidates.stream()
             .filter(value -> value.name().equalsIgnoreCase(sanctuary.name()))
             .count();
-        if (sameName == 1) {
-            return base;
-        }
+        if (sameName == 1) return base;
+
         String ownerName = Bukkit.getOfflinePlayer(sanctuary.ownerId()).getName();
         if (ownerName != null && !ownerName.isBlank()) {
             String ownerLabel = base + "@" + ownerName;
@@ -1252,9 +1176,7 @@ public final class SanctuaryUiService {
                 .filter(value -> value.name().equalsIgnoreCase(sanctuary.name()))
                 .filter(value -> value.ownerId().equals(sanctuary.ownerId()))
                 .count();
-            if (sameOwnerLabel == 1) {
-                return ownerLabel;
-            }
+            if (sameOwnerLabel == 1) return ownerLabel;
         }
         return base + "~" + sanctuary.id().toString().substring(0, 8);
     }
@@ -1267,45 +1189,18 @@ public final class SanctuaryUiService {
     }
 
     private static String formatPosition(Optional<SanctuaryPosition> position) {
-        if (position.isEmpty()) {
-            return "none";
-        }
+        if (position.isEmpty()) return "none";
         SanctuaryPosition value = position.orElseThrow();
         return value.world() + " " + value.x() + " " + value.y() + " " + value.z();
     }
 
-    private static String effectDisplayName(SanctuaryEffect effect) {
-        return switch (effect) {
-            case REGENERATION -> "Regeneration";
-            case RESISTANCE -> "Resistance";
-            case STRENGTH -> "Strength";
-            case HASTE -> "Haste";
-            case SPEED -> "Speed";
-            case ELYTRA_DISABLED -> "Elytra Disabled";
-            case MINING_FATIGUE -> "Mining Fatigue";
-            case WEAKNESS -> "Weakness";
-            case BLINDNESS -> "Blindness";
-            case WITHER -> "Wither";
-        };
+    private static String modeDisplayName(SanctuarySecurityMode mode) {
+        return mode == SanctuarySecurityMode.LOCKDOWN ? "Lockdown" : "Normal";
     }
 
-    private static Material effectMaterial(SanctuaryEffect effect) {
-        return switch (effect) {
-            case REGENERATION -> Material.GHAST_TEAR;
-            case RESISTANCE -> Material.IRON_CHESTPLATE;
-            case STRENGTH -> Material.BLAZE_POWDER;
-            case HASTE -> Material.GOLDEN_PICKAXE;
-            case SPEED -> Material.SUGAR;
-            case ELYTRA_DISABLED -> Material.ELYTRA;
-            case MINING_FATIGUE -> Material.IRON_PICKAXE;
-            case WEAKNESS -> Material.FERMENTED_SPIDER_EYE;
-            case BLINDNESS -> Material.INK_SAC;
-            case WITHER -> Material.WITHER_ROSE;
-        };
-    }
-
-    private static String formatRadius(double radius) {
-        return String.format(Locale.ROOT, "%.1f blocks", radius);
+    private static String capabilityDisplayName(SanctuaryCapability capability) {
+        String value = capability.name().toLowerCase(Locale.ROOT);
+        return Character.toUpperCase(value.charAt(0)) + value.substring(1);
     }
 
     private static String roman(int value) {
@@ -1319,24 +1214,13 @@ public final class SanctuaryUiService {
         };
     }
 
-    private static String modeDisplayName(SanctuarySecurityMode mode) {
-        return mode == SanctuarySecurityMode.LOCKDOWN ? "Lockdown" : "Normal";
-    }
-
-    private static String capabilityDisplayName(SanctuaryCapability capability) {
-        String value = capability.name().toLowerCase(Locale.ROOT);
-        return Character.toUpperCase(value.charAt(0)) + value.substring(1);
-    }
-
     private static String mini(String value) {
         return value.replace("\\", "\\\\").replace("<", "\\<");
     }
 
     private static List<Integer> createListSlots() {
         List<Integer> result = new ArrayList<>();
-        for (int slot = 9; slot <= 44; slot++) {
-            result.add(slot);
-        }
+        for (int slot = 9; slot <= 44; slot++) result.add(slot);
         return List.copyOf(result);
     }
 }

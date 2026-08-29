@@ -8,14 +8,13 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Predicate;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import java.util.function.Predicate;
 import org.bukkit.ChatColor;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.block.Block;
-import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Projectile;
@@ -29,6 +28,7 @@ import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.inventory.InventoryOpenEvent;
 import org.bukkit.event.player.PlayerInteractEntityEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
+import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.projectiles.ProjectileSource;
 
 public final class SanctuaryProtectionListener implements Listener {
@@ -51,13 +51,16 @@ public final class SanctuaryProtectionListener implements Listener {
 
     @EventHandler(priority = EventPriority.NORMAL, ignoreCancelled = true)
     public void onBlockPlace(BlockPlaceEvent event) {
-        denyIfNeeded(event.getPlayer(), SanctuaryCapability.BUILD, event.getBlockPlaced().getLocation(), () -> event.setCancelled(true));
+        denyIfNeeded(
+            event.getPlayer(),
+            SanctuaryCapability.BUILD,
+            event.getBlockPlaced().getLocation(),
+            () -> event.setCancelled(true)
+        );
     }
 
     @EventHandler(priority = EventPriority.NORMAL, ignoreCancelled = true)
     public void onBlockBreak(BlockBreakEvent event) {
-        // BREAK permission applies to Sanctuary anchors too. If this check allows the
-        // break, AnchorBreakListener runs later and handles the anchor lifecycle.
         denyIfNeeded(
             event.getPlayer(),
             SanctuaryCapability.BREAK,
@@ -73,21 +76,14 @@ public final class SanctuaryProtectionListener implements Listener {
         }
 
         Block block = event.getClickedBlock();
-
-        // Sneak-right-clicking with a block is a placement attempt. BlockPlaceEvent
-        // is the authority for BUILD permission, even when placing against an
-        // otherwise interactable block such as a door or lever.
         if (event.getPlayer().isSneaking()
             && event.getItem() != null
             && event.getItem().getType().isBlock()) {
             return;
         }
-
         if (block.getState() instanceof InventoryHolder) {
-            // InventoryOpenEvent evaluates the container's actual location.
             return;
         }
-
         if (isDirectRedstoneControl(block.getType())) {
             denyIfNeeded(
                 event.getPlayer(),
@@ -97,13 +93,9 @@ public final class SanctuaryProtectionListener implements Listener {
             );
             return;
         }
-
-        // Ordinary right-clicks are also used by Minecraft to place blocks.
-        // Only require INTERACT when the clicked block itself has an interaction.
         if (!block.getType().isInteractable()) {
             return;
         }
-
         denyIfNeeded(
             event.getPlayer(),
             SanctuaryCapability.INTERACT,
@@ -121,12 +113,22 @@ public final class SanctuaryProtectionListener implements Listener {
         if (location == null) {
             return;
         }
-        denyIfNeeded(player, SanctuaryCapability.CONTAINER, location, () -> event.setCancelled(true));
+        denyIfNeeded(
+            player,
+            SanctuaryCapability.CONTAINER,
+            location,
+            () -> event.setCancelled(true)
+        );
     }
 
     @EventHandler(priority = EventPriority.NORMAL, ignoreCancelled = true)
     public void onEntityInteract(PlayerInteractEntityEvent event) {
-        denyIfNeeded(event.getPlayer(), SanctuaryCapability.ENTITIES, event.getRightClicked().getLocation(), () -> event.setCancelled(true));
+        denyIfNeeded(
+            event.getPlayer(),
+            SanctuaryCapability.ENTITIES,
+            event.getRightClicked().getLocation(),
+            () -> event.setCancelled(true)
+        );
     }
 
     @EventHandler(priority = EventPriority.NORMAL, ignoreCancelled = true)
@@ -135,7 +137,12 @@ public final class SanctuaryProtectionListener implements Listener {
         if (player == null) {
             return;
         }
-        denyIfNeeded(player, SanctuaryCapability.ENTITIES, event.getEntity().getLocation(), () -> event.setCancelled(true));
+        denyIfNeeded(
+            player,
+            SanctuaryCapability.ENTITIES,
+            event.getEntity().getLocation(),
+            () -> event.setCancelled(true)
+        );
     }
 
     private void denyIfNeeded(
@@ -153,6 +160,7 @@ public final class SanctuaryProtectionListener implements Listener {
                 capability,
                 location.getWorld().getName(),
                 location.getX(),
+                location.getY(),
                 location.getZ()
             );
             if (blocking.isEmpty()) {
@@ -162,12 +170,23 @@ public final class SanctuaryProtectionListener implements Listener {
             sendWarning(player, capability, blocking.orElseThrow());
         } catch (SQLException exception) {
             cancel.run();
-            player.sendMessage(ChatColor.RED + "Sanctuary could not verify permissions. The action was blocked.");
-            logger.log(Level.SEVERE, "Failed to evaluate Sanctuary protection at " + location, exception);
+            player.sendMessage(
+                ChatColor.RED
+                    + "Sanctuary could not verify permissions. The action was blocked."
+            );
+            logger.log(
+                Level.SEVERE,
+                "Failed to evaluate Sanctuary protection at " + location,
+                exception
+            );
         }
     }
 
-    private void sendWarning(Player player, SanctuaryCapability capability, Sanctuary sanctuary) {
+    private void sendWarning(
+        Player player,
+        SanctuaryCapability capability,
+        Sanctuary sanctuary
+    ) {
         long now = System.nanoTime();
         EnumMap<SanctuaryCapability, Long> warnings = lastWarning.computeIfAbsent(
             player.getUniqueId(),
@@ -178,7 +197,10 @@ public final class SanctuaryProtectionListener implements Listener {
             return;
         }
         warnings.put(capability, now);
-        player.sendMessage(ChatColor.RED + denialMessage(capability) + ChatColor.GRAY + " [" + sanctuary.name() + "]");
+        player.sendMessage(
+            ChatColor.RED + denialMessage(capability)
+                + ChatColor.GRAY + " [" + sanctuary.name() + "]"
+        );
     }
 
     private static String denialMessage(SanctuaryCapability capability) {

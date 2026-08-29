@@ -22,7 +22,7 @@ class TerritoryPresenceServiceTest {
         Sanctuary destroyed = destroyed("Destroyed");
 
         assertTrue(service.findCurrentSanctuary(
-            List.of(inactive, destroyed), "world", 0.5, 0.5
+            List.of(inactive, destroyed), "world", 0.5, 64.5, 0.5
         ).isEmpty());
     }
 
@@ -33,7 +33,7 @@ class TerritoryPresenceServiceTest {
         Sanctuary second = sanctuary("Second", 8, 0, radius, SanctuaryState.ACTIVE);
 
         Sanctuary result = service.findCurrentSanctuary(
-            List.of(first, second), "world", 7.5, 0.5
+            List.of(first, second), "world", 7.5, 64.5, 0.5
         ).orElseThrow();
 
         assertEquals(second.id(), result.id());
@@ -43,7 +43,19 @@ class TerritoryPresenceServiceTest {
     void returnsEmptyOutsideAllTerritories() {
         Sanctuary sanctuary = sanctuary("Test", 0, 0, 5.0, SanctuaryState.ACTIVE);
         assertTrue(service.findCurrentSanctuary(
-            List.of(sanctuary), "world", 20.0, 20.0
+            List.of(sanctuary), "world", 20.0, 64.5, 20.0
+        ).isEmpty());
+    }
+
+    @Test
+    void flyingAboveEllipsoidLeavesTerritory() {
+        Sanctuary sanctuary = sanctuary("Test", 0, 0, 96.0, SanctuaryState.ACTIVE);
+
+        assertTrue(service.findCurrentSanctuary(
+            List.of(sanctuary), "world", 0.5, 64.5 + 63.9, 0.5
+        ).isPresent());
+        assertTrue(service.findCurrentSanctuary(
+            List.of(sanctuary), "world", 0.5, 64.5 + 64.1, 0.5
         ).isEmpty());
     }
 

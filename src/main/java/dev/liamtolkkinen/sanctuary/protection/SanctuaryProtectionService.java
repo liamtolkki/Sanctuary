@@ -38,6 +38,35 @@ public final class SanctuaryProtectionService {
         this.permissionService = Objects.requireNonNull(permissionService, "permissionService");
     }
 
+    /** Actual 3D protection lookup. */
+    public Optional<Sanctuary> findBlockingSanctuary(
+        UUID playerId,
+        SanctuaryCapability capability,
+        String world,
+        double x,
+        double y,
+        double z
+    ) throws SQLException {
+        Objects.requireNonNull(playerId, "playerId");
+        Objects.requireNonNull(capability, "capability");
+        Objects.requireNonNull(world, "world");
+
+        Optional<Sanctuary> sanctuary;
+        if (anchorTerritoryService != null) {
+            sanctuary = anchorTerritoryService.findCurrentSanctuary(world, x, y, z);
+        } else {
+            sanctuary = legacyPresenceService.findCurrentSanctuary(
+                sanctuaryRepository.findActiveInWorld(world),
+                world,
+                x,
+                y,
+                z
+            );
+        }
+        return blocking(playerId, capability, sanctuary);
+    }
+
+    /** Horizontal-footprint compatibility overload for older tests/callers. */
     public Optional<Sanctuary> findBlockingSanctuary(
         UUID playerId,
         SanctuaryCapability capability,
@@ -60,10 +89,17 @@ public final class SanctuaryProtectionService {
                 z
             );
         }
+        return blocking(playerId, capability, sanctuary);
+    }
+
+    private Optional<Sanctuary> blocking(
+        UUID playerId,
+        SanctuaryCapability capability,
+        Optional<Sanctuary> sanctuary
+    ) throws SQLException {
         if (sanctuary.isEmpty()) {
             return Optional.empty();
         }
-
         Sanctuary current = sanctuary.orElseThrow();
         return permissionService.hasCapability(current, playerId, capability)
             ? Optional.empty()

@@ -5,6 +5,7 @@ import dev.liamtolkkinen.sanctuary.sanctuary.Sanctuary;
 import dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryPosition;
 import dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryRepository;
 import dev.liamtolkkinen.sanctuary.territory.AnchorTerritoryService;
+import dev.liamtolkkinen.sanctuary.territory.TerritoryCalculator;
 import dev.liamtolkkinen.sanctuary.territory.TerritoryPresenceService;
 import java.sql.SQLException;
 import java.util.List;
@@ -39,10 +40,7 @@ public final class ElytraSuppressionListener implements Listener {
         this.legacyPresenceService = Objects.requireNonNull(presenceService, "presenceService");
         this.anchorTerritoryService = null;
         this.effectService = Objects.requireNonNull(effectService, "effectService");
-        this.maximumRadiusSupplier = Objects.requireNonNull(
-            maximumRadiusSupplier,
-            "maximumRadiusSupplier"
-        );
+        this.maximumRadiusSupplier = Objects.requireNonNull(maximumRadiusSupplier, "maximumRadiusSupplier");
         this.logger = Objects.requireNonNull(logger, "logger");
     }
 
@@ -55,15 +53,9 @@ public final class ElytraSuppressionListener implements Listener {
     ) {
         this.repository = Objects.requireNonNull(repository, "repository");
         this.legacyPresenceService = null;
-        this.anchorTerritoryService = Objects.requireNonNull(
-            anchorTerritoryService,
-            "anchorTerritoryService"
-        );
+        this.anchorTerritoryService = Objects.requireNonNull(anchorTerritoryService, "anchorTerritoryService");
         this.effectService = Objects.requireNonNull(effectService, "effectService");
-        this.maximumRadiusSupplier = Objects.requireNonNull(
-            maximumRadiusSupplier,
-            "maximumRadiusSupplier"
-        );
+        this.maximumRadiusSupplier = Objects.requireNonNull(maximumRadiusSupplier, "maximumRadiusSupplier");
         this.logger = Objects.requireNonNull(logger, "logger");
     }
 
@@ -72,7 +64,6 @@ public final class ElytraSuppressionListener implements Listener {
         if (!event.isGliding() || !(event.getEntity() instanceof Player player)) {
             return;
         }
-
         try {
             if (isElytraSuppressed(player)) {
                 event.setCancelled(true);
@@ -83,29 +74,22 @@ public final class ElytraSuppressionListener implements Listener {
                 );
             }
         } catch (SQLException exception) {
-            logger.log(
-                Level.WARNING,
-                "Failed to evaluate Sanctuary Elytra suppression for " + player.getName(),
-                exception
-            );
+            logger.log(Level.WARNING, "Failed to evaluate Sanctuary Elytra suppression for " + player.getName(), exception);
         }
     }
 
     private boolean isElytraSuppressed(Player player) throws SQLException {
-        if (anchorTerritoryService != null) {
-            return isGraphElytraSuppressed(player);
-        }
-        return isLegacyElytraSuppressed(player);
+        return anchorTerritoryService != null ? isGraphElytraSuppressed(player) : isLegacyElytraSuppressed(player);
     }
 
     private boolean isGraphElytraSuppressed(Player player) throws SQLException {
         for (SanctuaryAnchor anchor : anchorTerritoryService.coveringAnchors(
             player.getWorld().getName(),
             player.getLocation().getX(),
+            player.getLocation().getY(),
             player.getLocation().getZ()
         )) {
-            if (anchor.type()
-                    != dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryType.BEACON
+            if (anchor.type() != dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryType.BEACON
                 || anchor.position().isEmpty()) {
                 continue;
             }
@@ -114,15 +98,17 @@ public final class ElytraSuppressionListener implements Listener {
                 continue;
             }
             SanctuaryPosition position = anchor.position().orElseThrow();
-            double horizontalDistance = Math.hypot(
-                player.getLocation().getX() - (position.x() + 0.5),
-                player.getLocation().getZ() - (position.z() + 0.5)
+            double territoryDistance = TerritoryCalculator.scaledDistance(
+                position,
+                player.getLocation().getX(),
+                player.getLocation().getY(),
+                player.getLocation().getZ()
             );
             if (effectService.activeAnchorEffects(
                 sanctuary,
                 anchor,
                 player.getUniqueId(),
-                horizontalDistance,
+                territoryDistance,
                 maximumRadiusSupplier.getAsDouble()
             ).stream().anyMatch(active -> active.effect() == AnchorEffect.ELYTRA_DISABLED)) {
                 return true;
@@ -132,29 +118,28 @@ public final class ElytraSuppressionListener implements Listener {
     }
 
     private boolean isLegacyElytraSuppressed(Player player) throws SQLException {
-        List<Sanctuary> sanctuaries = repository.findActiveInWorld(
-            player.getWorld().getName()
-        );
+        List<Sanctuary> sanctuaries = repository.findActiveInWorld(player.getWorld().getName());
         Sanctuary sanctuary = legacyPresenceService.findCurrentSanctuary(
             sanctuaries,
             player.getWorld().getName(),
             player.getLocation().getX(),
+            player.getLocation().getY(),
             player.getLocation().getZ()
         ).orElse(null);
         if (sanctuary == null || sanctuary.position().isEmpty()) {
             return false;
         }
-
         SanctuaryPosition position = sanctuary.position().orElseThrow();
-        double horizontalDistance = Math.hypot(
-            player.getLocation().getX() - (position.x() + 0.5),
-            player.getLocation().getZ() - (position.z() + 0.5)
+        double territoryDistance = TerritoryCalculator.scaledDistance(
+            position,
+            player.getLocation().getX(),
+            player.getLocation().getY(),
+            player.getLocation().getZ()
         );
-
         return effectService.activeEffects(
             sanctuary,
             player.getUniqueId(),
-            horizontalDistance,
+            territoryDistance,
             maximumRadiusSupplier.getAsDouble()
         ).stream().anyMatch(active -> active.effect() == SanctuaryEffect.ELYTRA_DISABLED);
     }

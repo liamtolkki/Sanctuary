@@ -6,6 +6,7 @@ import dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryPosition;
 import dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryRepository;
 import dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryType;
 import dev.liamtolkkinen.sanctuary.territory.AnchorTerritoryService;
+import dev.liamtolkkinen.sanctuary.territory.TerritoryCalculator;
 import dev.liamtolkkinen.sanctuary.territory.TerritoryPresenceService;
 import java.sql.SQLException;
 import java.util.EnumMap;
@@ -87,6 +88,7 @@ public final class SanctuaryEffectTask implements Runnable {
         List<SanctuaryAnchor> anchors = anchorTerritoryService.coveringAnchors(
             player.getWorld().getName(),
             player.getLocation().getX(),
+            player.getLocation().getY(),
             player.getLocation().getZ()
         );
         if (anchors.isEmpty()) {
@@ -106,15 +108,17 @@ public final class SanctuaryEffectTask implements Runnable {
                 continue;
             }
             SanctuaryPosition position = anchor.position().orElseThrow();
-            double horizontalDistance = Math.hypot(
-                player.getLocation().getX() - (position.x() + 0.5),
-                player.getLocation().getZ() - (position.z() + 0.5)
+            double territoryDistance = TerritoryCalculator.scaledDistance(
+                position,
+                player.getLocation().getX(),
+                player.getLocation().getY(),
+                player.getLocation().getZ()
             );
             for (SanctuaryEffectService.ActiveAnchorEffect active : effectService.activeAnchorEffects(
                 sanctuary,
                 anchor,
                 player.getUniqueId(),
-                horizontalDistance,
+                territoryDistance,
                 maximumRadiusSupplier.getAsDouble()
             )) {
                 strongest.merge(
@@ -133,6 +137,7 @@ public final class SanctuaryEffectTask implements Runnable {
             sanctuaries,
             player.getWorld().getName(),
             player.getLocation().getX(),
+            player.getLocation().getY(),
             player.getLocation().getZ()
         ).orElse(null);
         if (sanctuary == null || sanctuary.position().isEmpty()) {
@@ -140,14 +145,16 @@ public final class SanctuaryEffectTask implements Runnable {
         }
 
         SanctuaryPosition position = sanctuary.position().orElseThrow();
-        double horizontalDistance = Math.hypot(
-            player.getLocation().getX() - (position.x() + 0.5),
-            player.getLocation().getZ() - (position.z() + 0.5)
+        double territoryDistance = TerritoryCalculator.scaledDistance(
+            position,
+            player.getLocation().getX(),
+            player.getLocation().getY(),
+            player.getLocation().getZ()
         );
         applyLegacyEffects(player, effectService.activeEffects(
             sanctuary,
             player.getUniqueId(),
-            horizontalDistance,
+            territoryDistance,
             maximumRadiusSupplier.getAsDouble()
         ));
     }

@@ -13,6 +13,7 @@ public final class TerritoryPresenceService {
         List<Sanctuary> sanctuaries,
         String world,
         double x,
+        double y,
         double z
     ) {
         Objects.requireNonNull(sanctuaries, "sanctuaries");
@@ -26,22 +27,36 @@ public final class TerritoryPresenceService {
                 sanctuary.territoryRadius(),
                 world,
                 x,
+                y,
                 z
             ))
             .min(
                 Comparator.comparingDouble(
-                    (Sanctuary sanctuary) -> distanceSquared(
+                    (Sanctuary sanctuary) -> TerritoryCalculator.scaledDistanceSquared(
                         sanctuary.position().orElseThrow(),
                         x,
+                        y,
                         z
                     )
                 ).thenComparing(sanctuary -> sanctuary.id().toString())
             );
     }
 
-    private static double distanceSquared(SanctuaryPosition position, double x, double z) {
-        double deltaX = x - (position.x() + 0.5);
-        double deltaZ = z - (position.z() + 0.5);
-        return deltaX * deltaX + deltaZ * deltaZ;
+    public Optional<Sanctuary> findCurrentSanctuary(
+        List<Sanctuary> sanctuaries,
+        String world,
+        double x,
+        double z
+    ) {
+        return sanctuaries.stream()
+            .filter(sanctuary -> sanctuary.position().isPresent())
+            .findFirst()
+            .flatMap(sanctuary -> findCurrentSanctuary(
+                sanctuaries,
+                world,
+                x,
+                sanctuary.position().orElseThrow().y() + 0.5,
+                z
+            ));
     }
 }

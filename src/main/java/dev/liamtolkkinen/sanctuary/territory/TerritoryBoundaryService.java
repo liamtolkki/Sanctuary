@@ -4,8 +4,8 @@ import dev.liamtolkkinen.sanctuary.anchor.SanctuaryAnchor;
 import dev.liamtolkkinen.sanctuary.sanctuary.Sanctuary;
 import dev.liamtolkkinen.sanctuary.sanctuary.SanctuaryPosition;
 import dev.liamtolkkinen.sanctuary.security.SanctuaryRelationship;
-import dev.liamtolkkinen.sanctuary.security.SanctuarySecurityMode;
 import dev.liamtolkkinen.sanctuary.security.SanctuarySecurityService;
+import dev.liamtolkkinen.sanctuary.security.SanctuaryThreat;
 import java.sql.SQLException;
 import java.util.List;
 import java.util.Objects;
@@ -39,7 +39,16 @@ public final class TerritoryBoundaryService {
         Supplier<Particle> hostileParticle,
         Logger logger
     ) {
-        this(plugin, securityService, null, ownerParticle, trustedParticle, neutralParticle, hostileParticle, logger);
+        this(
+            plugin,
+            securityService,
+            null,
+            ownerParticle,
+            trustedParticle,
+            neutralParticle,
+            hostileParticle,
+            logger
+        );
     }
 
     public TerritoryBoundaryService(
@@ -62,10 +71,21 @@ public final class TerritoryBoundaryService {
         this.logger = Objects.requireNonNull(logger, "logger");
     }
 
-    public BukkitTask show(Player viewer, Sanctuary sanctuary, double particleSpacing, int displaySeconds) {
+    public BukkitTask show(
+        Player viewer,
+        Sanctuary sanctuary,
+        double particleSpacing,
+        int displaySeconds
+    ) {
         Objects.requireNonNull(viewer, "viewer");
         validateManualArguments(sanctuary, particleSpacing, displaySeconds);
-        return schedule(viewer, List.of(sanctuary), particleSpacing, displaySeconds, Double.POSITIVE_INFINITY);
+        return schedule(
+            viewer,
+            List.of(sanctuary),
+            particleSpacing,
+            displaySeconds,
+            Double.POSITIVE_INFINITY
+        );
     }
 
     public BukkitTask showAll(
@@ -78,10 +98,20 @@ public final class TerritoryBoundaryService {
         Objects.requireNonNull(viewer, "viewer");
         Objects.requireNonNull(sanctuaries, "sanctuaries");
         if (!Double.isFinite(maximumRenderDistance) || maximumRenderDistance <= 0.0) {
-            throw new IllegalArgumentException("maximumRenderDistance must be finite and greater than zero");
+            throw new IllegalArgumentException(
+                "maximumRenderDistance must be finite and greater than zero"
+            );
         }
-        sanctuaries.forEach(value -> validateManualArguments(value, particleSpacing, displaySeconds));
-        return schedule(viewer, List.copyOf(sanctuaries), particleSpacing, displaySeconds, maximumRenderDistance);
+        sanctuaries.forEach(value ->
+            validateManualArguments(value, particleSpacing, displaySeconds)
+        );
+        return schedule(
+            viewer,
+            List.copyOf(sanctuaries),
+            particleSpacing,
+            displaySeconds,
+            maximumRenderDistance
+        );
     }
 
     public void showProximity(
@@ -98,7 +128,14 @@ public final class TerritoryBoundaryService {
         validateSpacing(verticalSpacing, "verticalSpacing");
         validateProximityDistances(minimumDistance, maximumDistance);
         try {
-            drawProximity(viewer, sanctuary, horizontalSpacing, verticalSpacing, minimumDistance, maximumDistance);
+            drawProximity(
+                viewer,
+                sanctuary,
+                horizontalSpacing,
+                verticalSpacing,
+                minimumDistance,
+                maximumDistance
+            );
         } catch (SQLException exception) {
             logger.log(Level.WARNING, "Failed to draw Sanctuary graph boundary", exception);
         }
@@ -108,18 +145,52 @@ public final class TerritoryBoundaryService {
         Sanctuary sanctuary,
         String world,
         double x,
+        double y,
         double z,
         double maximumDistance
     ) throws SQLException {
         Objects.requireNonNull(sanctuary, "sanctuary");
         Objects.requireNonNull(world, "world");
         if (!Double.isFinite(maximumDistance) || maximumDistance <= 0.0) {
-            throw new IllegalArgumentException("maximumDistance must be finite and greater than zero");
+            throw new IllegalArgumentException(
+                "maximumDistance must be finite and greater than zero"
+            );
         }
-        return boundaryCircles(sanctuary).stream().anyMatch(circle ->
-            circle.position().world().equals(world)
-                && TerritoryCalculator.distanceToBoundary(circle.position(), circle.radius(), x, z)
-                    < maximumDistance
+        return boundaryEllipsoids(sanctuary).stream().anyMatch(ellipsoid -> {
+            if (!ellipsoid.position().world().equals(world)) {
+                return false;
+            }
+            double scaledDistance = TerritoryCalculator.scaledDistance(
+                ellipsoid.position(),
+                x,
+                y,
+                z
+            );
+            double conservativeDistanceToSurface = Math.abs(
+                scaledDistance - ellipsoid.radius()
+            ) * TerritoryCalculator.VERTICAL_RADIUS_SCALE;
+            return conservativeDistanceToSurface < maximumDistance;
+        });
+    }
+
+    public boolean isWithinRenderDistance(
+        Sanctuary sanctuary,
+        String world,
+        double x,
+        double z,
+        double maximumDistance
+    ) throws SQLException {
+        List<BoundaryEllipsoid> ellipsoids = boundaryEllipsoids(sanctuary);
+        if (ellipsoids.isEmpty()) {
+            return false;
+        }
+        return isWithinRenderDistance(
+            sanctuary,
+            world,
+            x,
+            ellipsoids.get(0).position().y() + 0.5,
+            z,
+            maximumDistance
         );
     }
 
@@ -143,15 +214,21 @@ public final class TerritoryBoundaryService {
 
     static double proximityHalfHeight(double horizontalDistance, double maximumDistance) {
         if (!Double.isFinite(horizontalDistance) || horizontalDistance < 0.0) {
-            throw new IllegalArgumentException("horizontalDistance must be finite and zero or greater");
+            throw new IllegalArgumentException(
+                "horizontalDistance must be finite and zero or greater"
+            );
         }
         if (!Double.isFinite(maximumDistance) || maximumDistance <= 0.0) {
-            throw new IllegalArgumentException("maximumDistance must be finite and greater than zero");
+            throw new IllegalArgumentException(
+                "maximumDistance must be finite and greater than zero"
+            );
         }
         if (horizontalDistance >= maximumDistance) {
             return 0.0;
         }
-        return Math.sqrt(maximumDistance * maximumDistance - horizontalDistance * horizontalDistance);
+        return Math.sqrt(
+            maximumDistance * maximumDistance - horizontalDistance * horizontalDistance
+        );
     }
 
     private BukkitTask schedule(
@@ -171,11 +248,19 @@ public final class TerritoryBoundaryService {
             }
             for (Sanctuary sanctuary : sanctuaries) {
                 try {
-                    if (isWithinManualRenderDistance(viewer, sanctuary, maximumRenderDistance)) {
+                    if (isWithinManualRenderDistance(
+                        viewer,
+                        sanctuary,
+                        maximumRenderDistance
+                    )) {
                         drawFullBoundary(viewer, sanctuary, particleSpacing);
                     }
                 } catch (SQLException exception) {
-                    logger.log(Level.WARNING, "Failed to render Sanctuary graph boundary", exception);
+                    logger.log(
+                        Level.WARNING,
+                        "Failed to render Sanctuary graph boundary",
+                        exception
+                    );
                 }
             }
             remaining[0]--;
@@ -194,52 +279,34 @@ public final class TerritoryBoundaryService {
         if (Double.isInfinite(maximumRenderDistance)) {
             return true;
         }
-        if (anchorTerritoryService != null) {
-            return anchors(sanctuary).stream().anyMatch(anchor -> {
-                SanctuaryPosition position = anchor.position().orElseThrow();
-                return viewer.getWorld().getName().equals(position.world())
-                    && TerritoryCalculator.distanceToBoundary(
-                        position,
-                        anchor.territoryRadius(),
-                        viewer.getLocation().getX(),
-                        viewer.getLocation().getZ()
-                    ) <= maximumRenderDistance;
-            });
-        }
-        SanctuaryPosition position = sanctuary.position().orElseThrow();
-        if (!viewer.getWorld().getName().equals(position.world())) {
-            return false;
-        }
-        return TerritoryCalculator.distanceToBoundary(
-            position,
-            sanctuary.territoryRadius(),
+        return isWithinRenderDistance(
+            sanctuary,
+            viewer.getWorld().getName(),
             viewer.getLocation().getX(),
-            viewer.getLocation().getZ()
-        ) <= maximumRenderDistance;
+            viewer.getLocation().getY(),
+            viewer.getLocation().getZ(),
+            maximumRenderDistance
+        );
     }
 
-    private void drawFullBoundary(Player viewer, Sanctuary sanctuary, double particleSpacing)
-        throws SQLException {
-        List<BoundaryCircle> circles = boundaryCircles(sanctuary);
+    private void drawFullBoundary(
+        Player viewer,
+        Sanctuary sanctuary,
+        double particleSpacing
+    ) throws SQLException {
+        List<BoundaryEllipsoid> ellipsoids = boundaryEllipsoids(sanctuary);
         Particle particle = boundaryParticle(viewer, sanctuary);
-        for (BoundaryCircle circle : circles) {
-            SanctuaryPosition position = circle.position();
-            if (!viewer.getWorld().getName().equals(position.world())) {
-                continue;
-            }
-            int points = pointCount(circle.radius(), particleSpacing);
-            double centerX = position.x() + 0.5;
-            double centerZ = position.z() + 0.5;
-            double y = position.y() + 1.25;
-            for (int index = 0; index < points; index++) {
-                double angle = (2.0 * Math.PI * index) / points;
-                double x = centerX + Math.cos(angle) * circle.radius();
-                double z = centerZ + Math.sin(angle) * circle.radius();
-                if (insideAnotherCircle(circle, circles, x, z)) {
-                    continue;
-                }
-                viewer.spawnParticle(particle, x, y, z, 1, 0.0, 0.0, 0.0, 0.0);
-            }
+        for (BoundaryEllipsoid ellipsoid : ellipsoids) {
+            drawEllipsoidSurface(
+                viewer,
+                particle,
+                ellipsoid,
+                ellipsoids,
+                particleSpacing,
+                particleSpacing,
+                0.0,
+                Double.POSITIVE_INFINITY
+            );
         }
     }
 
@@ -251,57 +318,131 @@ public final class TerritoryBoundaryService {
         double minimumDistance,
         double maximumDistance
     ) throws SQLException {
-        List<BoundaryCircle> circles = boundaryCircles(sanctuary);
+        List<BoundaryEllipsoid> ellipsoids = boundaryEllipsoids(sanctuary);
         Particle particle = boundaryParticle(viewer, sanctuary);
-        double viewerX = viewer.getLocation().getX();
-        double viewerY = viewer.getLocation().getY() + 1.0;
-        double viewerZ = viewer.getLocation().getZ();
+        for (BoundaryEllipsoid ellipsoid : ellipsoids) {
+            drawEllipsoidSurface(
+                viewer,
+                particle,
+                ellipsoid,
+                ellipsoids,
+                horizontalSpacing,
+                verticalSpacing,
+                minimumDistance,
+                maximumDistance
+            );
+        }
+    }
 
-        for (BoundaryCircle circle : circles) {
-            SanctuaryPosition position = circle.position();
-            if (!viewer.getWorld().getName().equals(position.world())) {
+    private void drawEllipsoidSurface(
+        Player viewer,
+        Particle particle,
+        BoundaryEllipsoid source,
+        List<BoundaryEllipsoid> ellipsoids,
+        double horizontalSpacing,
+        double verticalSpacing,
+        double minimumDistance,
+        double maximumDistance
+    ) {
+        SanctuaryPosition position = source.position();
+        if (!viewer.getWorld().getName().equals(position.world())) {
+            return;
+        }
+
+        double centerX = position.x() + 0.5;
+        double centerY = position.y() + 0.5;
+        double centerZ = position.z() + 0.5;
+        double verticalRadius = TerritoryCalculator.verticalRadius(source.radius());
+        int latitudeSteps = Math.max(
+            2,
+            (int) Math.ceil((verticalRadius * 2.0) / verticalSpacing)
+        );
+
+        for (int latitudeIndex = 0; latitudeIndex <= latitudeSteps; latitudeIndex++) {
+            double normalizedY = -1.0 + (2.0 * latitudeIndex / latitudeSteps);
+            double yOffset = normalizedY * verticalRadius;
+            double ringRadius = source.radius()
+                * Math.sqrt(Math.max(0.0, 1.0 - normalizedY * normalizedY));
+            double y = centerY + yOffset;
+
+            if (ringRadius < 1.0e-6) {
+                spawnSurfacePointIfVisible(
+                    viewer,
+                    particle,
+                    source,
+                    ellipsoids,
+                    centerX,
+                    y,
+                    centerZ,
+                    minimumDistance,
+                    maximumDistance
+                );
                 continue;
             }
-            int points = pointCount(circle.radius(), horizontalSpacing);
-            double centerX = position.x() + 0.5;
-            double centerZ = position.z() + 0.5;
+
+            int points = pointCount(ringRadius, horizontalSpacing);
             for (int index = 0; index < points; index++) {
                 double angle = (2.0 * Math.PI * index) / points;
-                double x = centerX + Math.cos(angle) * circle.radius();
-                double z = centerZ + Math.sin(angle) * circle.radius();
-                if (insideAnotherCircle(circle, circles, x, z)) {
-                    continue;
-                }
-                double horizontalDistance = Math.hypot(viewerX - x, viewerZ - z);
-                if (horizontalDistance >= maximumDistance) {
-                    continue;
-                }
-                double halfHeight = proximityHalfHeight(horizontalDistance, maximumDistance);
-                for (double offset = -halfHeight; offset <= halfHeight; offset += verticalSpacing) {
-                    double distance = Math.hypot(horizontalDistance, offset);
-                    if (!isWithinProximityBand(distance, minimumDistance, maximumDistance)) {
-                        continue;
-                    }
-                    viewer.spawnParticle(particle, x, viewerY + offset, z, 1, 0.0, 0.0, 0.0, 0.0);
-                }
+                double x = centerX + Math.cos(angle) * ringRadius;
+                double z = centerZ + Math.sin(angle) * ringRadius;
+                spawnSurfacePointIfVisible(
+                    viewer,
+                    particle,
+                    source,
+                    ellipsoids,
+                    x,
+                    y,
+                    z,
+                    minimumDistance,
+                    maximumDistance
+                );
             }
         }
     }
 
-    private List<SanctuaryAnchor> anchors(Sanctuary sanctuary) throws SQLException {
-        return anchorTerritoryService == null ? List.of() : anchorTerritoryService.activeAnchors(sanctuary.id());
+    private void spawnSurfacePointIfVisible(
+        Player viewer,
+        Particle particle,
+        BoundaryEllipsoid source,
+        List<BoundaryEllipsoid> ellipsoids,
+        double x,
+        double y,
+        double z,
+        double minimumDistance,
+        double maximumDistance
+    ) {
+        if (insideAnotherEllipsoid(source, ellipsoids, x, y, z)) {
+            return;
+        }
+        if (!Double.isInfinite(maximumDistance)) {
+            double dx = viewer.getLocation().getX() - x;
+            double dy = (viewer.getLocation().getY() + 1.0) - y;
+            double dz = viewer.getLocation().getZ() - z;
+            double distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+            if (!isWithinProximityBand(distance, minimumDistance, maximumDistance)) {
+                return;
+            }
+        }
+        viewer.spawnParticle(particle, x, y, z, 1, 0.0, 0.0, 0.0, 0.0);
     }
 
-    private List<BoundaryCircle> boundaryCircles(Sanctuary sanctuary) throws SQLException {
+    private List<SanctuaryAnchor> anchors(Sanctuary sanctuary) throws SQLException {
+        return anchorTerritoryService == null
+            ? List.of()
+            : anchorTerritoryService.activeAnchors(sanctuary.id());
+    }
+
+    private List<BoundaryEllipsoid> boundaryEllipsoids(Sanctuary sanctuary)
+        throws SQLException {
         if (anchorTerritoryService == null) {
-            return List.of(new BoundaryCircle(
+            return List.of(new BoundaryEllipsoid(
                 sanctuary.id(),
                 sanctuary.position().orElseThrow(),
                 sanctuary.territoryRadius()
             ));
         }
         return anchors(sanctuary).stream()
-            .map(anchor -> new BoundaryCircle(
+            .map(anchor -> new BoundaryEllipsoid(
                 anchor.id(),
                 anchor.position().orElseThrow(),
                 anchor.territoryRadius()
@@ -309,20 +450,28 @@ public final class TerritoryBoundaryService {
             .toList();
     }
 
-    private static boolean insideAnotherCircle(
-        BoundaryCircle source,
-        List<BoundaryCircle> circles,
+    private static boolean insideAnotherEllipsoid(
+        BoundaryEllipsoid source,
+        List<BoundaryEllipsoid> ellipsoids,
         double x,
+        double y,
         double z
     ) {
-        for (BoundaryCircle other : circles) {
-            if (other.id().equals(source.id()) || !other.position().world().equals(source.position().world())) {
+        for (BoundaryEllipsoid other : ellipsoids) {
+            if (other.id().equals(source.id())
+                || !other.position().world().equals(source.position().world())) {
                 continue;
             }
-            double dx = x - (other.position().x() + 0.5);
-            double dz = z - (other.position().z() + 0.5);
             double radius = Math.max(0.0, other.radius() - UNION_EPSILON);
-            if (dx * dx + dz * dz < radius * radius) {
+            if (radius <= 0.0) {
+                continue;
+            }
+            if (TerritoryCalculator.scaledDistanceSquared(
+                other.position(),
+                x,
+                y,
+                z
+            ) < radius * radius) {
                 return true;
             }
         }
@@ -331,38 +480,58 @@ public final class TerritoryBoundaryService {
 
     private Particle boundaryParticle(Player viewer, Sanctuary sanctuary) {
         try {
-            SanctuaryRelationship relationship = securityService.relationship(sanctuary, viewer.getUniqueId());
+            SanctuaryThreat threat = securityService.threat(
+                sanctuary,
+                viewer.getUniqueId()
+            );
+            if (threat == SanctuaryThreat.HOSTILE) {
+                return hostileParticle.get();
+            }
+
+            SanctuaryRelationship relationship = securityService.relationship(
+                sanctuary,
+                viewer.getUniqueId()
+            );
             if (relationship == SanctuaryRelationship.OWNER) {
                 return ownerParticle.get();
             }
             if (relationship == SanctuaryRelationship.TRUSTED) {
                 return trustedParticle.get();
             }
-            if (relationship == SanctuaryRelationship.BLACKLISTED) {
-                return hostileParticle.get();
-            }
-            if (securityService.mode(sanctuary) == SanctuarySecurityMode.LOCKDOWN) {
-                return hostileParticle.get();
-            }
             return neutralParticle.get();
         } catch (SQLException exception) {
-            logger.log(Level.WARNING, "Failed to resolve Sanctuary boundary relationship", exception);
+            logger.log(
+                Level.WARNING,
+                "Failed to resolve Sanctuary boundary threat",
+                exception
+            );
             return neutralParticle.get();
         }
     }
 
-    private void validateManualArguments(Sanctuary sanctuary, double particleSpacing, int displaySeconds) {
+    private void validateManualArguments(
+        Sanctuary sanctuary,
+        double particleSpacing,
+        int displaySeconds
+    ) {
         Objects.requireNonNull(sanctuary, "sanctuary");
         if (anchorTerritoryService == null && sanctuary.position().isEmpty()) {
-            throw new IllegalArgumentException("Sanctuary must be active to show its boundary");
+            throw new IllegalArgumentException(
+                "Sanctuary must be active to show its boundary"
+            );
         }
         if (anchorTerritoryService != null) {
             try {
                 if (anchors(sanctuary).isEmpty()) {
-                    throw new IllegalArgumentException("Sanctuary must have an active anchor to show its boundary");
+                    throw new IllegalArgumentException(
+                        "Sanctuary must have an active anchor to show its boundary"
+                    );
                 }
             } catch (SQLException exception) {
-                throw new IllegalArgumentException("Sanctuary anchors could not be loaded", exception);
+                throw new IllegalArgumentException(
+                    "Sanctuary anchors could not be loaded",
+                    exception
+                );
             }
         }
         validateSpacing(particleSpacing, "particleSpacing");
@@ -371,20 +540,34 @@ public final class TerritoryBoundaryService {
         }
     }
 
-    private static void validateProximityDistances(double minimumDistance, double maximumDistance) {
+    private static void validateProximityDistances(
+        double minimumDistance,
+        double maximumDistance
+    ) {
         if (!Double.isFinite(minimumDistance) || minimumDistance < 0.0) {
-            throw new IllegalArgumentException("minimumDistance must be finite and zero or greater");
+            throw new IllegalArgumentException(
+                "minimumDistance must be finite and zero or greater"
+            );
         }
         if (!Double.isFinite(maximumDistance) || maximumDistance <= minimumDistance) {
-            throw new IllegalArgumentException("maximumDistance must be finite and greater than minimumDistance");
+            throw new IllegalArgumentException(
+                "maximumDistance must be finite and greater than minimumDistance"
+            );
         }
     }
 
     private static void validateSpacing(double value, String name) {
         if (!Double.isFinite(value) || value <= 0.0) {
-            throw new IllegalArgumentException(name + " must be finite and greater than zero");
+            throw new IllegalArgumentException(
+                name + " must be finite and greater than zero"
+            );
         }
     }
 
-    private record BoundaryCircle(java.util.UUID id, SanctuaryPosition position, double radius) {}
+    private record BoundaryEllipsoid(
+        java.util.UUID id,
+        SanctuaryPosition position,
+        double radius
+    ) {
+    }
 }

@@ -75,6 +75,7 @@ public final class TerritoryBoundaryProximityTask implements Runnable {
                         sanctuary,
                         player.getWorld().getName(),
                         player.getLocation().getX(),
+                        player.getLocation().getY(),
                         player.getLocation().getZ(),
                         maximum
                     )) {

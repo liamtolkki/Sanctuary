@@ -12,13 +12,7 @@ import java.util.Objects;
 import java.util.UUID;
 import org.bukkit.Location;
 
-/**
- * Resolves the anchor-local awareness provided by Watcher's Eye upgrades.
- *
- * A Watcher's Eye never enables a whole Sanctuary globally. Only locations covered by an active
- * upgraded anchor are proactively watched, and Anchor Proximity uses the upgraded anchor's own
- * three-dimensional proximity sphere.
- */
+/** Resolves the anchor-local awareness provided by Watcher's Eye upgrades. */
 public final class SentryAwarenessService {
     private static volatile SentryAwarenessService current;
 
@@ -34,16 +28,11 @@ public final class SentryAwarenessService {
         current = this;
     }
 
-    /**
-     * Runtime-aware proactive check. A missing runtime instance preserves legacy/test behavior;
-     * the plugin installs this service during startup before sentry tasks begin.
-     */
     public static boolean proactivelyWatches(UUID sanctuaryId, Location location) throws SQLException {
         SentryAwarenessService service = current;
         return service == null || service.covers(sanctuaryId, location);
     }
 
-    /** Runtime-aware Anchor Proximity check against Watcher's Eye anchors only. */
     public static boolean isNearWatcherAnchorRuntime(
         List<SanctuaryAnchor> activeAnchors,
         Location location,
@@ -75,7 +64,7 @@ public final class SentryAwarenessService {
         return upgradeRepository.hasAnchorUpgrade(anchor.id(), AnchorUpgradeType.WATCHERS_EYE);
     }
 
-    /** Horizontal territory awareness, matching the Sanctuary territory model. */
+    /** Territory awareness follows the same flattened 3D ellipsoid as Sanctuary membership. */
     public boolean covers(List<SanctuaryAnchor> watcherAnchors, Location location) {
         if (location.getWorld() == null) return false;
         String world = location.getWorld().getName();
@@ -86,6 +75,7 @@ public final class SentryAwarenessService {
                 anchor.territoryRadius(),
                 world,
                 location.getX(),
+                location.getY(),
                 location.getZ()
             )) {
                 return true;
@@ -98,7 +88,7 @@ public final class SentryAwarenessService {
         return covers(watcherAnchors(sanctuaryId), location);
     }
 
-    /** Three-dimensional Anchor Proximity sphere centered on each Watcher's Eye anchor. */
+    /** Watcher's Eye local proximity remains a true 12-block sphere. */
     public boolean isNearWatcherAnchor(
         List<SanctuaryAnchor> watcherAnchors,
         Location location,

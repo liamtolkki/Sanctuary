@@ -23,6 +23,24 @@ public final class AnchorTerritoryService {
         this.anchorRepository = Objects.requireNonNull(anchorRepository, "anchorRepository");
     }
 
+    /** Actual 3D Sanctuary lookup. */
+    public Optional<Sanctuary> findCurrentSanctuary(
+        String world,
+        double x,
+        double y,
+        double z
+    ) throws SQLException {
+        Optional<SanctuaryAnchor> nearest = coveringAnchors(world, x, y, z).stream()
+            .min(Comparator
+                .comparingDouble((SanctuaryAnchor anchor) -> scaledDistance(anchor, x, y, z))
+                .thenComparing(anchor -> anchor.id().toString()));
+        if (nearest.isEmpty()) {
+            return Optional.empty();
+        }
+        return sanctuaryRepository.findById(nearest.orElseThrow().sanctuaryId());
+    }
+
+    /** Horizontal-footprint lookup retained for placement and compatibility code. */
     public Optional<Sanctuary> findCurrentSanctuary(
         String world,
         double x,
@@ -30,12 +48,32 @@ public final class AnchorTerritoryService {
     ) throws SQLException {
         Optional<SanctuaryAnchor> nearest = coveringAnchors(world, x, z).stream()
             .min(Comparator
-                .comparingDouble((SanctuaryAnchor anchor) -> distance(anchor, x, z))
+                .comparingDouble((SanctuaryAnchor anchor) -> horizontalDistance(anchor, x, z))
                 .thenComparing(anchor -> anchor.id().toString()));
         if (nearest.isEmpty()) {
             return Optional.empty();
         }
         return sanctuaryRepository.findById(nearest.orElseThrow().sanctuaryId());
+    }
+
+    public List<SanctuaryAnchor> coveringAnchors(
+        String world,
+        double x,
+        double y,
+        double z
+    ) throws SQLException {
+        Objects.requireNonNull(world, "world");
+        return anchorRepository.findActiveInWorld(world).stream()
+            .filter(anchor -> anchor.position().isPresent())
+            .filter(anchor -> TerritoryCalculator.contains(
+                anchor.position().orElseThrow(),
+                anchor.territoryRadius(),
+                world,
+                x,
+                y,
+                z
+            ))
+            .toList();
     }
 
     public List<SanctuaryAnchor> coveringAnchors(
@@ -51,6 +89,27 @@ public final class AnchorTerritoryService {
                 anchor.territoryRadius(),
                 world,
                 x,
+                z
+            ))
+            .toList();
+    }
+
+    public List<SanctuaryAnchor> coveringAnchors(
+        UUID sanctuaryId,
+        String world,
+        double x,
+        double y,
+        double z
+    ) throws SQLException {
+        Objects.requireNonNull(sanctuaryId, "sanctuaryId");
+        Objects.requireNonNull(world, "world");
+        return activeAnchors(sanctuaryId).stream()
+            .filter(anchor -> TerritoryCalculator.contains(
+                anchor.position().orElseThrow(),
+                anchor.territoryRadius(),
+                world,
+                x,
+                y,
                 z
             ))
             .toList();
@@ -79,6 +138,16 @@ public final class AnchorTerritoryService {
         UUID sanctuaryId,
         String world,
         double x,
+        double y,
+        double z
+    ) throws SQLException {
+        return !coveringAnchors(sanctuaryId, world, x, y, z).isEmpty();
+    }
+
+    public boolean contains(
+        UUID sanctuaryId,
+        String world,
+        double x,
         double z
     ) throws SQLException {
         return !coveringAnchors(sanctuaryId, world, x, z).isEmpty();
@@ -91,7 +160,11 @@ public final class AnchorTerritoryService {
             .toList();
     }
 
-    private static double distance(SanctuaryAnchor anchor, double x, double z) {
+    private static double scaledDistance(SanctuaryAnchor anchor, double x, double y, double z) {
+        return TerritoryCalculator.scaledDistance(anchor.position().orElseThrow(), x, y, z);
+    }
+
+    private static double horizontalDistance(SanctuaryAnchor anchor, double x, double z) {
         var position = anchor.position().orElseThrow();
         return Math.hypot(x - (position.x() + 0.5), z - (position.z() + 0.5));
     }

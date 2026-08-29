@@ -83,7 +83,7 @@ public final class TerritoryAwarenessListener implements Listener {
         }
         Location to = event.getTo();
         Location from = event.getFrom();
-        if (to == null || sameHorizontalBlock(from, to)) {
+        if (to == null || sameBlock(from, to)) {
             return;
         }
         updatePresence(event.getPlayer(), to);
@@ -110,11 +110,15 @@ public final class TerritoryAwarenessListener implements Listener {
         try {
             Optional<Sanctuary> current = anchorTerritoryService != null
                 ? anchorTerritoryService.findCurrentSanctuary(
-                    location.getWorld().getName(), location.getX(), location.getZ())
+                    location.getWorld().getName(),
+                    location.getX(),
+                    location.getY(),
+                    location.getZ())
                 : legacyPresenceService.findCurrentSanctuary(
                     repository.findActiveInWorld(location.getWorld().getName()),
                     location.getWorld().getName(),
                     location.getX(),
+                    location.getY(),
                     location.getZ()
                 );
 
@@ -205,9 +209,10 @@ public final class TerritoryAwarenessListener implements Listener {
         }
     }
 
-    private static boolean sameHorizontalBlock(Location first, Location second) {
+    private static boolean sameBlock(Location first, Location second) {
         return first.getWorld().equals(second.getWorld())
             && first.getBlockX() == second.getBlockX()
+            && first.getBlockY() == second.getBlockY()
             && first.getBlockZ() == second.getBlockZ();
     }
 }

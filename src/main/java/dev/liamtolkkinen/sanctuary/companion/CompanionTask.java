@@ -101,24 +101,12 @@ public final class CompanionTask implements Runnable {
             return;
         }
 
-        LivingEntity target = CompanionCombatMemory.target(owner, now)
-            .filter(value -> service.validTarget(companion, owner, value))
-            .orElse(null);
+        LivingEntity target = service.findTarget(companion, owner, now);
         if (target != null && !targetAllowed(companion, owner, target)) {
             target = null;
         }
         if (strictAquatic && target != null && !isWater(target.getLocation())) {
             target = null;
-        }
-
-        if (target == null) {
-            target = service.findTarget(companion, owner, now);
-            if (target != null && !targetAllowed(companion, owner, target)) {
-                target = null;
-            }
-            if (strictAquatic && target != null && !isWater(target.getLocation())) {
-                target = null;
-            }
         }
 
         if (target == null) {

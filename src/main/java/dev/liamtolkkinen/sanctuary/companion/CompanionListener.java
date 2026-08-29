@@ -202,7 +202,7 @@ public final class CompanionListener implements Listener {
     public void onTarget(EntityTargetLivingEntityEvent event) {
         if (event.getTarget() != null
             && (service.isManaged(event.getTarget()) || service.isCompanionVex(event.getTarget()))
-            && service.isSanctuaryDefenseEntity(event.getEntity())) {
+            && service.isProtectedSanctuaryDefenseEntity(event.getEntity())) {
             event.setCancelled(true);
             return;
         }
@@ -232,14 +232,14 @@ public final class CompanionListener implements Listener {
 
         if (event.getEntity() instanceof LivingEntity victim
             && (service.isManaged(victim) || service.isCompanionVex(victim))
-            && service.isSanctuaryDefenseEntity(attacker)) {
+            && service.isProtectedSanctuaryDefenseEntity(attacker)) {
             event.setCancelled(true);
             return;
         }
 
         if (event.getEntity() instanceof Player owner
             && !owner.getUniqueId().equals(attacker.getUniqueId())
-            && !service.isSanctuaryDefenseEntity(attacker)) {
+            && !service.isProtectedSanctuaryDefenseEntity(attacker)) {
             service.noteOwnerAttacked(owner, attacker, Instant.now());
         }
     }

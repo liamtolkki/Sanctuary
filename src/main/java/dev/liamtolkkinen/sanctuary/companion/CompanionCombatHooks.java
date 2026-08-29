@@ -9,7 +9,7 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.projectiles.ProjectileSource;
 
-/** Tracks explicit owner attacks and retaliation targets for companions. */
+/** Tracks owner combat intent, retaliation threats, and short-lived companion brawls. */
 public final class CompanionCombatHooks implements Listener {
     private final CompanionService service;
 
@@ -26,17 +26,20 @@ public final class CompanionCombatHooks implements Listener {
 
         Instant now = Instant.now();
 
-        if (service.isManaged(victim)
-            && !service.isSanctuaryDefenseEntity(attacker)) {
-            service.owner(victim)
+        if ((service.isManaged(victim) || service.isCompanionVex(victim))
+            && !service.isProtectedSanctuaryDefenseEntity(attacker)) {
+            service.combatOwner(victim)
                 .filter(owner -> !owner.getUniqueId().equals(attacker.getUniqueId()))
-                .ifPresent(owner -> CompanionCombatMemory.remember(owner, attacker, now));
+                .ifPresent(owner -> service.noteCompanionAttacked(owner, attacker, now));
         }
 
         if (attacker instanceof Player owner
-            && !service.isSanctuaryDefenseEntity(victim)) {
+            && !service.isProtectedSanctuaryDefenseEntity(victim)
+            && !service.isOwnedCompanionForce(owner, victim)) {
             CompanionCombatMemory.remember(owner, victim, now);
         }
+
+        service.noteCombatRelationship(attacker, victim, now);
     }
 
     private static LivingEntity resolveAttacker(EntityDamageByEntityEvent event) {

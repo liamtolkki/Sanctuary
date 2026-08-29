@@ -1,6 +1,7 @@
 package dev.liamtolkkinen.sanctuary.companion;
 
 import com.destroystokyo.paper.entity.ai.GoalType;
+import dev.liamtolkkinen.sanctuary.defense.DefenseTargetingRules;
 import dev.liamtolkkinen.sanctuary.sentry.SentryLoadout;
 import java.time.Duration;
 import java.time.Instant;
@@ -18,8 +19,10 @@ import java.util.logging.Logger;
 import net.kyori.adventure.text.Component;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
+import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
 import org.bukkit.World;
+import org.bukkit.block.Block;
 import org.bukkit.entity.Creeper;
 import org.bukkit.entity.Enderman;
 import org.bukkit.entity.Enemy;
@@ -48,10 +51,13 @@ public final class CompanionService {
     public static final double DEFENSE_MAX_DISTANCE = 32.0;
     public static final double STAY_COMBAT_RADIUS = 20.0;
     public static final Duration OWNER_THREAT_TIMEOUT = Duration.ofSeconds(15);
+    public static final Duration COMPANION_THREAT_TIMEOUT = Duration.ofSeconds(15);
+    public static final Duration COMBAT_RELATIONSHIP_TIMEOUT = Duration.ofSeconds(15);
     public static final Duration VEX_IDLE_TIMEOUT = Duration.ofSeconds(30);
 
-    private record Threat(UUID attackerId, Instant expiresAt) {
-    }
+    private static final int TELEPORT_HORIZONTAL_SEARCH_RADIUS = 6;
+    private static final int TELEPORT_VERTICAL_SEARCH_RADIUS = 8;
+    private static final double TELEPORT_EPSILON = 1.0e-3;
 
     private final JavaPlugin plugin;
     private final Logger logger;
@@ -67,7 +73,9 @@ public final class CompanionService {
     private final NamespacedKey sentryIdKey;
     private final NamespacedKey sentryVexParentKey;
     private final Map<UUID, UUID> authorizedTargets = new HashMap<>();
-    private final Map<UUID, Threat> ownerThreats = new HashMap<>();
+    private final Map<UUID, Map<UUID, Instant>> ownerThreats = new HashMap<>();
+    private final Map<UUID, Map<UUID, Instant>> companionThreats = new HashMap<>();
+    private final Map<UUID, Map<UUID, Instant>> combatRelationships = new HashMap<>();
     private final Map<UUID, Instant> vexActivity = new HashMap<>();
     private final Set<UUID> authorizedTeleports = new HashSet<>();
 
@@ -170,13 +178,18 @@ public final class CompanionService {
         return companionVexParentId(entity).isPresent();
     }
 
-    public boolean isSanctuaryDefenseEntity(Entity entity) {
-        if (isManaged(entity) || isCompanionVex(entity)) {
-            return true;
-        }
+    public boolean isCompanionForce(Entity entity) {
+        return isManaged(entity) || isCompanionVex(entity);
+    }
+
+    public boolean isProtectedSanctuaryDefenseEntity(Entity entity) {
         PersistentDataContainer data = entity.getPersistentDataContainer();
         return data.has(sentryIdKey, PersistentDataType.STRING)
             || data.has(sentryVexParentKey, PersistentDataType.STRING);
+    }
+
+    public boolean isSanctuaryDefenseEntity(Entity entity) {
+        return isCompanionForce(entity) || isProtectedSanctuaryDefenseEntity(entity);
     }
 
     public Optional<UUID> companionId(Entity entity) {
@@ -192,6 +205,33 @@ public final class CompanionService {
             .map(Bukkit::getPlayer)
             .filter(Objects::nonNull)
             .filter(Player::isOnline);
+    }
+
+    public Optional<UUID> combatOwnerId(Entity entity) {
+        if (entity instanceof Player player) {
+            return Optional.of(player.getUniqueId());
+        }
+        Optional<UUID> directOwner = ownerId(entity);
+        if (directOwner.isPresent()) {
+            return directOwner;
+        }
+        return companionVexParentId(entity)
+            .flatMap(this::loadedCompanionById)
+            .flatMap(this::ownerId);
+    }
+
+    public Optional<Player> combatOwner(Entity entity) {
+        return combatOwnerId(entity)
+            .map(Bukkit::getPlayer)
+            .filter(Objects::nonNull)
+            .filter(Player::isOnline);
+    }
+
+    public boolean isOwnedCompanionForce(Player owner, Entity entity) {
+        return isCompanionForce(entity)
+            && combatOwnerId(entity)
+                .filter(owner.getUniqueId()::equals)
+                .isPresent();
     }
 
     public boolean isOwner(Player player, Entity companion) {
@@ -269,13 +309,43 @@ public final class CompanionService {
     }
 
     public void noteOwnerAttacked(Player owner, LivingEntity attacker, Instant now) {
-        if (owner.getUniqueId().equals(attacker.getUniqueId()) || isSanctuaryDefenseEntity(attacker)) {
+        if (!canRememberThreat(owner, attacker)) {
             return;
         }
-        ownerThreats.put(
+        rememberThreat(
+            ownerThreats,
             owner.getUniqueId(),
-            new Threat(attacker.getUniqueId(), now.plus(OWNER_THREAT_TIMEOUT))
+            attacker.getUniqueId(),
+            now.plus(OWNER_THREAT_TIMEOUT)
         );
+    }
+
+    public void noteCompanionAttacked(Player owner, LivingEntity attacker, Instant now) {
+        if (!canRememberThreat(owner, attacker)) {
+            return;
+        }
+        rememberThreat(
+            companionThreats,
+            owner.getUniqueId(),
+            attacker.getUniqueId(),
+            now.plus(COMPANION_THREAT_TIMEOUT)
+        );
+    }
+
+    public void noteCombatRelationship(
+        LivingEntity first,
+        LivingEntity second,
+        Instant now
+    ) {
+        UUID firstOwner = combatOwnerId(first).orElse(null);
+        UUID secondOwner = combatOwnerId(second).orElse(null);
+        if (firstOwner == null || secondOwner == null || firstOwner.equals(secondOwner)) {
+            return;
+        }
+
+        Instant expiresAt = now.plus(COMBAT_RELATIONSHIP_TIMEOUT);
+        rememberRelationship(firstOwner, secondOwner, expiresAt);
+        rememberRelationship(secondOwner, firstOwner, expiresAt);
     }
 
     public LivingEntity findTarget(Mob companion, Player owner, Instant now) {
@@ -287,25 +357,46 @@ public final class CompanionService {
             .stream()
             .filter(Mob.class::isInstance)
             .map(Mob.class::cast)
-            .filter(mob -> mob.getTarget() != null)
-            .filter(mob -> mob.getTarget().getUniqueId().equals(owner.getUniqueId()))
-            .filter(mob -> validTarget(companion, owner, mob))
-            .min(Comparator.comparingDouble(mob -> mob.getLocation().distanceSquared(owner.getLocation())))
+            .filter(mob -> isTargetingOwner(mob, owner))
+            .filter(mob -> eligibleTarget(companion, owner, mob))
+            .min(Comparator.comparingDouble(
+                mob -> mob.getLocation().distanceSquared(owner.getLocation())
+            ))
             .orElse(null);
         if (targetingOwner != null) {
             return targetingOwner;
         }
 
-        Threat threat = ownerThreats.get(owner.getUniqueId());
-        if (threat != null) {
-            if (now.isBefore(threat.expiresAt())) {
-                Entity attacker = Bukkit.getEntity(threat.attackerId());
-                if (attacker instanceof LivingEntity living && validTarget(companion, owner, living)) {
-                    return living;
-                }
-            } else {
-                ownerThreats.remove(owner.getUniqueId());
-            }
+        LivingEntity recentOwnerAttacker = closestRememberedThreat(
+            companion,
+            owner,
+            ownerThreats,
+            now
+        );
+        if (recentOwnerAttacker != null) {
+            return recentOwnerAttacker;
+        }
+
+        LivingEntity deliberateTarget = CompanionCombatMemory.target(owner, now)
+            .filter(target -> eligibleTarget(companion, owner, target))
+            .orElse(null);
+        if (deliberateTarget != null) {
+            return deliberateTarget;
+        }
+
+        LivingEntity companionAttacker = closestRememberedThreat(
+            companion,
+            owner,
+            companionThreats,
+            now
+        );
+        if (companionAttacker != null) {
+            return companionAttacker;
+        }
+
+        LivingEntity combatOpponent = closestCombatOpponent(companion, owner, now);
+        if (combatOpponent != null) {
+            return combatOpponent;
         }
 
         Location center = mode(companion) == CompanionMode.STAY
@@ -325,7 +416,8 @@ public final class CompanionService {
             .map(Enemy.class::cast)
             .filter(LivingEntity.class::isInstance)
             .map(LivingEntity.class::cast)
-            .filter(target -> validTarget(companion, owner, target))
+            .filter(target -> !isCompanionForce(target))
+            .filter(target -> eligibleTarget(companion, owner, target))
             .min(Comparator.comparingDouble(target -> target.getLocation().distanceSquared(center)))
             .orElse(null);
     }
@@ -334,7 +426,8 @@ public final class CompanionService {
         if (target.isDead()
             || target.getUniqueId().equals(owner.getUniqueId())
             || target.getWorld() != owner.getWorld()
-            || isSanctuaryDefenseEntity(target)) {
+            || isProtectedSanctuaryDefenseEntity(target)
+            || isOwnedCompanionForce(owner, target)) {
             return false;
         }
 
@@ -382,24 +475,34 @@ public final class CompanionService {
     }
 
     public boolean targetAllowed(Mob mob, LivingEntity target) {
-        return target != null
-            && !isSanctuaryDefenseEntity(target)
-            && authorizedTarget(mob)
-                .filter(value -> value.getUniqueId().equals(target.getUniqueId()))
-                .isPresent();
+        if (target == null || isProtectedSanctuaryDefenseEntity(target)) {
+            return false;
+        }
+        UUID attackerOwner = combatOwnerId(mob).orElse(null);
+        UUID targetOwner = combatOwnerId(target).orElse(null);
+        if (attackerOwner != null && attackerOwner.equals(targetOwner)) {
+            return false;
+        }
+        return authorizedTarget(mob)
+            .filter(value -> value.getUniqueId().equals(target.getUniqueId()))
+            .isPresent();
     }
 
     public boolean mayDamage(Entity attacker, LivingEntity victim) {
-        if (isSanctuaryDefenseEntity(victim)) {
+        if (isProtectedSanctuaryDefenseEntity(victim)) {
             return false;
         }
-        UUID owner = ownerId(attacker).orElseGet(() -> companionVexParentId(attacker)
-            .flatMap(this::loadedCompanionById)
-            .flatMap(this::ownerId)
-            .orElse(null));
-        if (owner != null && owner.equals(victim.getUniqueId())) {
+
+        UUID attackerOwner = combatOwnerId(attacker).orElse(null);
+        if (attackerOwner != null && attackerOwner.equals(victim.getUniqueId())) {
             return false;
         }
+
+        UUID victimOwner = combatOwnerId(victim).orElse(null);
+        if (attackerOwner != null && attackerOwner.equals(victimOwner)) {
+            return false;
+        }
+
         return authorizedTarget(attacker)
             .filter(value -> value.getUniqueId().equals(victim.getUniqueId()))
             .isPresent();
@@ -468,7 +571,7 @@ public final class CompanionService {
         Location target = formationLocation(owner, companion);
         if (companion.getWorld() != owner.getWorld()) {
             if (owner.isOnGround()) {
-                teleportManaged(companion, target);
+                teleportFollower(companion, target);
             }
             return;
         }
@@ -476,7 +579,7 @@ public final class CompanionService {
         double distanceSquared = companion.getLocation().distanceSquared(owner.getLocation());
         if (distanceSquared > TELEPORT_DISTANCE * TELEPORT_DISTANCE) {
             if (owner.isOnGround()) {
-                teleportManaged(companion, target);
+                teleportFollower(companion, target);
             }
             return;
         }
@@ -498,7 +601,7 @@ public final class CompanionService {
             if (mode(companion) != CompanionMode.FOLLOW || !isOwner(owner, companion)) {
                 continue;
             }
-            teleportManaged(companion, formationLocation(owner, companion));
+            teleportFollower(companion, formationLocation(owner, companion));
         }
     }
 
@@ -623,6 +726,122 @@ public final class CompanionService {
         return false;
     }
 
+    private boolean canRememberThreat(Player owner, LivingEntity attacker) {
+        return !owner.getUniqueId().equals(attacker.getUniqueId())
+            && !isProtectedSanctuaryDefenseEntity(attacker)
+            && !isOwnedCompanionForce(owner, attacker);
+    }
+
+    private void rememberThreat(
+        Map<UUID, Map<UUID, Instant>> memory,
+        UUID ownerId,
+        UUID attackerId,
+        Instant expiresAt
+    ) {
+        memory.computeIfAbsent(ownerId, ignored -> new HashMap<>())
+            .put(attackerId, expiresAt);
+    }
+
+    private void rememberRelationship(UUID ownerId, UUID opponentId, Instant expiresAt) {
+        combatRelationships.computeIfAbsent(ownerId, ignored -> new HashMap<>())
+            .put(opponentId, expiresAt);
+    }
+
+    private boolean isTargetingOwner(Mob mob, Player owner) {
+        LivingEntity target = mob.getTarget();
+        if (target != null && target.getUniqueId().equals(owner.getUniqueId())) {
+            return true;
+        }
+        return isCompanionForce(mob)
+            && authorizedTarget(mob)
+                .filter(value -> value.getUniqueId().equals(owner.getUniqueId()))
+                .isPresent();
+    }
+
+    private LivingEntity closestRememberedThreat(
+        Mob companion,
+        Player owner,
+        Map<UUID, Map<UUID, Instant>> memory,
+        Instant now
+    ) {
+        Map<UUID, Instant> threats = memory.get(owner.getUniqueId());
+        if (threats == null) {
+            return null;
+        }
+
+        threats.entrySet().removeIf(entry -> !now.isBefore(entry.getValue()));
+        if (threats.isEmpty()) {
+            memory.remove(owner.getUniqueId());
+            return null;
+        }
+
+        return threats.keySet().stream()
+            .map(Bukkit::getEntity)
+            .filter(LivingEntity.class::isInstance)
+            .map(LivingEntity.class::cast)
+            .filter(target -> !target.isDead())
+            .filter(target -> eligibleTarget(companion, owner, target))
+            .min(Comparator.comparingDouble(
+                target -> target.getLocation().distanceSquared(owner.getLocation())
+            ))
+            .orElse(null);
+    }
+
+    private LivingEntity closestCombatOpponent(Mob companion, Player owner, Instant now) {
+        Set<UUID> opponents = activeCombatOpponents(owner.getUniqueId(), now);
+        if (opponents.isEmpty()) {
+            return null;
+        }
+
+        return owner.getNearbyEntities(
+                DEFENSE_MAX_DISTANCE,
+                DEFENSE_MAX_DISTANCE,
+                DEFENSE_MAX_DISTANCE
+            )
+            .stream()
+            .filter(LivingEntity.class::isInstance)
+            .map(LivingEntity.class::cast)
+            .filter(target -> target instanceof Player || isCompanionForce(target))
+            .filter(target -> combatOwnerId(target).filter(opponents::contains).isPresent())
+            .filter(target -> eligibleTarget(companion, owner, target))
+            .min(Comparator.comparingDouble(
+                target -> target.getLocation().distanceSquared(owner.getLocation())
+            ))
+            .orElse(null);
+    }
+
+    private Set<UUID> activeCombatOpponents(UUID ownerId, Instant now) {
+        Map<UUID, Instant> relationships = combatRelationships.get(ownerId);
+        if (relationships == null) {
+            return Set.of();
+        }
+
+        relationships.entrySet().removeIf(entry -> !now.isBefore(entry.getValue()));
+        if (relationships.isEmpty()) {
+            combatRelationships.remove(ownerId);
+            return Set.of();
+        }
+        return Set.copyOf(relationships.keySet());
+    }
+
+    private boolean eligibleTarget(Mob companion, Player owner, LivingEntity target) {
+        if (!validTarget(companion, owner, target)) {
+            return false;
+        }
+
+        Location center = mode(companion) == CompanionMode.STAY
+            ? stayLocation(companion).orElse(companion.getLocation())
+            : owner.getLocation();
+        if (!DefenseTargetingRules.isLocallyRelevant(companion, center, target)) {
+            return false;
+        }
+
+        boolean strictAquatic = definition(companion)
+            .map(CompanionDefinition::requiresWaterSpawn)
+            .orElse(false);
+        return !strictAquatic || target.getLocation().getBlock().getType() == Material.WATER;
+    }
+
     private void syncEvokerVexes(Mob parent, LivingEntity target, Instant now) {
         if (!(parent instanceof Evoker)) {
             return;
@@ -699,6 +918,169 @@ public final class CompanionService {
         } catch (IllegalArgumentException exception) {
             return Optional.empty();
         }
+    }
+
+    private void teleportFollower(Mob companion, Location preferredDestination) {
+        findSafeTeleportDestination(companion, preferredDestination)
+            .ifPresent(destination -> teleportManaged(companion, destination));
+    }
+
+    private Optional<Location> findSafeTeleportDestination(
+        Entity entity,
+        Location preferredDestination
+    ) {
+        World world = preferredDestination.getWorld();
+        if (world == null) {
+            return Optional.empty();
+        }
+
+        boolean aquatic = definition(entity)
+            .map(CompanionDefinition::requiresWaterSpawn)
+            .orElse(false);
+        int baseX = preferredDestination.getBlockX();
+        int baseY = preferredDestination.getBlockY();
+        int baseZ = preferredDestination.getBlockZ();
+
+        for (int radius = 0; radius <= TELEPORT_HORIZONTAL_SEARCH_RADIUS; radius++) {
+            for (int dx = -radius; dx <= radius; dx++) {
+                for (int dz = -radius; dz <= radius; dz++) {
+                    if (radius > 0 && Math.abs(dx) != radius && Math.abs(dz) != radius) {
+                        continue;
+                    }
+                    Optional<Location> safe = findSafeTeleportInColumn(
+                        entity,
+                        world,
+                        baseX + dx,
+                        baseY,
+                        baseZ + dz,
+                        preferredDestination,
+                        aquatic
+                    );
+                    if (safe.isPresent()) {
+                        return safe;
+                    }
+                }
+            }
+        }
+        return Optional.empty();
+    }
+
+    private Optional<Location> findSafeTeleportInColumn(
+        Entity entity,
+        World world,
+        int x,
+        int baseY,
+        int z,
+        Location orientation,
+        boolean aquatic
+    ) {
+        for (int offset = 0; offset <= TELEPORT_VERTICAL_SEARCH_RADIUS; offset++) {
+            Location above = teleportCandidate(world, x, baseY + offset, z, orientation);
+            if (isSafeTeleportDestination(entity, above, aquatic)) {
+                return Optional.of(above);
+            }
+            if (offset == 0) {
+                continue;
+            }
+            Location below = teleportCandidate(world, x, baseY - offset, z, orientation);
+            if (isSafeTeleportDestination(entity, below, aquatic)) {
+                return Optional.of(below);
+            }
+        }
+        return Optional.empty();
+    }
+
+    private Location teleportCandidate(
+        World world,
+        int x,
+        int y,
+        int z,
+        Location orientation
+    ) {
+        return new Location(
+            world,
+            x + 0.5,
+            y + TELEPORT_EPSILON,
+            z + 0.5,
+            orientation.getYaw(),
+            orientation.getPitch()
+        );
+    }
+
+    private boolean isSafeTeleportDestination(Entity entity, Location destination, boolean aquatic) {
+        World world = destination.getWorld();
+        if (world == null) {
+            return false;
+        }
+
+        double halfWidth = Math.max(0.1, entity.getWidth() * 0.5);
+        double height = Math.max(0.1, entity.getHeight());
+        int minX = floorBlock(destination.getX() - halfWidth + TELEPORT_EPSILON);
+        int maxX = floorBlock(destination.getX() + halfWidth - TELEPORT_EPSILON);
+        int minY = floorBlock(destination.getY());
+        int maxY = floorBlock(destination.getY() + height - TELEPORT_EPSILON);
+        int minZ = floorBlock(destination.getZ() - halfWidth + TELEPORT_EPSILON);
+        int maxZ = floorBlock(destination.getZ() + halfWidth - TELEPORT_EPSILON);
+
+        if (minY < world.getMinHeight() || maxY >= world.getMaxHeight()) {
+            return false;
+        }
+
+        for (int x = minX; x <= maxX; x++) {
+            for (int y = minY; y <= maxY; y++) {
+                for (int z = minZ; z <= maxZ; z++) {
+                    Block block = world.getBlockAt(x, y, z);
+                    if (aquatic) {
+                        if (block.getType() != Material.WATER) {
+                            return false;
+                        }
+                    } else if (!block.isPassable() || isHazardousBodyBlock(block.getType())) {
+                        return false;
+                    }
+                }
+            }
+        }
+
+        if (aquatic) {
+            return true;
+        }
+        if (minY <= world.getMinHeight()) {
+            return false;
+        }
+
+        for (int x = minX; x <= maxX; x++) {
+            for (int z = minZ; z <= maxZ; z++) {
+                Block support = world.getBlockAt(x, minY - 1, z);
+                if (support.isPassable()
+                    || isHazardousSupportBlock(support.getType())
+                    || support.getBoundingBox().getMaxY() > destination.getY() + TELEPORT_EPSILON) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    private int floorBlock(double value) {
+        return (int) Math.floor(value);
+    }
+
+    private boolean isHazardousBodyBlock(Material material) {
+        return material == Material.LAVA
+            || material == Material.FIRE
+            || material == Material.SOUL_FIRE
+            || material == Material.POWDER_SNOW
+            || material == Material.SWEET_BERRY_BUSH
+            || material == Material.WITHER_ROSE
+            || material == Material.POINTED_DRIPSTONE;
+    }
+
+    private boolean isHazardousSupportBlock(Material material) {
+        return isHazardousBodyBlock(material)
+            || material == Material.MAGMA_BLOCK
+            || material == Material.CAMPFIRE
+            || material == Material.SOUL_CAMPFIRE
+            || material == Material.CACTUS;
     }
 
     private void teleportManaged(Entity entity, Location destination) {

@@ -9,6 +9,8 @@ import java.util.Objects;
 import java.util.UUID;
 
 public final class SanctuarySecurityService {
+    public static final int LOCKDOWN_UNLOCK_TIER = 3;
+
     private final SanctuarySecurityRepository repository;
     private final SanctuaryPermissionService permissionService;
 
@@ -18,6 +20,11 @@ public final class SanctuarySecurityService {
     ) {
         this.repository = Objects.requireNonNull(repository, "repository");
         this.permissionService = Objects.requireNonNull(permissionService, "permissionService");
+    }
+
+    public static boolean lockdownUnlocked(Sanctuary sanctuary) {
+        Objects.requireNonNull(sanctuary, "sanctuary");
+        return sanctuary.tier() >= LOCKDOWN_UNLOCK_TIER;
     }
 
     public SanctuarySecurityMode mode(Sanctuary sanctuary) throws SQLException {

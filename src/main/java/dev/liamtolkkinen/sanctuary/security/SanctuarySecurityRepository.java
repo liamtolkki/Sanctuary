@@ -29,4 +29,7 @@ public interface SanctuarySecurityRepository {
 
     default void clearAggression(UUID sanctuaryId, UUID playerId) throws SQLException {
     }
+
+    default void clearAggressionForPlayer(UUID playerId) throws SQLException {
+    }
 }

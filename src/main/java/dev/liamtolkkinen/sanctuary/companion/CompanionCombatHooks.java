@@ -9,7 +9,7 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.projectiles.ProjectileSource;
 
-/** Adds owner-assist and companion-retaliation targets to the existing combat memory. */
+/** Tracks explicit owner attacks and retaliation targets for companions. */
 public final class CompanionCombatHooks implements Listener {
     private final CompanionService service;
 
@@ -26,14 +26,16 @@ public final class CompanionCombatHooks implements Listener {
 
         Instant now = Instant.now();
 
-        if ((service.isManaged(victim) || service.isCompanionVex(victim))
+        if (service.isManaged(victim)
             && !service.isSanctuaryDefenseEntity(attacker)) {
-            service.owner(victim).ifPresent(owner -> service.noteOwnerAttacked(owner, attacker, now));
+            service.owner(victim)
+                .filter(owner -> !owner.getUniqueId().equals(attacker.getUniqueId()))
+                .ifPresent(owner -> CompanionCombatMemory.remember(owner, attacker, now));
         }
 
         if (attacker instanceof Player owner
             && !service.isSanctuaryDefenseEntity(victim)) {
-            service.noteOwnerAttacked(owner, victim, now);
+            CompanionCombatMemory.remember(owner, victim, now);
         }
     }
 

@@ -3,6 +3,7 @@ package dev.liamtolkkinen.sanctuary.security;
 import dev.liamtolkkinen.sanctuary.sanctuary.Sanctuary;
 import dev.liamtolkkinen.sanctuary.trust.SanctuaryPermissionService;
 import java.sql.SQLException;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
@@ -10,6 +11,7 @@ import java.util.UUID;
 
 public final class SanctuarySecurityService {
     public static final int LOCKDOWN_UNLOCK_TIER = 3;
+    public static final Duration AGGRESSION_DURATION = Duration.ofMinutes(10);
 
     private final SanctuarySecurityRepository repository;
     private final SanctuaryPermissionService permissionService;
@@ -53,14 +55,66 @@ public final class SanctuarySecurityService {
     }
 
     public SanctuaryThreat threat(Sanctuary sanctuary, UUID playerId) throws SQLException {
+        return threat(sanctuary, playerId, Instant.now());
+    }
+
+    public SanctuaryThreat threat(Sanctuary sanctuary, UUID playerId, Instant now) throws SQLException {
+        Objects.requireNonNull(sanctuary, "sanctuary");
+        Objects.requireNonNull(playerId, "playerId");
+        Objects.requireNonNull(now, "now");
+
         SanctuaryRelationship relationship = relationship(sanctuary, playerId);
+        if (relationship == SanctuaryRelationship.OWNER) {
+            return SanctuaryThreat.SAFE;
+        }
+        if (isAggressive(sanctuary, playerId, now)) {
+            return SanctuaryThreat.HOSTILE;
+        }
         return switch (relationship) {
-            case OWNER, TRUSTED -> SanctuaryThreat.SAFE;
+            case OWNER -> SanctuaryThreat.SAFE;
+            case TRUSTED -> SanctuaryThreat.SAFE;
             case BLACKLISTED -> SanctuaryThreat.HOSTILE;
             case NEUTRAL -> mode(sanctuary) == SanctuarySecurityMode.LOCKDOWN
                 ? SanctuaryThreat.HOSTILE
                 : SanctuaryThreat.NEUTRAL;
         };
+    }
+
+    public void markAggressive(Sanctuary sanctuary, UUID playerId, Instant now) throws SQLException {
+        Objects.requireNonNull(sanctuary, "sanctuary");
+        Objects.requireNonNull(playerId, "playerId");
+        Objects.requireNonNull(now, "now");
+        if (sanctuary.ownerId().equals(playerId)) {
+            return;
+        }
+        repository.setAggressionUntil(
+            sanctuary.id(),
+            playerId,
+            now.plus(AGGRESSION_DURATION)
+        );
+    }
+
+    public boolean isAggressive(Sanctuary sanctuary, UUID playerId) throws SQLException {
+        return isAggressive(sanctuary, playerId, Instant.now());
+    }
+
+    public boolean isAggressive(Sanctuary sanctuary, UUID playerId, Instant now) throws SQLException {
+        Objects.requireNonNull(sanctuary, "sanctuary");
+        Objects.requireNonNull(playerId, "playerId");
+        Objects.requireNonNull(now, "now");
+        if (sanctuary.ownerId().equals(playerId)) {
+            return false;
+        }
+
+        var hostileUntil = repository.getAggressionUntil(sanctuary.id(), playerId);
+        if (hostileUntil.isEmpty()) {
+            return false;
+        }
+        if (!now.isBefore(hostileUntil.orElseThrow())) {
+            repository.clearAggression(sanctuary.id(), playerId);
+            return false;
+        }
+        return true;
     }
 
     public List<SanctuaryBlacklistEntry> blacklistedPlayers(Sanctuary sanctuary) throws SQLException {
@@ -85,6 +139,7 @@ public final class SanctuarySecurityService {
     public void prepareForTrust(Sanctuary sanctuary, UUID playerId) throws SQLException {
         requireNonOwner(sanctuary, playerId);
         repository.removeBlacklisted(sanctuary.id(), playerId);
+        repository.clearAggression(sanctuary.id(), playerId);
     }
 
     public boolean isBlacklisted(Sanctuary sanctuary, UUID playerId) throws SQLException {

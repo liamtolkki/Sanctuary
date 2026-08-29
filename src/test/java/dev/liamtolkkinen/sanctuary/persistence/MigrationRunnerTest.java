@@ -28,7 +28,7 @@ class MigrationRunnerTest {
             var result = statement.executeQuery("SELECT COUNT(*) FROM schema_migrations")
         ) {
             assertTrue(result.next());
-            assertEquals(11, result.getInt(1));
+            assertEquals(12, result.getInt(1));
         }
 
         try (
@@ -43,6 +43,7 @@ class MigrationRunnerTest {
                       'sanctuary_capabilities',
                       'sanctuary_security',
                       'sanctuary_blacklist',
+                      'sanctuary_aggression',
                       'sanctuary_effect_levels',
                       'sanctuary_sentry_defaults',
                       'sentries',
@@ -58,7 +59,7 @@ class MigrationRunnerTest {
             var result = statement.executeQuery()
         ) {
             assertTrue(result.next());
-            assertEquals(15, result.getInt(1));
+            assertEquals(16, result.getInt(1));
         }
     }
 }

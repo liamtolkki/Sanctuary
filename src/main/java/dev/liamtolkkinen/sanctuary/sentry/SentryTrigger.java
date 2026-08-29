@@ -1,7 +1,9 @@
 package dev.liamtolkkinen.sanctuary.sentry;
 
 public enum SentryTrigger {
-    UNAUTHORIZED_PLAYER_ENTERED("Unauthorized Player Entered", true),
+    // Retained only so older persisted rows can still be read. This trigger is permanently disabled
+    // and omitted from sentry configuration UI.
+    UNAUTHORIZED_PLAYER_ENTERED("Unauthorized Player Entered", false, false),
     CONTAINER_OPENED("Container Opened", false),
     ENTITY_HURT("Entity Hurt", false),
     HOSTILE_MOB_ENTERED("Hostile Mob Present", true),
@@ -16,10 +18,16 @@ public enum SentryTrigger {
 
     private final String displayName;
     private final boolean defaultEnabled;
+    private final boolean configurable;
 
     SentryTrigger(String displayName, boolean defaultEnabled) {
+        this(displayName, defaultEnabled, true);
+    }
+
+    SentryTrigger(String displayName, boolean defaultEnabled, boolean configurable) {
         this.displayName = displayName;
         this.defaultEnabled = defaultEnabled;
+        this.configurable = configurable;
     }
 
     public String displayName() {
@@ -28,5 +36,15 @@ public enum SentryTrigger {
 
     public boolean defaultEnabled() {
         return defaultEnabled;
+    }
+
+    public boolean configurable() {
+        return configurable;
+    }
+
+    public boolean causesPlayerAggression() {
+        return this == OWNER_ATTACKED
+            || this == SENTRY_ATTACKED
+            || this == BEACON_ATTACKED;
     }
 }

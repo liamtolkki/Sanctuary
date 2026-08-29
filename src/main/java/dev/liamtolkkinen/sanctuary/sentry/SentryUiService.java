@@ -176,6 +176,7 @@ public final class SentryUiService {
                 int[] slots = {10, 11, 12, 13, 14, 15, 16, 19, 20, 21, 22, 23};
                 int index = 0;
                 for (SentryTrigger trigger : SentryTrigger.values()) {
+                    if (!trigger.configurable()) continue;
                     boolean enabled = repository.getDefault(sanctuaryId, trigger);
                     menu.set(
                         slots[index++],
@@ -238,6 +239,7 @@ public final class SentryUiService {
                 int[] slots = {10, 11, 12, 13, 14, 15, 16, 19, 20, 21, 22, 23};
                 int index = 0;
                 for (SentryTrigger trigger : SentryTrigger.values()) {
+                    if (!trigger.configurable()) continue;
                     SentryOverride override = repository.getOverride(sentryId, trigger);
                     boolean effective = service.effective(sentry, trigger);
                     String state = override == SentryOverride.INHERIT

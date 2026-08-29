@@ -20,7 +20,7 @@ class SqliteSanctuarySecurityRepositoryTest {
     Path tempDirectory;
 
     @Test
-    void modeAndBlacklistPersistAndCascade() throws Exception {
+    void modeBlacklistAndAggressionPersistAndCascade() throws Exception {
         DatabaseManager databaseManager = new DatabaseManager(tempDirectory.resolve("sanctuary.db"));
         new MigrationRunner(databaseManager).migrate();
         SqliteSanctuaryRepository sanctuaryRepository = new SqliteSanctuaryRepository(databaseManager);
@@ -59,9 +59,20 @@ class SqliteSanctuarySecurityRepositoryTest {
         securityRepository.removeBlacklisted(sanctuaryId, playerId);
         assertFalse(securityRepository.isBlacklisted(sanctuaryId, playerId));
 
+        Instant hostileUntil = now.plusSeconds(600);
+        securityRepository.setAggressionUntil(sanctuaryId, playerId, hostileUntil);
+        assertEquals(
+            Optional.of(hostileUntil),
+            securityRepository.getAggressionUntil(sanctuaryId, playerId)
+        );
+        securityRepository.clearAggression(sanctuaryId, playerId);
+        assertEquals(Optional.empty(), securityRepository.getAggressionUntil(sanctuaryId, playerId));
+
         securityRepository.addBlacklisted(sanctuaryId, playerId, now);
+        securityRepository.setAggressionUntil(sanctuaryId, playerId, hostileUntil);
         sanctuaryRepository.delete(sanctuaryId);
         assertFalse(securityRepository.isBlacklisted(sanctuaryId, playerId));
+        assertEquals(Optional.empty(), securityRepository.getAggressionUntil(sanctuaryId, playerId));
         assertEquals(SanctuarySecurityMode.NORMAL, securityRepository.getMode(sanctuaryId));
     }
 }

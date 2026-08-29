@@ -8,12 +8,13 @@ import org.junit.jupiter.api.Test;
 final class SentryTriggerTest {
     @Test
     void neutralProtectionDefaultsEnableOnlyCoreDefenseTriggers() {
-        assertTrue(SentryTrigger.UNAUTHORIZED_PLAYER_ENTERED.defaultEnabled());
         assertTrue(SentryTrigger.HOSTILE_MOB_ENTERED.defaultEnabled());
         assertTrue(SentryTrigger.OWNER_ATTACKED.defaultEnabled());
         assertTrue(SentryTrigger.SENTRY_ATTACKED.defaultEnabled());
         assertTrue(SentryTrigger.BEACON_ATTACKED.defaultEnabled());
 
+        assertFalse(SentryTrigger.UNAUTHORIZED_PLAYER_ENTERED.defaultEnabled());
+        assertFalse(SentryTrigger.UNAUTHORIZED_PLAYER_ENTERED.configurable());
         assertFalse(SentryTrigger.CONTAINER_OPENED.defaultEnabled());
         assertFalse(SentryTrigger.ENTITY_HURT.defaultEnabled());
         assertFalse(SentryTrigger.NEUTRAL_MOB_ENTERED.defaultEnabled());
@@ -21,5 +22,16 @@ final class SentryTriggerTest {
         assertFalse(SentryTrigger.BLOCK_BROKEN.defaultEnabled());
         assertFalse(SentryTrigger.BLOCK_PLACED.defaultEnabled());
         assertFalse(SentryTrigger.INTERACTION_USED.defaultEnabled());
+    }
+
+    @Test
+    void onlyDirectSanctuaryAttacksCausePlayerAggression() {
+        assertTrue(SentryTrigger.OWNER_ATTACKED.causesPlayerAggression());
+        assertTrue(SentryTrigger.SENTRY_ATTACKED.causesPlayerAggression());
+        assertTrue(SentryTrigger.BEACON_ATTACKED.causesPlayerAggression());
+
+        assertFalse(SentryTrigger.HOSTILE_MOB_ENTERED.causesPlayerAggression());
+        assertFalse(SentryTrigger.ENTITY_HURT.causesPlayerAggression());
+        assertFalse(SentryTrigger.BEACON_PROXIMITY.causesPlayerAggression());
     }
 }

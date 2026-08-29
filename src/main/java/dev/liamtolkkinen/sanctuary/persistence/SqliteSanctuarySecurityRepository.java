@@ -8,6 +8,7 @@ import java.sql.SQLException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 public final class SqliteSanctuarySecurityRepository implements SanctuarySecurityRepository {
@@ -119,6 +120,60 @@ public final class SqliteSanctuarySecurityRepository implements SanctuarySecurit
             Connection connection = databaseManager.openConnection();
             var statement = connection.prepareStatement("""
                 DELETE FROM sanctuary_blacklist
+                WHERE sanctuary_id = ? AND player_uuid = ?
+                """)
+        ) {
+            statement.setString(1, sanctuaryId.toString());
+            statement.setString(2, playerId.toString());
+            statement.executeUpdate();
+        }
+    }
+
+    @Override
+    public Optional<Instant> getAggressionUntil(UUID sanctuaryId, UUID playerId) throws SQLException {
+        try (
+            Connection connection = databaseManager.openConnection();
+            var statement = connection.prepareStatement("""
+                SELECT hostile_until
+                FROM sanctuary_aggression
+                WHERE sanctuary_id = ? AND player_uuid = ?
+                """)
+        ) {
+            statement.setString(1, sanctuaryId.toString());
+            statement.setString(2, playerId.toString());
+            try (var result = statement.executeQuery()) {
+                return result.next()
+                    ? Optional.of(Instant.parse(result.getString("hostile_until")))
+                    : Optional.empty();
+            }
+        }
+    }
+
+    @Override
+    public void setAggressionUntil(UUID sanctuaryId, UUID playerId, Instant hostileUntil)
+        throws SQLException {
+        try (
+            Connection connection = databaseManager.openConnection();
+            var statement = connection.prepareStatement("""
+                INSERT INTO sanctuary_aggression(sanctuary_id, player_uuid, hostile_until)
+                VALUES (?, ?, ?)
+                ON CONFLICT(sanctuary_id, player_uuid)
+                DO UPDATE SET hostile_until = excluded.hostile_until
+                """)
+        ) {
+            statement.setString(1, sanctuaryId.toString());
+            statement.setString(2, playerId.toString());
+            statement.setString(3, hostileUntil.toString());
+            statement.executeUpdate();
+        }
+    }
+
+    @Override
+    public void clearAggression(UUID sanctuaryId, UUID playerId) throws SQLException {
+        try (
+            Connection connection = databaseManager.openConnection();
+            var statement = connection.prepareStatement("""
+                DELETE FROM sanctuary_aggression
                 WHERE sanctuary_id = ? AND player_uuid = ?
                 """)
         ) {

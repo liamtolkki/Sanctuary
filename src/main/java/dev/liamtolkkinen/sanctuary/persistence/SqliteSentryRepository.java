@@ -49,22 +49,26 @@ public final class SqliteSentryRepository implements SentryRepository {
     @Override public List<SentryRecord> findAll() throws SQLException { return many("SELECT * FROM sentries ORDER BY created_at", null); }
 
     @Override public boolean getDefault(UUID sanctuaryId, SentryTrigger trigger) throws SQLException {
+        if (!trigger.configurable()) return false;
         try (var c=databaseManager.openConnection();var s=c.prepareStatement("SELECT enabled FROM sanctuary_sentry_defaults WHERE sanctuary_id=? AND trigger_name=?")) {
             s.setString(1,sanctuaryId.toString());s.setString(2,trigger.name());try(var r=s.executeQuery()){return r.next()?r.getInt(1)!=0:trigger.defaultEnabled();}
         }
     }
     @Override public void setDefault(UUID sanctuaryId,SentryTrigger trigger,boolean enabled)throws SQLException{
+        if (!trigger.configurable()) return;
         try(var c=databaseManager.openConnection();var s=c.prepareStatement("""
             INSERT INTO sanctuary_sentry_defaults(sanctuary_id,trigger_name,enabled) VALUES(?,?,?)
             ON CONFLICT(sanctuary_id,trigger_name) DO UPDATE SET enabled=excluded.enabled
             """)){s.setString(1,sanctuaryId.toString());s.setString(2,trigger.name());s.setInt(3,enabled?1:0);s.executeUpdate();}
     }
     @Override public SentryOverride getOverride(UUID sentryId,SentryTrigger trigger)throws SQLException{
+        if (!trigger.configurable()) return SentryOverride.DISABLED;
         try(var c=databaseManager.openConnection();var s=c.prepareStatement("SELECT override_value FROM sentry_overrides WHERE sentry_id=? AND trigger_name=?")){
             s.setString(1,sentryId.toString());s.setString(2,trigger.name());try(var r=s.executeQuery()){return r.next()?SentryOverride.valueOf(r.getString(1)):SentryOverride.INHERIT;}
         }
     }
     @Override public void setOverride(UUID sentryId,SentryTrigger trigger,SentryOverride value)throws SQLException{
+        if (!trigger.configurable()) return;
         if(value==SentryOverride.INHERIT){try(var c=databaseManager.openConnection();var s=c.prepareStatement("DELETE FROM sentry_overrides WHERE sentry_id=? AND trigger_name=?")){s.setString(1,sentryId.toString());s.setString(2,trigger.name());s.executeUpdate();}return;}
         try(var c=databaseManager.openConnection();var s=c.prepareStatement("""
             INSERT INTO sentry_overrides(sentry_id,trigger_name,override_value) VALUES(?,?,?)

@@ -21,7 +21,8 @@ public final class MigrationRunner {
         new DatabaseMigration(8, "sentries", "/db/migration/V008__sentries.sql"),
         new DatabaseMigration(9, "altar_offerings", "/db/migration/V009__altar_offerings.sql"),
         new DatabaseMigration(10, "sanctuary_anchor_graph", "/db/migration/V010__sanctuary_anchor_graph.sql"),
-        new DatabaseMigration(11, "sanctuary_upgrades", "/db/migration/V011__sanctuary_upgrades.sql")
+        new DatabaseMigration(11, "sanctuary_upgrades", "/db/migration/V011__sanctuary_upgrades.sql"),
+        new DatabaseMigration(12, "sanctuary_aggression", "/db/migration/V012__sanctuary_aggression.sql")
     );
 
     private final DatabaseManager databaseManager;

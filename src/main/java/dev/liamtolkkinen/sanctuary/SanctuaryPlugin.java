@@ -29,6 +29,7 @@ import dev.liamtolkkinen.sanctuary.persistence.SqliteSentryRepository;
 import dev.liamtolkkinen.sanctuary.persistence.SqliteUpgradeRepository;
 import dev.liamtolkkinen.sanctuary.protection.SanctuaryProtectionListener;
 import dev.liamtolkkinen.sanctuary.protection.SanctuaryProtectionService;
+import dev.liamtolkkinen.sanctuary.security.SanctuaryAggressionListener;
 import dev.liamtolkkinen.sanctuary.security.SanctuarySecurityService;
 import dev.liamtolkkinen.sanctuary.sentry.BeaconProximityBoundaryTask;
 import dev.liamtolkkinen.sanctuary.sentry.SentryAwarenessService;
@@ -169,6 +170,17 @@ public final class SanctuaryPlugin extends JavaPlugin {
                 territoryPresenceService,
                 anchorTerritoryService,
                 getLogger()
+            );
+            getServer().getPluginManager().registerEvents(
+                new SanctuaryAggressionListener(
+                    securityService,
+                    repository,
+                    sentryRepository,
+                    sentryService,
+                    anchorItemService,
+                    getLogger()
+                ),
+                this
             );
             new SentryRecipeService(this).registerAll();
             getServer().getPluginManager().registerEvents(

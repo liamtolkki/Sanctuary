@@ -12,6 +12,7 @@ public final class TerritoryCalculator {
     public static final double VERTICAL_RADIUS_SCALE = 2.0 / 3.0;
     private static final double VERTICAL_DISTANCE_WEIGHT =
         1.0 / (VERTICAL_RADIUS_SCALE * VERTICAL_RADIUS_SCALE);
+    private static final double CONTAINMENT_EPSILON = 1.0e-9;
 
     private TerritoryCalculator() {
     }
@@ -32,7 +33,9 @@ public final class TerritoryCalculator {
         if (!center.world().equals(world)) {
             return false;
         }
-        return scaledDistanceSquared(center, x, y, z) <= radius * radius;
+        double radiusSquared = radius * radius;
+        double tolerance = Math.max(CONTAINMENT_EPSILON, radiusSquared * CONTAINMENT_EPSILON);
+        return scaledDistanceSquared(center, x, y, z) <= radiusSquared + tolerance;
     }
 
     /**
@@ -57,7 +60,9 @@ public final class TerritoryCalculator {
         }
         double deltaX = x - (center.x() + 0.5);
         double deltaZ = z - (center.z() + 0.5);
-        return deltaX * deltaX + deltaZ * deltaZ <= radius * radius;
+        double radiusSquared = radius * radius;
+        double tolerance = Math.max(CONTAINMENT_EPSILON, radiusSquared * CONTAINMENT_EPSILON);
+        return deltaX * deltaX + deltaZ * deltaZ <= radiusSquared + tolerance;
     }
 
     /** Scaled radius-space distance used for nested effect tiers inside the ellipsoid. */
